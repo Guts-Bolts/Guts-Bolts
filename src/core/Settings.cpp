@@ -21,35 +21,96 @@ float GraphicsSettings::renderDistanceStuds() const {
     return kStuds[std::clamp(renderDistance, 1, kMaxRenderDistance) - 1];
 }
 
+// What each group's level turns into. The cheaper levels are cheaper versions of the
+// same thing (one shadow map instead of two, dark corners instead of bounced light, FXAA
+// instead of the temporal upscaler), and tone mapping / colour grading stay on at every
+// level, so the game keeps its look on Low.
+void GraphicsSettings::applyGroups() {
+    using namespace Scalability;
+    const int sh = groupLevel(Shadow), gi = groupLevel(GlobalIllumination), rf = groupLevel(Reflection),
+              pp = groupLevel(PostProcess), tx = groupLevel(Texture), vd = groupLevel(ViewDistance),
+              aa = groupLevel(AntiAliasing), sp = groupLevel(ScreenPercentage);
+    static const int   kShadowRes[kLevels] = {1024, 1024, 2048, 4096, 4096};
+    static const int   kShadowStyle[kLevels] = {0, 1, 2, 2, 2};
+    static const int   kLights[kLevels] = {6, 12, 32, 32, 32};
+    static const int   kView[kLevels] = {3, 5, 8, kMaxRenderDistance, kMaxRenderDistance};
+    static const float kScale[kLevels] = {0.6f, 0.75f, 1.0f, 1.0f, 1.5f};
+    shadows = true;
+    shadowRes = kShadowRes[sh];
+    shadowQuality = kShadowStyle[sh];
+    giQuality = gi;
+    maxLights = kLights[gi];
+    waterQuality = std::min(rf, 3);
+    postQuality = pp;
+    bloom = pp >= 1;
+    postFx = true;
+    textureQuality = tx;
+    renderDistance = kView[vd];
+    aaQuality = aa;
+    renderScale = kScale[sp];
+}
+
+int GraphicsSettings::groupCap(int g) const {
+    if (g < 0 || g >= Scalability::kGroups) return 3;
+    return std::clamp(std::min(m_device.cap[g], myCaps[g]), 0, Scalability::kLevels - 1);
+}
+
+int GraphicsSettings::groupLevel(int g) const {
+    if (g < 0 || g >= Scalability::kGroups) return 0;
+    return std::min(std::clamp(sg[g], 0, Scalability::kLevels - 1), groupCap(g));
+}
+
+void GraphicsSettings::setGroup(int g, int level) {
+    if (g < 0 || g >= Scalability::kGroups) return;
+    sg[g] = std::clamp(level, 0, Scalability::kLevels - 1);
+    quality = Custom;
+    applyGroups();
+}
+
+void GraphicsSettings::applyLevels(int level) {
+    for (int& l : sg) l = level;
+    applyGroups();
+}
+
+void GraphicsSettings::setDevice(const std::string& gpuName, Scalability::Platform platform) {
+    m_device = Scalability::profileFor(gpuName, platform);
+    m_softwareGpu = Scalability::isSoftwareGpu(gpuName);
+    // A preset picks again with the caps; Custom keeps your own mix (the renderer's
+    // values still can't go over the caps: see groupLevel).
+    if (quality != Custom) applyPreset(quality);
+}
+
+namespace {
+// The benchmark's level -> where Auto starts on its ladder (High 0, Medium 2, Low 4, Very Low 6).
+int autoStartFor(int benchLevel) { return benchLevel >= 2 ? 0 : benchLevel == 1 ? 2 : benchLevel == 0 ? 4 : 6; }
+}
+
+void GraphicsSettings::setBenchmark(const std::string& gpuName, float highMs, float budgetMs) {
+    benchGpu = gpuName;
+    benchMs = highMs;
+    benchLevel = Scalability::pickLevel(highMs, budgetMs);
+    m_autoStart = autoStartFor(benchLevel);
+    if (quality == Auto) applyPreset(Auto);
+}
+
 void GraphicsSettings::applyPreset(int q) {
-    if (q == Auto) {   // starts at High and finds its own level while you play
+    if (q == Auto) {   // starts where the benchmark said (High if it never ran) and finds its own level while you play
         m_autoClock = 0.0f; m_autoFrames = 0; m_autoGood = 0; m_autoHold = 0.0f; m_autoBad = -1;
-        applyAutoLevel(0);
+        applyAutoLevel(m_autoStart);
         return;
     }
     quality = q;
-    shadows = q != VeryLow;
     switch (q) {
-        case VeryLow:
-            shadowRes = 1024; shadowQuality = 0; ssao = false; bloom = false;
-            fxaa = false; postFx = false; renderScale = 0.5f; maxLights = 2; waterQuality = 0; renderDistance = 2;
+        case VeryLow:   // under Low: for very old computers and phones
+            applyLevels(0);
+            shadows = false; giQuality = -1; aaQuality = -1; bloom = false;
+            renderScale = 0.5f; maxLights = 2; renderDistance = 2;
             break;
-        case Low:
-            shadowRes = 1024; shadowQuality = 0; ssao = false; bloom = false;
-            fxaa = false; postFx = false; renderScale = 0.70f; maxLights = 6; waterQuality = 0; renderDistance = 3;
-            break;
-        case Medium:
-            shadowRes = 1024; shadowQuality = 0; ssao = false; bloom = true;
-            fxaa = true; postFx = true; renderScale = 0.85f; maxLights = 12; waterQuality = 1; renderDistance = 5;
-            break;
-        case High:
-            shadowRes = 2048; shadowQuality = 2; ssao = true; bloom = true;
-            fxaa = true; postFx = true; renderScale = 1.0f; maxLights = 32; waterQuality = 2; renderDistance = 8;
-            break;
-        case Ultra:
-            shadowRes = 4096; shadowQuality = 2; ssao = true; bloom = true;
-            fxaa = true; postFx = true; renderScale = 1.0f; maxLights = 32; waterQuality = 3; renderDistance = kMaxRenderDistance;
-            break;
+        case Low:    applyLevels(0); break;
+        case Medium: applyLevels(1); break;
+        case High:   applyLevels(2); break;
+        case Ultra:  applyLevels(3); break;
+        case Cinematic: applyLevels(Scalability::kCinematic); break;
         default: break;
     }
 }
@@ -72,9 +133,26 @@ void GraphicsSettings::load() {
     auto rd = [&](const char* k, auto& v) {
         if (j.contains(k)) try { v = j[k].get<std::decay_t<decltype(v)>>(); } catch (...) {}
     };
-    rd("vsync", vsync); rd("fpsCap", fpsCap); rd("showFps", showFps);
+    rd("vsync", vsync); rd("fpsCap", fpsCap); rd("showFps", showFps); rd("sawDeviceNotice", sawDeviceNotice);
     rd("quality", quality); rd("shadows", shadows); rd("shadowRes", shadowRes); rd("shadowQuality", shadowQuality);
-    rd("ssao", ssao); rd("bloom", bloom); rd("fxaa", fxaa); rd("postFx", postFx);
+    rd("bloom", bloom); rd("postFx", postFx);
+    // (Before scalability: an on/off for ambient occlusion and for FXAA.)
+    bool oldAo = true, oldFxaa = true;
+    rd("ssao", oldAo); rd("fxaa", oldFxaa);
+    giQuality = oldAo ? 0 : -1;
+    aaQuality = oldFxaa ? 0 : -1;
+    rd("giQuality", giQuality); rd("aaQuality", aaQuality); rd("postQuality", postQuality); rd("textureQuality", textureQuality);
+    giQuality = std::clamp(giQuality, -1, 4); aaQuality = std::clamp(aaQuality, -1, 4);
+    postQuality = std::clamp(postQuality, 0, 4); textureQuality = std::clamp(textureQuality, 0, 4);
+    if (j.contains("groups") && j["groups"].is_array())
+        for (int i = 0; i < Scalability::kGroups && i < (int)j["groups"].size(); ++i)
+            if (j["groups"][(size_t)i].is_number_integer()) sg[i] = std::clamp(j["groups"][(size_t)i].get<int>(), 0, 4);
+    if (j.contains("myCaps") && j["myCaps"].is_array())
+        for (int i = 0; i < Scalability::kGroups && i < (int)j["myCaps"].size(); ++i)
+            if (j["myCaps"][(size_t)i].is_number_integer()) myCaps[i] = std::clamp(j["myCaps"][(size_t)i].get<int>(), 0, 4);
+    rd("benchGpu", benchGpu); rd("benchMs", benchMs); rd("benchLevel", benchLevel);
+    benchLevel = std::clamp(benchLevel, -1, 2);
+    m_autoStart = benchGpu.empty() ? 0 : autoStartFor(benchLevel);
     rd("renderScale", renderScale); rd("maxLights", maxLights); rd("allowGore", allowGore); rd("checkUpdates", checkUpdates); rd("seasonTheme", seasonTheme);
     if (j.contains("language") && j["language"].is_string())
         std::snprintf(language, sizeof language, "%s", j["language"].get<std::string>().c_str());
@@ -83,7 +161,7 @@ void GraphicsSettings::load() {
     rd("volume", volume); rd("fullscreen", fullscreen);
     rd("voiceChat", voiceChat); rd("voiceOpenMic", voiceOpenMic); rd("voiceVolume", voiceVolume);
     rd("translateChat", translateChat);
-    rd("studioBlenderKeys", studioBlenderKeys);
+    rd("studioBlenderKeys", studioBlenderKeys); rd("studioSimpleLayout", studioSimpleLayout);
     if (j.contains("keys")) KeyBinds::fromJson(j["keys"], keys);
     rd("breakMinutes", breakMinutes);
     breakMinutes = std::clamp(breakMinutes, 0, 24 * 60);
@@ -95,8 +173,9 @@ void GraphicsSettings::load() {
     waterQuality = std::clamp(waterQuality, 0, 3);
     renderScale = std::clamp(renderScale, 0.5f, 2.0f);
     maxLights = std::clamp(maxLights, 0, 32);
-    if (quality < Low || quality > VeryLow) quality = High;
-    if (quality == Auto) applyPreset(Auto);   // starts again from the top: this computer may be faster today
+    if (quality < Low || quality > Cinematic) quality = High;
+    if (quality == Auto) applyPreset(Auto);   // starts again from the benchmark's level: this computer may be faster today
+    else if (quality != Custom) applyPreset(quality);   // a preset: worked out again (newer versions add to them)
 }
 
 const char* const* GraphicsSettings::breakChoiceNames() {
@@ -113,12 +192,12 @@ int GraphicsSettings::breakChoiceOf(int minutes) {
 }
 
 const char* const* GraphicsSettings::qualityNames() {
-    static const char* const names[kQualityChoices] = {"Auto", "Very Low", "Low", "Medium", "High", "Ultra", "Custom"};
+    static const char* const names[kQualityChoices] = {"Auto", "Very Low", "Low", "Medium", "High", "Epic", "Cinematic", "Custom"};
     return names;
 }
 
 int GraphicsSettings::qualityAt(int menuIndex) {
-    static const int order[kQualityChoices] = {Auto, VeryLow, Low, Medium, High, Ultra, Custom};
+    static const int order[kQualityChoices] = {Auto, VeryLow, Low, Medium, High, Ultra, Cinematic, Custom};
     return order[std::clamp(menuIndex, 0, kQualityChoices - 1)];
 }
 
@@ -131,10 +210,11 @@ const char* GraphicsSettings::qualityHelp(int q) {
     switch (q) {
         case Auto:    return "Watches your frame rate while you play and turns the graphics down when the game gets laggy (and back up when it can).";
         case VeryLow: return "For old or slow computers and phones: no shadows, half sharpness, short view distance, the least water.";
-        case Low:     return "Fast: simple shadows, a bit less sharp, fewer lights, short view distance, light water.";
-        case Medium:  return "A balance of looks and speed.";
-        case High:    return "Soft shadows, ambient occlusion, full sharpness and nice water.";
-        case Ultra:   return "Everything turned up: sharpest shadows, the most water and an unlimited view. Needs a strong graphics card.";
+        case Low:     return "Fast: one simple shadow map, dark corners instead of bounced light, FXAA, 60% of the pixels, short view distance.";
+        case Medium:  return "A balance of looks and speed: soft shadows, some bounced light, temporal anti-aliasing at 75% of the pixels.";
+        case High:    return "Soft shadows, bounced light, temporal upscaling (TSR), full sharpness and nice water.";
+        case Ultra:   return "Epic: everything turned up. The sharpest, softest shadows, the most bounced light, the most water and an unlimited view. Needs a strong graphics card.";
+        case Cinematic: return "Not for playing: for screenshots, photo mode and trailers. Draws 1.5x the pixels and shrinks them, traces many more rays and keeps far more of the past frames. Very slow; hold still a moment for the cleanest picture.";
         default:      return "Your own mix of the settings below.";
     }
 }
@@ -148,7 +228,7 @@ void GraphicsSettings::applyAutoLevel(int level) {
         case 2: applyPreset(Medium); break;
         case 3: applyPreset(Medium); renderScale = 0.7f; waterQuality = 0; break;
         case 4: applyPreset(Low); break;
-        case 5: applyPreset(Low); renderScale = 0.6f; shadows = false; break;
+        case 5: applyPreset(Low); renderScale = 0.55f; shadows = false; break;
         default: applyPreset(VeryLow); break;
     }
     quality = Auto;
@@ -223,11 +303,18 @@ bool GraphicsSettings::touchEnabled() const {
 #endif
 }
 
+static bool s_holdSaving = false;
+void GraphicsSettings::holdSaving(bool on) { s_holdSaving = on; }
+
 void GraphicsSettings::save() const {
+    if (s_holdSaving) return;
     nlohmann::json j = {
-        {"vsync", vsync}, {"fpsCap", fpsCap}, {"showFps", showFps},
+        {"vsync", vsync}, {"fpsCap", fpsCap}, {"showFps", showFps}, {"sawDeviceNotice", sawDeviceNotice},
         {"quality", quality}, {"shadows", shadows}, {"shadowRes", shadowRes}, {"shadowQuality", shadowQuality},
-        {"ssao", ssao}, {"bloom", bloom}, {"fxaa", fxaa}, {"postFx", postFx},
+        {"bloom", bloom}, {"postFx", postFx},
+        {"giQuality", giQuality}, {"aaQuality", aaQuality}, {"postQuality", postQuality}, {"textureQuality", textureQuality},
+        {"groups", std::vector<int>(sg, sg + Scalability::kGroups)}, {"myCaps", std::vector<int>(myCaps, myCaps + Scalability::kGroups)},
+        {"benchGpu", benchGpu}, {"benchMs", benchMs}, {"benchLevel", benchLevel},
         {"renderScale", renderScale}, {"maxLights", maxLights}, {"allowGore", allowGore}, {"checkUpdates", checkUpdates}, {"seasonTheme", seasonTheme}, {"language", std::string(language)},
         {"touchControls", touchControls}, {"touchSize", touchSize},
         {"shiftLockSwitch", shiftLockSwitch}, {"mouseSensitivity", mouseSensitivity}, {"invertCamera", invertCamera},
@@ -235,7 +322,7 @@ void GraphicsSettings::save() const {
         {"voiceChat", voiceChat}, {"voiceOpenMic", voiceOpenMic}, {"voiceVolume", voiceVolume}, {"translateChat", translateChat},
         {"colorBlind", colorBlind}, {"textSize", textSize}, {"captions", captions}, {"clipRecorder", clipRecorder},
         {"waterQuality", waterQuality}, {"graphicsApi", graphicsApi}, {"renderDistance", renderDistance},
-        {"studioBlenderKeys", studioBlenderKeys}, {"breakMinutes", breakMinutes},
+        {"studioBlenderKeys", studioBlenderKeys}, {"studioSimpleLayout", studioSimpleLayout}, {"breakMinutes", breakMinutes},
     };
     if (nlohmann::json k = KeyBinds::toJson(keys); !k.empty()) j["keys"] = k;
     std::ofstream f(settingsFile());

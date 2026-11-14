@@ -1,4 +1,5 @@
 #include "Npc.h"
+#include "Gore.h"
 #include "Scene.h"
 #include "Physics.h"
 #include "../core/Audio.h"
@@ -116,6 +117,15 @@ void NpcSystem::kill(uint64_t rootId, float force, const glm::vec3& impulse) {
     }
 }
 
+void NpcSystem::recordImpact(uint64_t rootId, uint64_t partId, const glm::vec3& point,
+                             const glm::vec3& normal, const glm::vec3& projectileVelocity) {
+    Npc* npc = find(rootId);
+    if (!npc || npc->dead || npc->impacts.size() >= 16) return;
+    npc->impacts.push_back({partId, point,
+                            glm::length(normal) > 1e-5f ? glm::normalize(normal) : glm::vec3(0, 1, 0),
+                            projectileVelocity});
+}
+
 void NpcSystem::update(float dt, Scene& scene, Physics& physics) {
     if (!m_active) return;
     // Now and then, look for characters scripts have put in the world.
@@ -155,19 +165,30 @@ void NpcSystem::update(float dt, Scene& scene, Physics& physics) {
 
 void NpcSystem::step(Npc& n, SceneNode* r, float dt, Scene& scene, Physics& physics) {
     Humanoid& h = n.humanoid;
-    // Hurt since last frame: a grunt, and gore if the game has it on.
-    if (h.health < n.lastHealth - 0.5f) {
+    // A recorded positional hit must be consumed even when its damage is below the legacy 0.5 threshold.
+    if (h.health < n.lastHealth - 0.5f || !n.impacts.empty()) {
         glm::vec3 at = r->transform.position + glm::vec3(0, 1.5f, 0);
         if (h.health > 0.0f) Audio::play("hit", 0.5f, 0.9f, false, &at);
-        if (scene.goreEnabled()) {
-            float lost = n.lastHealth - h.health;
-            scene.particles().spray(scene.goreKind(), at, glm::vec3(0, 1, 0),
-                                    (int)std::clamp(lost * 0.3f, 3.0f, 20.0f), 3.0f);
-            if (SceneNode* t = r->findChild("Torso"))
-                scene.particles().stain(scene.goreKind(), t, at + glm::vec3(rand01() - 0.5f, rand01() - 0.5f, rand01() - 0.5f) * 2.0f,
-                                        std::clamp(0.3f + lost * 0.02f, 0.3f, 1.0f));
+        if (n.impacts.empty() && scene.goreEnabled()) {
+            Gore::Scope look(scene, r);   // (a robot NPC can bleed oil in a game of people)
+            const float lost = n.lastHealth - h.health;
+            if (look.on()) {
+                scene.particles().spray(look.kind(), at, glm::vec3(0, 1, 0),
+                                        (int)std::clamp(lost * 0.3f, 3.0f, 20.0f), 3.0f);
+                if (SceneNode* torso = r->findChild("Torso"))
+                    scene.particles().stain(look.kind(), torso, at,
+                                            std::clamp(0.3f + lost * 0.02f, 0.3f, 1.0f));
+            }
         }
     }
+    if (scene.goreEnabled()) {
+        for (const Npc::Impact& impact : n.impacts) {
+            SceneNode* hitPart = scene.findById(impact.partId);
+            if (!hitPart || !hitPart->isPart() || !(r == hitPart || r->isAncestorOf(hitPart))) continue;
+            Gore::hit(scene, hitPart, impact.point, impact.normal, impact.velocity, n.lastHealth - h.health);
+        }
+    }
+    n.impacts.clear();
     n.lastHealth = h.health;
     if (h.health <= 0.0f) { startDeath(n, r, scene); return; }
 

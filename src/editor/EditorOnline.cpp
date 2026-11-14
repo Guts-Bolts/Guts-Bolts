@@ -1055,6 +1055,26 @@ void Editor::renderAccessoryWindow() {
         for (const auto& ak : kAccessoryKinds) if (k == ak.key) ImGui::TextColored(ImVec4(0.3f, 0.8f, 0.4f, 1), "Position saved as a %s.", ak.title);
     }
 
+    // How it moves when worn: swings on springy bones, or flaps like fabric (Cloth.h).
+    ImGui::SeparatorText("Movement");
+    auto flag = [&](const char* attr, const char* label, const char* tip) {
+        const Attribute* a = model->findAttribute(attr);
+        bool on = a && a->type == Attribute::Bool && a->b;
+        if (ImGui::Checkbox(label, &on)) {
+            model->attributes.erase(std::remove_if(model->attributes.begin(), model->attributes.end(),
+                                                   [&](const Attribute& x) { return x.name == attr; }),
+                                    model->attributes.end());
+            if (on) { Attribute x; x.name = attr; x.type = Attribute::Bool; x.b = true; model->attributes.push_back(x); }
+            m_scene->markDirty();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+    };
+    flag("Jiggle", "Jiggles (swings when you move)",
+         "Ponytails, antennas, chains: it gets springy bones from where it's held to its far end.\n"
+         "(If you gave it your own bones in the Armature window, those are used instead.)");
+    flag("Cloth", "Cloth (flaps like fabric)",
+         "Capes, skirts, flags: the top stays put and the rest hangs, swings and blows in the wind.");
+
     // 4. Uploading.
     ImGui::SeparatorText("Upload to the catalog");
     ImGui::SetNextItemWidth(-90);

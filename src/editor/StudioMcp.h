@@ -12,6 +12,7 @@ class Editor;
 // Two ways in:
 //  * HTTP: http://127.0.0.1:<port>/mcp (e.g. `claude mcp add --transport http guts-and-bolts http://127.0.0.1:44755/mcp`)
 //  * stdio: the app runs `GutsAndBolts --mcp`, which passes messages on to the Studio that's open.
+// It speaks MCP 2026-07-28 (no handshake; see McpServerProtocol.h) and the older versions.
 class StudioMcp {
 public:
     static constexpr int kDefaultPort = 44755;
@@ -34,7 +35,9 @@ public:
     }
 
 private:
-    std::string handle(Editor& editor, const std::string& body, bool& anyReply, const std::string& app = "", bool canChange = false);
+    // `modern`: the message follows MCP 2026-07-28 (checked already); `status` gets the HTTP status.
+    std::string handle(Editor& editor, const std::string& body, bool& anyReply, const std::string& app = "", bool canChange = false,
+                       bool modern = false, int* status = nullptr);
     Net::HttpServer m_http;
     int         m_port = kDefaultPort;
     int         m_calls = 0;

@@ -92,6 +92,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     auto open  = [this](SceneNode* n) { openScript(n); };
     m_outliner = std::make_unique<OutlinerPanel>(scene, open, [this](SceneNode* n) { addScript(n); });
     EditorTheme::applyStudio();
+    ImGui::GetIO().ConfigDragClickToInputText = true;   // number boxes: one click to type (dragging still slides)
     m_outliner->onInsert = [this](SceneNode* parent) { m_insertParent = parent; m_openInsert = true; };
     m_outliner->onEye = [this](SceneNode* n, bool isolate) { eyeClicked(n, isolate); };
     m_outliner->onInsertNamed = [this](const std::string& what, SceneNode* parent) {
@@ -173,6 +174,7 @@ Editor::~Editor() {
     m_plugins.reset();
     m_team.reset();
     if (m_session) m_session->stop();
+    endPhoneTest();   // (closed during a phone test: put the real settings back first)
     dropAutoSave();   // a normal close: nothing to recover next time
 }
 
@@ -425,6 +427,7 @@ void Editor::render(float dt) {
     renderInsertObject();
     renderDialogs();
     renderShortcuts();
+    renderSearch();   // Search Studio (EditorSimple.cpp)
     renderMoveTo();
     renderModelingMenus();
     renderCollisionGroups();
@@ -460,6 +463,7 @@ void Editor::render(float dt) {
     LiveProfiler::draw(&m_showLiveProfiler);
     renderLearn();
     renderPerformanceDoctor();
+    renderPhoneTest();
     renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
@@ -467,6 +471,7 @@ void Editor::render(float dt) {
     renderMaterialEditor();
     renderMaterialGraph();
     renderAiActivity();
+    renderPlatformApprovals();   // manage_game changes waiting for Allow (EditorPlatform.cpp)
     renderScriptHistory();
     renderLevelGenerator();
     renderTemplates();
@@ -2215,6 +2220,7 @@ void Editor::togglePlay() {
         m_state.simPaused = false;
         Log::system("Game stopped - everything is back to how it was.");
         Log::endRun();
+        endPhoneTest();   // (a phone test: Studio's own graphics settings come back)
     }
 }
 
@@ -2828,7 +2834,7 @@ void Editor::handleShortcuts() {
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) { io.KeyShift ? redo() : undo(); }
         if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) redo();
         if (ImGui::IsKeyPressed(ImGuiKey_J, false)) joinSelected();   // Blender's Join
-        if (ImGui::IsKeyPressed(ImGuiKey_P, false)) parentToActive();   // Blender's Make Parent
+        if (!io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_P, false)) parentToActive();   // Blender's Make Parent
         if (ImGui::IsKeyPressed(ImGuiKey_C, false)) copySelected();
         if (ImGui::IsKeyPressed(ImGuiKey_X, false) && !io.KeyShift) cutSelected();   // Ctrl+Shift+X = Explorer search
         if (ImGui::IsKeyPressed(ImGuiKey_V, false)) { if (io.KeyShift) pasteInto(); else paste(); }
@@ -2844,6 +2850,7 @@ void Editor::handleShortcuts() {
         else if (ImGui::IsKeyPressed(ImGuiKey_I, false)) { m_insertParent = m_scene->selected(); m_openInsert = true; }
         if (ImGui::IsKeyPressed(ImGuiKey_L, false)) m_state.gizmoLocal = !m_state.gizmoLocal;
         if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_E, false)) m_showBulkEdit = !m_showBulkEdit;
+        if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_P, false)) openSearch();   // Search Studio (EditorSimple.cpp)
         // Roblox's tool keys.
         if (ImGui::IsKeyPressed(ImGuiKey_1, false)) m_state.tool = GizmoTool::Select;
         if (ImGui::IsKeyPressed(ImGuiKey_2, false)) m_state.tool = GizmoTool::Translate;
@@ -3508,7 +3515,8 @@ void Editor::renderShortcuts() {
     if (!m_showShortcuts) return;
     struct Row { const char* keys; const char* what; };
     static const Row kSections[][34] = {
-        {{"Ctrl+1 / 2 / 3 / 4", "Select / Move / Scale / Rotate tool"},
+        {{"Ctrl+Shift+P", "Search Studio: find any tool, window or object by name"},
+         {"Ctrl+1 / 2 / 3 / 4", "Select / Move / Scale / Rotate tool"},
          {"Ctrl+L", "Switch the gizmo between local and world"},
          {"W A S D", "Fly the camera (hold Shift to go faster)"},
          {"Q / E", "Camera down / up"},
@@ -3746,14 +3754,17 @@ void Editor::buildDockspace() {
 
         // Roblox Studio's layout: Toolbox on the left, Explorer over
         // Properties on the right, Output and the Command Bar along the bottom.
+        // The Simple layout gives the 3D view more room: a shorter Output along the
+        // whole bottom (the Command Bar, Team and Assistant open as tabs next to it).
+        const bool simple = simpleLayout();
         ImGuiID left, center, right, bottom;
-        ImGui::DockBuilderSplitNode(dsId,   ImGuiDir_Left,  0.17f, &left,   &center);
+        ImGui::DockBuilderSplitNode(dsId,   ImGuiDir_Left,  simple ? 0.16f : 0.17f, &left,   &center);
         ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.25f, &right,  &center);
-        ImGui::DockBuilderSplitNode(center, ImGuiDir_Down,  0.26f, &bottom, &center);
+        ImGui::DockBuilderSplitNode(center, ImGuiDir_Down,  simple ? 0.21f : 0.26f, &bottom, &center);
         ImGuiID rightTop, rightBottom;
-        ImGui::DockBuilderSplitNode(right, ImGuiDir_Up, 0.45f, &rightTop, &rightBottom);
-        ImGuiID bottomLeft, bottomRight;
-        ImGui::DockBuilderSplitNode(bottom, ImGuiDir_Right, 0.42f, &bottomRight, &bottomLeft);
+        ImGui::DockBuilderSplitNode(right, ImGuiDir_Up, simple ? 0.38f : 0.45f, &rightTop, &rightBottom);
+        ImGuiID bottomLeft = bottom, bottomRight = bottom;
+        if (!simple) ImGui::DockBuilderSplitNode(bottom, ImGuiDir_Right, 0.42f, &bottomRight, &bottomLeft);
 
         ImGui::DockBuilderDockWindow("Toolbox",       left);
         ImGui::DockBuilderDockWindow("Script Editor", center);
@@ -3763,6 +3774,7 @@ void Editor::buildDockspace() {
         ImGui::DockBuilderDockWindow("Command Bar",   bottomRight);
         ImGui::DockBuilderDockWindow("Team",          bottomRight);
         ImGui::DockBuilderDockWindow("Assistant",     bottomRight);
+        ImGui::DockBuilderDockWindow("Fyxa",          bottomRight);   // (the Assistant's window)
         ImGui::DockBuilderDockWindow("Explorer",      rightTop);
         ImGui::DockBuilderDockWindow("Properties",    rightBottom);
         ImGui::DockBuilderDockWindow("Lighting",      rightBottom);
@@ -3899,6 +3911,13 @@ void Editor::renderMenuBar() {
     }
 
     if (ImGui::BeginMenu("View")) {
+        if (ImGui::MenuItem("Search Studio...", "Ctrl+Shift+P")) openSearch();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Find any tool, window or object by name");
+        if (ImGui::MenuItem("Simple Layout", nullptr, simpleLayout())) m_deferred = [this] { setSimpleLayout(true); };
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Only the everyday buttons and panels. The rest is behind More, in the menus and in Search.");
+        if (ImGui::MenuItem("Advanced Layout", nullptr, !simpleLayout())) m_deferred = [this] { setSimpleLayout(false); };
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Every button and panel on screen");
+        ImGui::Separator();
         if (ImGui::MenuItem("Reset Camera")) m_viewport->resetCamera();
         renderWorkspaceMenu();   // Add Viewport, Four Views, Reset Workspace
         if (ImGui::BeginMenu(I18n::tr("View Style"))) {   // the 3D view the mouse was last in
@@ -3917,6 +3936,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
         if (ImGui::MenuItem("Live Profiler", nullptr, &m_showLiveProfiler)) {}
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
+        if (ImGui::MenuItem("Test like a phone...", nullptr, &m_showPhoneTest)) {}
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
@@ -4248,11 +4268,23 @@ void Editor::renderStatusBar() {
         ? "Click to inspect   Drag with gizmo   Right-drag + WASDQE fly   F6 pause   Shift+F5 stop"
         : m_playing
         ? "WASD move   Space jump   Right-drag camera   Wheel zoom   Click parts   F5/Esc stop"
+        : simpleLayout()
+        ? "Right-drag to look around   F5 play   F1 all shortcuts"
         : "Ctrl+1-4 tools   Right-drag + WASDQE fly   MMB pan   F focus   Ctrl+D duplicate   F5 play   F1 all shortcuts";
-    float avail = ImGui::GetContentRegionAvail().x;
+    // On the far right: which layout this is; a click switches it.
+    const char* layout = simpleLayout() ? "Simple" : "Advanced";
+    const float layoutW = ImGui::CalcTextSize(layout).x + 26.0f;
+    float avail = ImGui::GetContentRegionAvail().x - layoutW;
     float tw    = ImGui::CalcTextSize(hint).x;
     if (tw < avail) ImGui::SameLine(ImGui::GetCursorPosX() + (avail - tw));
-    ImGui::TextDisabled("%s", hint);
+    if (tw < avail) ImGui::TextDisabled("%s", hint);
+    ImGui::SameLine(ImGui::GetWindowWidth() - layoutW - 4.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 0));
+    if (ImGui::SmallButton(layout)) m_deferred = [this] { setSimpleLayout(!simpleLayout()); };
+    ImGui::PopStyleVar();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(simpleLayout() ? "Simple layout: the everyday buttons and panels.\nClick for Advanced (every button and panel)."
+                                         : "Advanced layout: every button and panel.\nClick for Simple (just the everyday ones).");
 
     ImGui::EndChild();
     ImGui::PopStyleVar();

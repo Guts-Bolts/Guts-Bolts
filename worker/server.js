@@ -19,6 +19,17 @@ import { filterText, nameHasHateWord } from './textfilter.js';
 import { MemoryStore } from './memorystore.js';
 import { installMcpRelay } from './mcp-relay.js';
 import { installGameWeb } from './game-web.js';
+import { installBanLists } from './banlists.js';   // creators' ban lists, used across their games
+import { installTesters, isTester } from './testers.js';   // early testers: a few people play a game before it's public
+import { installRatings, ratingAllowed } from './ratings.js';   // content levels from a few questions
+import { installLaunchpad } from './launchpad.js';   // Launchpad: staff help picked creators build big games
+import { installBackgrounds } from './backgrounds.js';   // a picture behind your avatar on your profile
+import { installExperiments, EXPERIMENTS_COSTLY, EXPERIMENTS_GUEST_OK } from './experiments.js';   // A/B tests for creators: versions, custom metrics, results
+import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js';   // share links that count clicks, plays and buys
+import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
+import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
+import { installAcademy, ACADEMY_LOOK_ONLY, ACADEMY_COSTLY } from './academy.js';   // G&B Academy: courses anyone can write
+import { installFyxaCloud } from './fyxa-cloud.js';   // Fyxa answered by Cloudflare's AI, with daily limits
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
   kLogTitle, kLogText, kEventName, kEventText } from './extras.js';   // achievements, game update logs, events
@@ -113,6 +124,54 @@ const kBodyMostCorners = 20000;
 // anyone who owns the bundle can wear it. (src/server and the apps know these ids too.)
 const PIECE_PARTS = { head: 'Head', torso: 'Torso', leftarm: 'Left Arm', rightarm: 'Right Arm', leftleg: 'Left Leg', rightleg: 'Right Leg' };
 const pieceIdOf = (bundleId, part) => bundleId + '-' + part.replace(' ', '').toLowerCase();
+// A body part's bones and weights (jiggly hair, tails, soft elbows). Same rules as
+// src/online/Protocol.cpp bundleRig. Copies the tidy ones into `part`; '' if fine.
+const kBodyMostBones = 32;
+function bundleRig(name, p, corners, part) {
+  const bad = name + '\'s bones look wrong.';
+  const num = (x, lo, hi) => typeof x === 'number' && x >= lo && x <= hi;
+  const vec3 = (a, lim) => Array.isArray(a) && a.length === 3 && a.every((x) => num(x, -lim, lim));
+  if ('bend' in p) {
+    if (typeof p.bend !== 'boolean') return bad;
+    if (p.bend) {
+      if (name === 'Head' || name === 'Torso') return 'Only arms and legs can bend in the middle.';
+      part.bend = true;
+    }
+  }
+  if (!('bones' in p)) return 'w' in p ? bad : '';
+  if (!Array.isArray(p.bones) || p.bones.length > kBodyMostBones) return name + ' has too many bones (' + kBodyMostBones + ' at most).';
+  const tidy = [];
+  for (let i = 0; i < p.bones.length; i++) {
+    const b = p.bones[i];
+    if (!b || typeof b !== 'object' || Array.isArray(b) || typeof b.name !== 'string') return bad;
+    if (!b.name.length || new TextEncoder().encode(b.name).length > 32) return bad;
+    const parent = Number.isInteger(b.parent) ? b.parent : -2;
+    if (parent < -1 || parent >= i) return bad;
+    if (!vec3(b.pos, 16) || !vec3(b.rot, 360)) return bad;
+    const type = b.type === undefined ? 'Normal' : b.type;
+    if (type !== 'Normal' && type !== 'Jiggle') return 'Bones in a bundle can be Normal or Jiggle.';
+    const one = { name: b.name, parent, pos: b.pos, rot: b.rot, type };
+    for (const k of ['stiffness', 'damping']) {
+      if (!(k in b)) continue;
+      if (!num(b[k], 0, 1)) return bad;
+      one[k] = b[k];
+    }
+    if ('gravity' in b) { if (!num(b.gravity, -200, 200)) return bad; one.gravity = b.gravity; }
+    if ('length' in b) { if (!num(b.length, 0, 16)) return bad; one.length = b.length; }
+    tidy.push(one);
+  }
+  if (!tidy.length) return '';
+  part.bones = tidy;
+  if (!('w' in p)) return '';
+  if (!Array.isArray(p.w) || p.w.length !== corners) return bad;
+  for (const one of p.w) {
+    if (!Array.isArray(one) || one.length % 2 || one.length > 8) return bad;
+    for (let k = 0; k < one.length; k += 2)
+      if (!Number.isInteger(one[k]) || one[k] < 0 || one[k] >= p.bones.length || !num(one[k + 1], 0, 1)) return bad;
+  }
+  part.w = p.w;
+  return '';
+}
 function bundleBody(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length) return 'That bundle\'s body looks wrong.';
   const numbers = (a, n, lo, hi) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === 'number' && x >= lo && x <= hi);
@@ -135,6 +194,8 @@ function bundleBody(body) {
       for (let i = 0; i < p.uv.length; i++) if (!numbers(p.uv[i], p.f[i].length * 2, -1000, 1000)) return bad;
       part.uv = p.uv;
     }
+    const rigProblem = bundleRig(name, p, corners, part);
+    if (rigProblem) return rigProblem;
     out[name] = part;
   }
   return out;
@@ -267,9 +328,9 @@ const kDeletedName = 'Deleted user';
 // Support tickets (ServerSupport.cpp has the same): anyone, even someone who can't log in,
 // can ask staff for help. A few open at once per device, and a few a day.
 const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 1000, kResetHours = 24;
-const TICKET_TOPICS = ['password', 'account', 'other'];
+const TICKET_TOPICS = ['password', 'account', 'underage', 'other'];   // (underage: a parent or someone else says an account belongs to someone under 18)
 const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass: 'pass' })[a.kind] || a.kind;
-const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum'];
+const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste', 'course'];   // art: "piece" or "piece:comment" (art.js)
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.
 const kMaxComments = 500, kCommentLength = 200, kCommentCooldown = 15, kCommentsPage = 20;
 // Trades (ServerItems.cpp has the same): a trade nobody answers expires after kTradeExpiry.
@@ -406,6 +467,11 @@ const COSTLY = {
   'forum.reply':         [30, 90, 600],
   'ai.preferences.update': [10, 30, 600],
   'ai.content.eligibility.update': [60, 180, 600],
+  'ai.sessions.create': [20, 40, 600],
+  'ai.sessions.delete': [30, 60, 600],
+  'ai.memory.create': [30, 60, 600],
+  'ai.memory.update': [60, 120, 600],
+  'ai.memory.delete': [60, 120, 600],
   'chat.translate':      [400, 1200, 600],  // (a busy game's chat, read in another language)
   'groups.create':       [5, 15, 3600],
   'bolts.redeem':        [20, 60, 600],    // (so nobody can guess promo codes over and over)
@@ -441,6 +507,11 @@ const kMsgKept = 500;            // messages kept per game at most
 const kMsgPerPoll = 200;         // handed out per msg.poll
 const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
+Object.assign(COSTLY, ART_COSTLY);   // art.js
+Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
+Object.assign(COSTLY, ACADEMY_COSTLY);   // academy.js
+Object.assign(COSTLY, EXPERIMENTS_COSTLY);   // experiments.js
+Object.assign(COSTLY, SHARE_COSTLY);   // sharelinks.js
 const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'game.leaderboards', 'gamelog.list', 'events.list']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
@@ -454,7 +525,7 @@ function maskEmail(e) {
 function sixDigits() { return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0'); }
 
 // Who can play a game: everyone, the creator's friends, or only the creator.
-const ACCESS = ['public', 'friends', 'private'];
+const ACCESS = ['public', 'friends', 'testers', 'private'];
 // Genres a game can pick (up to 3), so people can find the kind of game they like.
 const GENRES = ['Adventure', 'Obby', 'Fighting', 'Horror', 'Roleplay', 'Simulator', 'Tycoon', 'Racing', 'Sports',
   'Shooter', 'Puzzle', 'Survival', 'Comedy', 'Building', 'Sandbox', 'Showcase', 'Town and City', 'Destruction'];
@@ -483,7 +554,10 @@ const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this mu
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'servers.private', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
-  'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+  'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
+for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...ACADEMY_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
+for (const op of SHARE_GUEST_OK) GUEST_OK.add(op);   // sharelinks.js (anyone can open a link)
 
 // In-game chat translation: each player's app asks for the lines that were said in another
 // language, and Cloudflare's translator (Workers AI, the "AI" binding) turns them into theirs.
@@ -753,9 +827,14 @@ function bytesToB64(bytes) {
 }
 const CHUNK = 1 << 20;   // files are stored in 1 MB pieces (SQLite rows are at most 2 MB)
 
-// Fyxa user-content processing is disabled until a signed-in account explicitly opts in.
-const FYXA_AI_POLICY_VERSION = '2026-11-08-v1';
-const FYXA_AI_NOTICE_VERSION = '2026-11-08-v1';
+// Fyxa and your uploads (the Terms of Service, section 6 and 11, say the same):
+//   * training: ON for signed-up accounts unless they turn it off in Settings (opt-out, Script's
+//     choice on 2026-11-09). Guests are never included.
+//   * reference (Fyxa looking things up in your uploads): OFF until you turn it on (opt-in).
+// Either way an upload only counts once it's public, passed moderation, its creator said they own the
+// rights, and staff approved that. Nothing is trained yet: there's no training pipeline.
+const FYXA_AI_POLICY_VERSION = '2026-11-09-v2';
+const FYXA_AI_NOTICE_VERSION = '2026-11-09-v2';
 
 // --- the server -------------------------------------------------------------------
 export class GbServerObject extends DurableObject {
@@ -794,6 +873,21 @@ export class GbServerObject extends DurableObject {
       CREATE TABLE IF NOT EXISTS ai_training_audit (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, content_id TEXT, event_type TEXT NOT NULL, details TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS ai_training_audit_account ON ai_training_audit (account_id, created_at);
+      CREATE TABLE IF NOT EXISTS ai_sessions (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, project_id TEXT, title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS ai_sessions_account_updated ON ai_sessions (account_id, updated_at);
+      CREATE INDEX IF NOT EXISTS ai_sessions_project ON ai_sessions (account_id, project_id, updated_at);
+      CREATE TABLE IF NOT EXISTS ai_memories (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, project_id TEXT, memory_type TEXT NOT NULL,
+        content TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]', importance INTEGER NOT NULL DEFAULT 3,
+        source_session_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS ai_memories_account_updated ON ai_memories (account_id, updated_at);
+      CREATE INDEX IF NOT EXISTS ai_memories_project_type ON ai_memories (account_id, project_id, memory_type, importance);
+      CREATE TABLE IF NOT EXISTS ai_memory_audit (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, event_type TEXT NOT NULL,
+        resource_type TEXT NOT NULL, resource_id TEXT NOT NULL, details TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS ai_memory_audit_account ON ai_memory_audit (account_id, created_at);
       CREATE TABLE IF NOT EXISTS ai_moderation_cases (
         id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, source_type TEXT NOT NULL, source_id TEXT NOT NULL,
         author_id TEXT NOT NULL, categories TEXT NOT NULL, severity TEXT NOT NULL, scanner TEXT NOT NULL,
@@ -808,10 +902,7 @@ export class GbServerObject extends DurableObject {
     this.sql.exec('UPDATE ai_moderation_cases SET last_seen_at = created_at WHERE last_seen_at = 0');
     this.aiTrackedContent = new Set();
     for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility')) this.aiTrackedContent.add(r.content_id);
-    this.aiEnabledAccounts = new Set();
     this.backgroundTasks = new Set();
-    for (const r of this.sql.exec('SELECT account_id FROM ai_training_preferences WHERE training_enabled = 1 OR reference_enabled = 1'))
-      this.aiEnabledAccounts.add(r.account_id);
     this.secretsInit();   // games' secrets for web requests (game-web.js)
     this.chatsInit();     // calls and the Lyreto gateway (chats.js)
     this.official = lower(env.OFFICIAL || '');
@@ -1289,11 +1380,11 @@ export class GbServerObject extends DurableObject {
       if (this.aiEligibilityFingerprint.get(a.id) !== fingerprint) {
         this.aiEligibilityFingerprint.set(a.id, fingerprint);
         const row = this.aiContentRow(a.id);
-        if (row && row.owner_id !== a.creator && this.aiEnabledAccounts && this.aiEnabledAccounts.has(a.creator))
+        if (row && row.owner_id !== a.creator && this.aiAccountUsesAi(a.creator))
           this.aiEnsureContentEligibility(a);
         else this.aiRecomputeContentEligibility(a.id);
       }
-    } else if (this.aiEnabledAccounts && this.aiEnabledAccounts.has(a.creator)) this.aiEnsureContentEligibility(a);
+    } else if (this.aiAccountUsesAi(a.creator)) this.aiEnsureContentEligibility(a);
   }
   // Better search: keep each asset's searchable words in Supabase (gb_search_items). Only sent
   // when something searchable changed (a.searchSig remembers what was sent last).
@@ -1347,7 +1438,7 @@ export class GbServerObject extends DurableObject {
       this.sql.exec('INSERT INTO files (id, part, data) VALUES (?, ?, ?)', id, part, bytes.subarray(i, i + CHUNK));
     return true;
   }
-  // --- Version history (games): a.versions = [{ v, at, by, size, restored? }], oldest first; the
+  // --- Version history (games and creations: CREATION_KINDS): a.versions = [{ v, at, by, size, restored? }], oldest first; the
   // last one is what's live. Each version's file is 'ver:<game>:<v>'. A game published before
   // history existed has none: its current file becomes version 1 the first time it's published
   // again (or restored), and until then the list shows it as version 1. (src/server has the same.)
@@ -2080,7 +2171,7 @@ export class GbServerObject extends DurableObject {
     return { copies: au.copies, minBid: au.minBid, startedAt: au.startedAt, endsAt: au.endsAt, done: !!au.done, cancelled: au.cancelled ? true : undefined,
       bids, need: au.bids.length < au.copies ? au.minBid : au.bids[au.bids.length - 1].amount + 1, myBid: mine ? mine.amount : 0 };
   }
-  auctionOpen(a, t = now()) { return !!a.auction && !a.auction.done && t < a.auction.endsAt; }
+  auctionOpen(a, t = now()) { return !!a.auction && !a.auction.done && !a.auction.cancelled && t < a.auction.endsAt; }
 
   giveVerifiedHat(u) {
     const a = this.assets.get(VERIFIED_HAT_ID);
@@ -2198,6 +2289,8 @@ export class GbServerObject extends DurableObject {
       myVote: me && a.votes ? (a.votes[me.id] || 0) : undefined, limited: this.limitedJson(a),
       favorites: a.kind === 'game' || isCatalogItem(a.kind) || this.auctionOpen(a, now()) ? (a.favorites || 0) : undefined,
       featured: a.kind === 'game' && a.featured > 0 ? true : undefined,
+      rating: a.kind === 'game' ? (a.rating || '') : undefined,
+      launchpad: a.kind === 'game' && a.launchpad ? a.launchpad.stage : undefined,   // in Launchpad (launchpad.js)   // content level (ratings.js; '' = none yet)
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: !me ? undefined : a.kind === 'game' ? (me.favorites || []).includes(a.id)
         : (isCatalogItem(a.kind) || this.auctionOpen(a, now())) ? (me.itemFavorites || []).includes(a.id) : undefined,
@@ -2253,6 +2346,7 @@ export class GbServerObject extends DurableObject {
     if (!hasAccess(a.kind) || !a.access || a.access === 'public') return true;
     if (a.creator === me.id || this.isStaff(me)) return true;
     if (a.access === 'friends') return me.friends.includes(a.creator);
+    if (a.access === 'testers') return isTester(a, me);   // testers.js
     return false;
   }
   noPlay(a) {
@@ -2263,6 +2357,7 @@ export class GbServerObject extends DurableObject {
     if (a.kind === 'animation') return 'This animation is private.';
     if (a.kind === 'audio') return 'This sound is private.';
     if (a.kind === 'decal') return 'This decal is private.';
+    if (a.access === 'testers') return 'This game is still being tested. Only the people ' + (c ? c.name : 'the creator') + ' picked can play it for now.';
     return a.access === 'friends' ? 'Only ' + (c ? c.name : 'the creator') + '\'s friends can play this game.' : 'This game is private.';
   }
   publicGroup(g) {
@@ -2388,7 +2483,7 @@ export class GbServerObject extends DurableObject {
   // Lightweight operator diagnostics. Never expose player records or raw SQL contents.
   databaseDiagnostics() {
     const tables = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
-      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_moderation_cases'];
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_sessions', 'ai_memories', 'ai_memory_audit', 'ai_moderation_cases'];
     const counts = {};
     for (const table of tables) {
       const rows = this.sql.exec('SELECT COUNT(*) AS count FROM "' + table + '"').toArray?.()
@@ -2421,7 +2516,7 @@ export class GbServerObject extends DurableObject {
       throw new Error('Database is larger than the configured safe backup limit; increase it only after reviewing memory headroom.');
 
     const tableNames = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
-      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_moderation_cases'];
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_sessions', 'ai_memories', 'ai_memory_audit', 'ai_moderation_cases'];
     const snapshot = this.ctx.storage.transactionSync(() => tableNames.map((table) => {
       const schemaRows = this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table).toArray?.()
         || Array.from(this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table));
@@ -2574,6 +2669,13 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'updates.post') { sourceType = 'platform_update'; sourceId = String(answer.update && answer.update.id || ''); fields.push(['update title', args.name], ['update summary', args.summary], ['update notes', Array.isArray(args.items) ? args.items.join('\n') : '']);
     } else if (op === 'profile.set') { sourceType = 'profile'; sourceId = actor.id; fields.push(['profile about', args.blurb], ['profile status', args.status]);
     } else if (op === 'gamelog.post') { sourceType = 'game_update'; sourceId = String(args.id || ''); fields.push(['game update title', args.title], ['game update text', args.text]);
+    } else if (op === 'art.post') { sourceType = 'art'; sourceId = String(answer.piece && answer.piece.id || ''); fields.push(['art title', args.title], ['art description', args.text], ['art tags', Array.isArray(args.tags) ? args.tags.join(' ') : args.tags]);
+    } else if (op === 'paste.make') { sourceType = 'paste'; sourceId = String(answer.paste && answer.paste.id || ''); fields.push(['paste title', args.title], ['paste text', typeof args.text === 'string' ? args.text.slice(0, 6000) : '']);
+    } else if ((op === 'academy.publish' && args.on !== false) || (op === 'academy.save' && answer.course && answer.course.published)) {
+      const c = this.courses && this.courses.get(String(answer.course && answer.course.id || ''));
+      if (!c) return;
+      sourceType = 'course'; sourceId = c.id;
+      fields.push(['course title', c.title], ['course summary', c.summary], ['course lessons', c.lessons.map((l) => l.title + '\n' + l.text).join('\n\n').slice(0, 6000)]);
     } else if (op === 'chat.translate') { sourceType = 'game_chat'; sourceId = String(args.game || ''); fields.push(['game chat line', args.text]);
     } else return;
     let content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
@@ -2644,11 +2746,11 @@ export class GbServerObject extends DurableObject {
       } else { categories.push('AUDIO_REVIEW_REQUIRED'); scanner += '+audio-manual-review'; unsafe = true; }
     }
     // Supported image uploads receive a vision-language screening pass; failures are sent to staff.
-    if (assetWrite && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(assetKind)) {
-      const meta = args.meta && typeof args.meta === 'object' ? args.meta
+    if ((assetWrite && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(assetKind)) || op === 'art.post') {
+      const meta = op === 'art.post' ? { ext: answer.piece && answer.piece.type } : args.meta && typeof args.meta === 'object' ? args.meta
         : sourceAsset && sourceAsset.meta && typeof sourceAsset.meta === 'object' ? sourceAsset.meta : {};
       const ext = String(meta.ext || '').toLowerCase();
-      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/png';
       const encoded = str(args, 'data').replace(/^data:[^,]+,/, '');
       if (encoded && encoded.length <= 600000) {
         try {
@@ -2753,9 +2855,20 @@ export class GbServerObject extends DurableObject {
         updatedAt: Number(r.updated_at || 0), effectiveAt: Number(r.effective_at || 0),
       };
     }
-    return { trainingEnabled: false, referenceEnabled: false, policyVersion: FYXA_AI_POLICY_VERSION,
-      noticeVersion: '', consentMethod: 'none', currentPolicyVersion: FYXA_AI_POLICY_VERSION,
-      currentNoticeVersion: FYXA_AI_NOTICE_VERSION, updatedAt: 0, effectiveAt: 0 };
+    // Nothing chosen yet: training is on (opt-out) for signed-up accounts, reference is off (opt-in).
+    const u = this.users.get(accountId);
+    const signedUp = !!(u && u.userId > 0);
+    return { trainingEnabled: signedUp, referenceEnabled: false, policyVersion: FYXA_AI_POLICY_VERSION,
+      noticeVersion: '', consentMethod: signedUp ? 'default_opt_out' : 'none', currentPolicyVersion: FYXA_AI_POLICY_VERSION,
+      currentNoticeVersion: FYXA_AI_NOTICE_VERSION, updatedAt: 0, effectiveAt: 0, trainingDefault: true };
+  }
+
+  // Should this account's uploads be tracked for Fyxa at all? (Guests never.)
+  aiAccountUsesAi(accountId) {
+    const u = this.users.get(accountId);
+    if (!u || u.userId <= 0) return false;
+    const prefs = this.aiPreferencesFor(accountId);
+    return prefs.trainingEnabled || prefs.referenceEnabled;
   }
 
   aiAudit(me, eventType, contentId, details) {
@@ -2781,7 +2894,9 @@ export class GbServerObject extends DurableObject {
     const restricted = !!(asset.review || asset.exclusive || asset.promoOnly);
     const rightsAttested = !!(currentRow && currentRow.rights_attested);
     const rightsStatus = currentRow ? currentRow.rights_status : 'unverified';
+    const owner = this.users.get(asset.creator);
     const baseReason = prefs.consentMethod === 'account_deleted' ? 'account_deleted'
+      : !owner || owner.userId <= 0 ? 'not_signed_up'
       : ownerMismatch ? 'owner_changed'
       : !isPublic ? 'not_public' : restricted ? 'content_restricted'
       : !rightsAttested ? 'rights_not_attested' : rightsStatus === 'rejected' ? 'rights_rejected'
@@ -2789,8 +2904,9 @@ export class GbServerObject extends DurableObject {
     const trainingChoice = currentRow ? Number(currentRow.training_choice) : 0;
     const referenceChoice = currentRow ? Number(currentRow.reference_choice) : 0;
     const noticeCurrent = prefs.policyVersion === FYXA_AI_POLICY_VERSION && prefs.noticeVersion === FYXA_AI_NOTICE_VERSION;
+    // Training is opt-out, so it doesn't wait for a notice to be accepted; reference (opt-in) does.
     const trainingReason = baseReason || !prefs.trainingEnabled ? (baseReason || 'account_training_disabled')
-      : !noticeCurrent ? 'notice_outdated' : trainingChoice === -1 ? 'content_excluded' : '';
+      : trainingChoice === -1 ? 'content_excluded' : '';
     const referenceReason = baseReason || !prefs.referenceEnabled ? (baseReason || 'account_reference_disabled')
       : !noticeCurrent ? 'notice_outdated' : referenceChoice === -1 ? 'content_excluded' : '';
     return {
@@ -2818,7 +2934,7 @@ export class GbServerObject extends DurableObject {
   }
 
   aiEnsureContentEligibility(asset) {
-    if (!asset || !this.aiEnabledAccounts || !this.aiEnabledAccounts.has(asset.creator)) return null;
+    if (!asset || !this.aiAccountUsesAi(asset.creator)) return null;
     const t = now();
     const existing = this.aiContentRow(asset.id);
     if (existing && existing.owner_id !== asset.creator) {
@@ -2855,8 +2971,124 @@ export class GbServerObject extends DurableObject {
     for (const id of ids) this.aiRecomputeContentEligibility(id);
   }
 
+  aiMemoryAudit(me, eventType, resourceType, resourceId, details = {}) {
+    this.sql.exec('INSERT INTO ai_memory_audit (id, account_id, event_type, resource_type, resource_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      randomHex(16), me.id, eventType, resourceType, resourceId, JSON.stringify(details), now());
+    this.sql.exec('DELETE FROM ai_memory_audit WHERE account_id = ? AND id NOT IN (SELECT id FROM ai_memory_audit WHERE account_id = ? ORDER BY created_at DESC LIMIT 1000)',
+      me.id, me.id);
+  }
+
   aiOp(name, me, args) {
     if (me.userId <= 0) return fail('Sign up or log in first.');
+
+    // Conversation metadata and user-controlled memory are operational data, not model-training consent.
+    // Every lookup is scoped to the authenticated account; project IDs are opaque namespace labels.
+    if (name === 'ai.sessions.create') {
+      const count = Array.from(this.sql.exec('SELECT COUNT(*) AS count FROM ai_sessions WHERE account_id = ?', me.id));
+      if (Number(count[0]?.count || 0) >= 200) return fail('You have reached the conversation limit. Delete an older conversation first.');
+      const title = cleanText(str(args, 'title'), 120) || 'New conversation';
+      const projectId = cleanText(str(args, 'projectId'), 128) || null;
+      const id = randomHex(16), t = now();
+      this.sql.exec('INSERT INTO ai_sessions (id, account_id, project_id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        id, me.id, projectId, title, 'active', t, t);
+      this.aiMemoryAudit(me, 'session.created', 'session', id, { projectId });
+      return okay({ session: { id, projectId, title, status: 'active', createdAt: t, updatedAt: t } });
+    }
+    if (name === 'ai.sessions.list') {
+      const projectId = cleanText(str(args, 'projectId'), 128);
+      const limit = clamp(num(args, 'limit') || 30, 1, 50);
+      const offset = Math.max(0, Math.min(10000, num(args, 'offset')));
+      const rows = Array.from(projectId
+        ? this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE account_id = ? AND project_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?', me.id, projectId, limit, offset)
+        : this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE account_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?', me.id, limit, offset));
+      return okay({ sessions: rows.map((r) => ({ id: r.id, projectId: r.project_id, title: r.title, status: r.status,
+        createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) })) });
+    }
+    if (name === 'ai.sessions.get') {
+      const id = str(args, 'sessionId');
+      const rows = id ? Array.from(this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id)) : [];
+      if (!rows.length) return fail('That conversation was not found.');
+      const r = rows[0];
+      return okay({ session: { id: r.id, projectId: r.project_id, title: r.title, status: r.status,
+        createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) } });
+    }
+    if (name === 'ai.sessions.delete') {
+      const id = str(args, 'sessionId');
+      const rows = id ? Array.from(this.sql.exec('SELECT id FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id)) : [];
+      if (!rows.length) return fail('That conversation was not found.');
+      this.sql.exec('DELETE FROM ai_memories WHERE account_id = ? AND source_session_id = ?', me.id, id);
+      this.sql.exec('DELETE FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id);
+      this.aiMemoryAudit(me, 'session.deleted', 'session', id);
+      return okay({ deleted: true });
+    }
+    if (name === 'ai.memory.create') {
+      const count = Array.from(this.sql.exec('SELECT COUNT(*) AS count FROM ai_memories WHERE account_id = ?', me.id));
+      if (Number(count[0]?.count || 0) >= 500) return fail('You have reached the memory limit. Delete an older memory first.');
+      const content = cleanText(str(args, 'content'), 4000);
+      if (!content) return fail('Memory content is required.');
+      const types = ['user', 'feedback', 'project', 'reference', 'preference'];
+      const memoryType = str(args, 'memoryType') || 'project';
+      if (!types.includes(memoryType)) return fail('Choose a supported memory type.');
+      const projectId = cleanText(str(args, 'projectId'), 128) || null;
+      const sourceSessionId = str(args, 'sourceSessionId') || null;
+      if (sourceSessionId && !Array.from(this.sql.exec('SELECT id FROM ai_sessions WHERE id = ? AND account_id = ?', sourceSessionId, me.id)).length)
+        return fail('That conversation was not found.');
+      const tags = Array.isArray(args.tags) ? [...new Set(args.tags.filter((x) => typeof x === 'string')
+        .map((x) => cleanText(x, 32)).filter(Boolean))].slice(0, 10) : [];
+      const importance = clamp(Number.isFinite(args.importance) ? Math.round(args.importance) : 3, 1, 5);
+      const id = randomHex(16), t = now();
+      this.sql.exec('INSERT INTO ai_memories (id, account_id, project_id, memory_type, content, tags, importance, source_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        id, me.id, projectId, memoryType, content, JSON.stringify(tags), importance, sourceSessionId, t, t);
+      this.aiMemoryAudit(me, 'memory.created', 'memory', id, { memoryType, projectId });
+      return okay({ memory: { id, projectId, memoryType, content, tags, importance, sourceSessionId, createdAt: t, updatedAt: t } });
+    }
+    if (name === 'ai.memory.list') {
+      const projectId = cleanText(str(args, 'projectId'), 128);
+      const memoryType = str(args, 'memoryType');
+      if (memoryType && !['user', 'feedback', 'project', 'reference', 'preference'].includes(memoryType))
+        return fail('Choose a supported memory type.');
+      const limit = clamp(num(args, 'limit') || 50, 1, 100);
+      const offset = Math.max(0, Math.min(10000, num(args, 'offset')));
+      const where = ['account_id = ?'], bind = [me.id];
+      if (projectId) { where.push('project_id = ?'); bind.push(projectId); }
+      if (memoryType) { where.push('memory_type = ?'); bind.push(memoryType); }
+      bind.push(limit, offset);
+      const rows = Array.from(this.sql.exec('SELECT id, project_id, memory_type, content, tags, importance, source_session_id, created_at, updated_at FROM ai_memories WHERE ' +
+        where.join(' AND ') + ' ORDER BY importance DESC, updated_at DESC LIMIT ? OFFSET ?', ...bind));
+      return okay({ memories: rows.map((r) => {
+        let tags = []; try { tags = JSON.parse(r.tags); } catch { /* keep corrupt legacy tags empty */ }
+        return { id: r.id, projectId: r.project_id, memoryType: r.memory_type, content: r.content, tags,
+          importance: Number(r.importance), sourceSessionId: r.source_session_id,
+          createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) };
+      }) });
+    }
+    if (name === 'ai.memory.update') {
+      const id = str(args, 'memoryId');
+      const rows = id ? Array.from(this.sql.exec('SELECT id, content, tags, importance FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id)) : [];
+      if (!rows.length) return fail('That memory was not found.');
+      const previous = rows[0];
+      const content = args.content === undefined ? previous.content : cleanText(str(args, 'content'), 4000);
+      if (!content) return fail('Memory content is required.');
+      let tags = []; try { tags = JSON.parse(previous.tags); } catch { tags = []; }
+      if (Array.isArray(args.tags)) tags = [...new Set(args.tags.filter((x) => typeof x === 'string')
+        .map((x) => cleanText(x, 32)).filter(Boolean))].slice(0, 10);
+      const importance = args.importance === undefined ? Number(previous.importance)
+        : clamp(Number.isFinite(args.importance) ? Math.round(args.importance) : 3, 1, 5);
+      const t = now();
+      this.sql.exec('UPDATE ai_memories SET content = ?, tags = ?, importance = ?, updated_at = ? WHERE id = ? AND account_id = ?',
+        content, JSON.stringify(tags), importance, t, id, me.id);
+      this.aiMemoryAudit(me, 'memory.updated', 'memory', id);
+      return okay({ memory: { id, content, tags, importance, updatedAt: t } });
+    }
+    if (name === 'ai.memory.delete') {
+      const id = str(args, 'memoryId');
+      const rows = id ? Array.from(this.sql.exec('SELECT id FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id)) : [];
+      if (!rows.length) return fail('That memory was not found.');
+      this.sql.exec('DELETE FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id);
+      this.aiMemoryAudit(me, 'memory.deleted', 'memory', id);
+      return okay({ deleted: true });
+    }
+
     if (name === 'ai.preferences.get') return okay({ preferences: this.aiPreferencesFor(me.id) });
 
     if (name === 'ai.preferences.update') {
@@ -2866,22 +3098,23 @@ export class GbServerObject extends DurableObject {
       const previous = this.aiPreferencesFor(me.id);
       const trainingEnabled = hasTraining ? args.trainingEnabled : previous.trainingEnabled;
       const referenceEnabled = hasReference ? args.referenceEnabled : previous.referenceEnabled;
-      const enabling = (trainingEnabled && !previous.trainingEnabled) || (referenceEnabled && !previous.referenceEnabled);
-      const noticeChanged = (trainingEnabled || referenceEnabled) &&
+      // Only reference (opt-in) needs the notice confirmed. Training is on by default; turning it
+      // back on after turning it off needs no extra step.
+      const enabling = referenceEnabled && !previous.referenceEnabled;
+      const noticeChanged = referenceEnabled &&
         (previous.policyVersion !== FYXA_AI_POLICY_VERSION || previous.noticeVersion !== FYXA_AI_NOTICE_VERSION);
       const requiresNotice = enabling || noticeChanged;
       if (requiresNotice && (args.confirm !== true || args.noticeVersion !== FYXA_AI_NOTICE_VERSION))
         return fail('Review the current Fyxa AI data notice and confirm before enabling these uses.');
       const t = now();
       const noticeVersion = requiresNotice ? FYXA_AI_NOTICE_VERSION : previous.noticeVersion;
-      const consentMethod = trainingEnabled || referenceEnabled ? 'affirmative_opt_in' : 'opt_out';
+      // (about training: on because the person left it on / chose it, or off because they opted out)
+      const consentMethod = trainingEnabled ? (previous.trainingEnabled && previous.trainingDefault ? 'default_opt_out' : 'chose_on') : 'opt_out';
       this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
         (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         me.id, trainingEnabled ? 1 : 0, referenceEnabled ? 1 : 0, FYXA_AI_POLICY_VERSION,
         noticeVersion || '', consentMethod, t, t);
-      if (trainingEnabled || referenceEnabled) this.aiEnabledAccounts.add(me.id);
-      else this.aiEnabledAccounts.delete(me.id);
       this.aiAudit(me, 'preferences.updated', null, { trainingEnabled, referenceEnabled,
         policyVersion: FYXA_AI_POLICY_VERSION, noticeVersion: noticeVersion || '', consentMethod });
       this.aiRecomputeAccountEligibility(me.id);
@@ -3066,6 +3299,7 @@ export class GbServerObject extends DurableObject {
       const canSee = this.seesInventory(me, u), owns = canSee ? this.inventoryOf(u, 'all', me) : [];
       const inventory = { hidden: !canSee, total: owns.length, items: owns.slice(0, 12) };
       return okay({ user, creations, groups, friendCount: u.friends.length, friendship, wearing, friends, inventory,
+        background: this.backgroundOf(u),   // backgrounds.js
         followerCount: (u.followers || []).length, followingCount: (u.following || []).length,
         isFollowing: (me.following || []).includes(u.id), blocked: (me.blocked || []).includes(u.id),
         online: this.presence(me, u).online, playing: this.presence(me, u).playing, placeVisits, gameBadges,
@@ -3116,11 +3350,22 @@ export class GbServerObject extends DurableObject {
       });
       return okay({ users: found.slice(0, 50).map((u) => this.publicUser(u)) });
     }
+    if (name.startsWith('fyxacloud.') || name === 'admin.fyxaCloud') return this.fyxaCloudOp(name, me, args);   // fyxa-cloud.js
     if (name.startsWith('ai.')) return this.aiOp(name, me, args);
     if (name.startsWith('account.')) return this.accountOp(name, me, args);
     if (name.startsWith('groups.')) return this.groupOp(name, me, args);
     if (name.startsWith('forum.')) return this.forumOp(name, me, args);
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
+    if (name.startsWith('banlist.') || name === 'game.banLists' || name === 'game.ban') return this.banListOp(name, me, args);   // banlists.js
+    if (name === 'profile.background') return this.backgroundOp(name, me, args);   // backgrounds.js
+    if (name.startsWith('experiments.') || name === 'analytics.log') return this.experimentsOp(name, me, args);   // experiments.js
+    if (name.startsWith('share.')) return this.shareOp(name, me, args);   // sharelinks.js
+    if (name.startsWith('launchpad.')) return this.launchpadOp(name, me, args);   // launchpad.js
+    if (name === 'game.rating' || name === 'game.rate' || name === 'rating.limit') return this.ratingOp(name, me, args);   // ratings.js
+    if (['game.testers', 'game.addTester', 'game.removeTester', 'game.testerNote', 'game.amTester'].includes(name)) return this.testerOp(name, me, args);   // testers.js
+    if (name.startsWith('art.')) return this.artOp(name, me, args);   // art.js
+    if (name.startsWith('paste.')) return this.pasteOp(name, me, args);   // paste.js
+    if (name.startsWith('academy.')) return this.academyOp(name, me, args);   // academy.js
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
@@ -3306,8 +3551,10 @@ export class GbServerObject extends DurableObject {
       if ('description' in args) a.description = say(str(args, 'description'), 1000, true);
       if ('access' in args) {
         const access = str(args, 'access');
-        if (!ACCESS.includes(access)) return fail('Pick public, friends or private.');
+        if (!ACCESS.includes(access)) return fail('Pick public, friends, testers or private.');
+        const was = a.access || 'public';
         a.access = access;
+        if (was === 'testers' && access === 'public') this.testersLaunched(a, me);   // testers.js
       }
       if ('genres' in args) {
         const picked = Array.isArray(args.genres) ? [...new Set(args.genres.filter((x) => GENRES.includes(x)))] : [];
@@ -3940,6 +4187,14 @@ export class GbServerObject extends DurableObject {
         const jpg = data.length > 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
         if (!png && !jpg) return fail('Decals must be .png or .jpg pictures.');
         meta.ext = png ? 'png' : 'jpg';
+        // A picture a player drew in a game (AssetService:PromptPublishImageAsync): free to publish,
+        // and it remembers which game it came from. (src/server has the same.)
+        if (meta.drawing === true) {
+          const from = typeof meta.game === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(meta.game) ? meta.game : '';
+          for (const k of Object.keys(meta)) if (k !== 'ext') delete meta[k];
+          meta.drawing = true;
+          if (from) meta.game = from;
+        } else delete meta.drawing;
       }
       if (kind === 'game' && !isJson(data)) return fail('That isn\'t a Guts&Bolts game file.');
       if (kind === 'plugin' && !data.length) return fail('That plugin is empty.');
@@ -4024,7 +4279,7 @@ export class GbServerObject extends DurableObject {
         meta.image = true;
         meta.ext = 'png';
       }
-      const fee = verified ? 0 : FEE[kind];
+      const fee = verified || (kind === 'decal' && meta.drawing === true) ? 0 : FEE[kind];
       if (fee > 0 && this.balance(me) < fee)
         return fail('Uploading costs ' + fee + ' Bolts, and you have ' + this.balance(me) + '. (It\'s free for Verified creators.)');
       const assetNo = this.nextAssetNum++;
@@ -4222,9 +4477,11 @@ export class GbServerObject extends DurableObject {
         try { acc = JSON.parse(new TextDecoder().decode(data)); } catch { acc = null; }
         if (!acc || acc.format !== 'gbaccessory' || !acc.node) return fail('That isn\'t a Guts&Bolts accessory.');
       }
-      // A game keeps its old versions (version history); publishing the same file again adds none.
+      // Games and your own creations (sounds, decals, models, plugins, animations) keep their old
+      // versions (version history); uploading the same file again adds none. Everything using its
+      // ID gets the new one, and a bad update can be put back with asset.restore.
       let version = 0;
-      if (a.kind === 'game') {
+      if (CREATION_KINDS.includes(a.kind)) {
         const old = this.readFile(a.id);
         if (!old || !sameBytes(old, data)) version = this.addVersion(a, data, me.id, old);
       }
@@ -4249,15 +4506,17 @@ export class GbServerObject extends DurableObject {
       this.saveAsset(a);
       if (staffAccessoryEdit)
         this.staffDid(me, 'asset-edit', 'Updated catalog accessory "' + a.name + '" (' + a.id + ')', a.creator);
-      return okay({ asset: this.publicAsset(a), version: a.kind === 'game' ? this.versionsOf(a).slice(-1)[0].v : undefined, newVersion: !!version });
+      return okay({ asset: this.publicAsset(a), version: CREATION_KINDS.includes(a.kind) ? this.versionsOf(a).slice(-1)[0].v : undefined, newVersion: !!version });
     }
-    // --- Version history: a game's creator sees its published versions and can put an old one
-    // back (it's published again as the newest version; nothing is ever lost by restoring).
-    if (name === 'game.versions' || name === 'game.restore') {
+    // --- Version history: a game's (or a sound's, decal's, model's, plugin's, animation's) creator
+    // sees its versions and can put an old one back (it's published again as the newest version;
+    // nothing is ever lost by restoring). game.* is the older name, for games only.
+    if (name === 'game.versions' || name === 'game.restore' || name === 'asset.versions' || name === 'asset.restore') {
       const a = this.assets.get(str(args, 'id'));
-      if (!a || a.kind !== 'game') return fail('That game doesn\'t exist (any more).');
-      if (a.creator !== me.id) return fail('Only the game\'s creator can see its versions.');
-      if (name === 'game.versions') return okay({ versions: this.versionsJson(a), most: kMaxVersions });
+      const games = name.startsWith('game.');
+      if (!a || (games ? a.kind !== 'game' : !CREATION_KINDS.includes(a.kind))) return fail(games ? 'That game doesn\'t exist (any more).' : 'That doesn\'t have a version history.');
+      if (a.creator !== me.id) return fail('Only its creator can see its versions.');
+      if (name.endsWith('.versions')) return okay({ versions: this.versionsJson(a), most: kMaxVersions });
       const want = num(args, 'version'), list = this.versionsOf(a);
       const entry = list.find((x) => x.v === want);
       if (!entry) return fail('That version isn\'t kept any more.');
@@ -4269,6 +4528,8 @@ export class GbServerObject extends DurableObject {
       this.writeFile(a.id, data);
       a.size = data.length;
       a.updated = t;
+      // A sound or picture put back gets checked again (like a new upload would).
+      if (REVIEWED_KINDS.includes(a.kind) && !this.isVerified(me) && !this.isStaff(me)) { a.review = 'pending'; delete a.reviewNote; }
       this.saveAsset(a);
       return okay({ asset: this.publicAsset(a, me), version, versions: this.versionsJson(a), most: kMaxVersions });
     }
@@ -4292,6 +4553,7 @@ export class GbServerObject extends DurableObject {
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
         (!creator || a.creator === creator) && (publicView ? !a.review : this.canPlay(a, me)) &&
         (!genre || (a.genres || []).includes(genre)) &&
+        (ownedOnly || ratingAllowed(a, me)) &&   // above your content level limit (ratings.js)
         (!q || only || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
       const playing = sort === 'playing' ? new Map(found.map((a) => [a.id, this.playingIn(a.id)])) : null;
       const by = {
@@ -4303,6 +4565,8 @@ export class GbServerObject extends DurableObject {
         updated: (x, y) => (y.updated || y.created) - (x.updated || x.created),
         featured: (x, y) => y.featured - x.featured,   // picked by staff, newest pick first
         favorited: (x, y) => (y.favorites || 0) - (x.favorites || 0) || (y.plays + y.sales) - (x.plays + x.sales),
+        ending: (x, y) => Number(x.auction && x.auction.endsAt || Number.MAX_SAFE_INTEGER) -
+          Number(y.auction && y.auction.endsAt || Number.MAX_SAFE_INTEGER) || y.created - x.created,
       }[sort] || ((x, y) => y.created - x.created);
       found.sort(by);
       const offset = Math.max(0, num(args, 'offset'));
@@ -5035,7 +5299,12 @@ export class GbServerObject extends DurableObject {
     const t = now(), number = u.userId;
     // Account deletion leaves published games/items online, but it revokes all Fyxa permissions
     // and rights attestations attached to that account before its personal account data is erased.
-    if (this.aiEnabledAccounts) this.aiEnabledAccounts.delete(u.id);
+    // Conversation sessions and user-authored memories are personal account data and must not
+    // survive account deletion. The memory audit is also removed; training-rights audit follows
+    // the existing retention behavior below.
+    this.sql.exec('DELETE FROM ai_memories WHERE account_id = ?', u.id);
+    this.sql.exec('DELETE FROM ai_sessions WHERE account_id = ?', u.id);
+    this.sql.exec('DELETE FROM ai_memory_audit WHERE account_id = ?', u.id);
     this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
       (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
       VALUES (?, 0, 0, ?, ?, 'account_deleted', ?, ?)`, u.id, FYXA_AI_POLICY_VERSION, FYXA_AI_NOTICE_VERSION, t, t);
@@ -5231,6 +5500,10 @@ export class GbServerObject extends DurableObject {
         if (!p) return fail('That post isn\'t there any more.');
         if (p.by === me.id) return fail('You can\'t report yourself.');
         target = id; about = p.by; copy = { subject: 'Forum: ' + th.title, body: p.text, at: p.at };
+      } else if (kind === 'art' || kind === 'paste' || kind === 'course') {
+        const r = kind === 'art' ? this.artReportTarget(id, me) : kind === 'paste' ? this.pasteReportTarget(id, me) : this.academyReportTarget(id, me);   // art.js, paste.js, academy.js
+        if (typeof r === 'string') return fail(r);
+        target = r.target; about = r.about; copy = r.copy;
       } else {
         const g = this.groups.get(id);
         if (!g) return fail('That group isn\'t there any more.');
@@ -5593,6 +5866,9 @@ export class GbServerObject extends DurableObject {
       if (x.kind === 'group') { const g = this.groups.get(x.target); r.name = g ? g.name : '(deleted)'; }
       if (x.kind === 'comment') { const a = this.assets.get(x.target.split(':')[0]); r.name = a ? a.name : '(deleted)'; r.game = a ? a.id : ''; }
       if (x.kind === 'forum') { const th = this.forum.get(x.target.split(':')[0]); r.name = th ? th.title : '(deleted)'; r.thread = th ? th.id : ''; }
+      if (x.kind === 'art') { r.name = this.artReportName(x.target); r.piece = x.target.split(':')[0]; }   // art.js
+      if (x.kind === 'paste') r.name = this.pasteReportName(x.target);   // paste.js
+      if (x.kind === 'course') r.name = this.academyReportName(x.target);   // academy.js
       if (x.status === 'closed') { r.outcome = x.outcome; r.closedBy = who(x.closedBy); r.closedAt = x.closedAt; }
       return r;
     });
@@ -6044,6 +6320,8 @@ export class GbServerObject extends DurableObject {
     const asset = this.assets.get(game);
     const t = now();
     if (asset && !this.canPlay(asset, me)) return fail(this.noPlay(asset));
+    const banned = name !== 'servers.list' && this.banMessageFor(asset, me);   // on one of the game's ban lists (banlists.js)
+    if (banned) return fail(banned);
     if (name === 'servers.play') {
       let best = null;
       for (const s of this.sessions.values()) {
@@ -6335,6 +6613,8 @@ export class GbServerObject extends DurableObject {
         Object.assign(s, { game: old.game, title: old.title, priv: old.priv, code: old.code, owner: old.owner, max: old.max });
         old.newId = s.id;
       }
+      const banned = !dedicated && this.banMessageFor(this.assets.get(s.game), me);   // can't host a game you're banned from
+      if (banned) { reply(fail(banned)); close(); return; }
       if (s.priv && !old && !dedicated) {
         const blocked = this.privateBlocked(me, s.game);
         if (blocked) { reply(fail(blocked)); close(); return; }
@@ -6381,6 +6661,8 @@ export class GbServerObject extends DurableObject {
       }
       if (!s) { reply(fail('That server has closed.')); close(); return; }
       if (s.host === me.id && !s.dedicated) { reply(fail('That\'s your own server.')); close(); return; }
+      const banned = this.banMessageFor(this.assets.get(s.game), me);   // banlists.js
+      if (banned) { reply(fail(banned)); close(); return; }
       if (s.priv && !code && !following && !me.friends.includes(this.ownerOf(s)) && this.ownerOf(s) !== me.id) {
         reply(fail('That\'s a private server. You need to be the host\'s friend, or have its code.'));
         close();
@@ -6500,7 +6782,7 @@ export class GbServerObject extends DurableObject {
         this.scanModerationSubmission(req, reply.moderationActor, reply),
         'Fyxa WebSocket moderation scan');
     }
-    if (reply.webJob || reply.iceJob) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
+    if (reply.webJob || reply.iceJob || reply.fyxaCloud) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
     if ('id' in req) reply.id = req.id;
     this.sendTo(c, reply);
   }
@@ -6576,6 +6858,10 @@ export class GbServerObject extends DurableObject {
       if (!data) return new Response('No accessory.', { status: 404 });
       return new Response(data, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=3600' } });
     }
+    // GET /artpic/<piece>[/thumb]: a piece of art's picture (art.js).
+    if (url.pathname.startsWith('/artpic/')) return this.artPictureResponse(url.pathname.slice(8));
+    // GET /pasteraw/<id>: a paste's text alone (paste.js).
+    if (url.pathname.startsWith('/pasteraw/')) return this.pasteRawResponse(url.pathname.slice(10));
     // GET /decal/<asset id or number>: a decal's picture (decals are always free and public), e.g. a hat's texture.
     if (url.pathname.startsWith('/decal/')) {
       const a = this.assets.get(decodeURIComponent(url.pathname.slice(7)).replace(/^gb:/, ''));
@@ -6667,6 +6953,7 @@ export class GbServerObject extends DurableObject {
     }
     if (answer.ok && answer.supabase) answer = await this.supabaseFollowUp(answer);
     if (answer.ok && answer.translate) answer = await this.translate(answer);
+    if (answer.ok && answer.fyxaCloud) answer = await this.fyxaCloudAnswer(answer);
     if (answer.ok && answer.webJob) answer = await this.webFetch(answer);
     if (answer.ok && answer.iceJob) answer = await this.iceFetch(answer);
     if (this.bridgeOut && this.bridgeOut.length) {
@@ -6701,3 +6988,14 @@ export function json(obj, status = 200) {
 installMcpRelay(GbServerObject);
 installGameWeb(GbServerObject);
 installChats(GbServerObject);
+installBanLists(GbServerObject);
+installTesters(GbServerObject);
+installFyxaCloud(GbServerObject);
+installRatings(GbServerObject);
+installLaunchpad(GbServerObject);
+installBackgrounds(GbServerObject);
+installExperiments(GbServerObject);
+installShareLinks(GbServerObject);
+installArt(GbServerObject);
+installPaste(GbServerObject);
+installAcademy(GbServerObject);

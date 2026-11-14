@@ -45,6 +45,10 @@ public:
     glm::mat4 projectionOverride{1.0f};
     // Back to the plain orbit camera (Studio's Stop, a new game in the Player).
     void      clearScripted() { useCFrame = false; noInput = false; }
+    // The temporal upscaler moves the picture by a fraction of a pixel each frame
+    // (SceneRenderer sets it while drawing, then puts it back to 0), in screen units
+    // (-1..1 across). Different every frame, so several frames together see between pixels.
+    mutable glm::vec2 jitter{0.0f};
     int width()  const { return m_w; }
     int height() const { return m_h; }
 

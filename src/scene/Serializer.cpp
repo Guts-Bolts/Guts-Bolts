@@ -284,7 +284,8 @@ nlohmann::json variantToJson(const MaterialVariantProps& v) {
               {"metalness", v.metalness}};
     if (v.glow > 0.0f) j["glow"] = v.glow;
     const std::pair<const char*, const std::string*> pics[] = {{"colorMap", &v.colorMap}, {"normalMap", &v.normalMap},
-                                                               {"roughnessMap", &v.roughnessMap}, {"metalnessMap", &v.metalnessMap}};
+                                                               {"roughnessMap", &v.roughnessMap}, {"metalnessMap", &v.metalnessMap},
+                                                               {"ormMap", &v.ormMap}};
     for (auto& [k, p] : pics) if (!p->empty()) j[k] = *p;
     if (!v.graph.empty()) {
         json g = json::parse(v.graph, nullptr, false);
@@ -304,6 +305,7 @@ void variantFromJson(const nlohmann::json& j, MaterialVariantProps& v) {
     v.normalMap    = get<std::string>(j, "normalMap", "");
     v.roughnessMap = get<std::string>(j, "roughnessMap", "");
     v.metalnessMap = get<std::string>(j, "metalnessMap", "");
+    v.ormMap       = get<std::string>(j, "ormMap", "");
     v.graph.clear();
     if (auto g = j.find("graph"); g != j.end() && g->is_object()) v.graph = g->dump();
     clampVariant(v);
@@ -1017,6 +1019,7 @@ json toJson(const SceneNode& n) {
         j["range"]      = n.range;
         j["spotAngle"]  = n.spotAngle;
         j["enabled"]    = n.enabled;
+        if (n.lightShadows) j["shadows"] = true;
     }
     if (!n.visible) j["visible"]  = false;
     if (n.internal) j["internal"] = true;
@@ -1268,6 +1271,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->brightness = get<float>(j, "brightness", 2.0f);
         n->range      = get<float>(j, "range", 14.0f);
         n->spotAngle  = get<float>(j, "spotAngle", 60.0f);
+        n->lightShadows = get<bool>(j, "shadows", false);
     }
     if (n->kind == NodeKind::Gui) {
         if (j.contains("gui") && j["gui"].is_object()) guiFromJson(n->gui, j["gui"]);
@@ -1379,12 +1383,15 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
 #define ENV_FIELDS(X)                                                              \
     X(clockTime) X(sunAzimuth) X(sunElevation) X(sunColor) X(sunIntensity) X(sunSize)            \
     X(shadows) X(shadowSoftness) X(shadowStrength) X(shadowDistance)                \
-    X(ambientColor) X(groundAmbient) X(ambientIntensity) X(reflections)             \
+    X(ambientColor) X(groundAmbient) X(ambientIntensity) X(reflections) X(bounceLight) \
     X(showSky) X(skyZenith) X(skyHorizon) X(skyGround) X(skyBrightness)             \
     X(clouds) X(cloudCover) X(cloudSpeed) X(cloudColor) X(stars)                    \
-    X(fogEnabled) X(fogColor) X(fogDensity) X(fogSunGlow)                           \
+    X(fogEnabled) X(fogColor) X(fogDensity) X(fogSunGlow) X(fogHeight) X(fogFalloff) X(fogWisps)  \
     X(exposure) X(bloomIntensity) X(bloomThreshold) X(aoIntensity) X(contrast)      \
-    X(saturation) X(vignette) X(tint) X(weather) X(weatherAmount)
+    X(saturation) X(vignette) X(tint) X(weather) X(weatherAmount)                   \
+    X(cloudType) X(severeWeather) X(quake) X(stormCenter) X(tornado) X(tornadoPos) X(tornadoVel) \
+    X(downburst) X(downburstPos)                                                    \
+    X(lightRays) X(autoExposure) X(motionBlur)
 
 json toJsonValue(float v) { return v; }
 json toJsonValue(bool v) { return v; }
@@ -1432,6 +1439,10 @@ json settingsJson(Scene& scene) {
                   {"fallDamageSpeed", ws.fallDamageSpeed}, {"spawnForceField", ws.spawnForceField},
                   {"fallDamageScale", ws.fallDamageScale}, {"bloodColor", vec(ws.bloodColor)},
                   {"bloodAmount", ws.bloodAmount}, {"bloodStay", ws.bloodStay},
+                  {"liquidBlood", ws.liquidBlood}, {"softTissue", ws.softTissue},
+                  {"injuries", ws.injuries}, {"stamina", ws.stamina}, {"fireSpread", ws.fireSpread},
+                  {"acoustics", ws.acoustics}, {"impactSounds", ws.impactSounds},
+                  {"globalWind", {ws.globalWind.x, ws.globalWind.y, ws.globalWind.z}}, {"airDensity", ws.airDensity},
                   {"playerCollisions", ws.playerCollisions}, {"voiceChat", ws.voiceChat}, {"maxFluidParticles", ws.maxFluidParticles},
                   {"orthographic", ws.orthographic}, {"orthographicSize", ws.orthographicSize},
                   {"streaming", ws.streaming}, {"streamRadius", ws.streamRadius}};
@@ -1498,6 +1509,18 @@ void applySettings(Scene& scene, const json& j) {
         w.bloodColor        = vec(j["world"], "bloodColor", w.bloodColor);
         w.bloodAmount       = get<float>(j["world"], "bloodAmount", w.bloodAmount);
         w.bloodStay         = get<float>(j["world"], "bloodStay", w.bloodStay);
+        w.liquidBlood       = get<bool>(j["world"], "liquidBlood", w.liquidBlood);
+        w.softTissue        = get<bool>(j["world"], "softTissue", w.softTissue);
+        w.injuries          = get<bool>(j["world"], "injuries", w.injuries);
+        w.stamina           = get<bool>(j["world"], "stamina", w.stamina);
+        w.fireSpread        = get<bool>(j["world"], "fireSpread", w.fireSpread);
+        w.acoustics         = get<bool>(j["world"], "acoustics", w.acoustics);
+        w.impactSounds      = get<bool>(j["world"], "impactSounds", w.impactSounds);
+        w.airDensity        = std::clamp(get<float>(j["world"], "airDensity", w.airDensity), 0.0f, 10.0f);
+        if (auto gw = j["world"].find("globalWind"); gw != j["world"].end() && gw->is_array() && gw->size() == 3 &&
+            (*gw)[0].is_number() && (*gw)[1].is_number() && (*gw)[2].is_number())
+            w.globalWind = glm::clamp(glm::vec3((*gw)[0].get<float>(), (*gw)[1].get<float>(), (*gw)[2].get<float>()),
+                                      glm::vec3(-500.0f), glm::vec3(500.0f));
         // Saved before Roblox-strength gravity (0.7.10): scale its gravity up the
         // same way (the old default 22 becomes 98.1, a moon game stays as light
         // compared), and the fall damage speed with it, so the same height of fall
@@ -1648,7 +1671,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.variant = src->variant;     dst.materialVariant = src->materialVariant;
     dst.tags = src->tags;           dst.attributes = src->attributes;
     dst.lightType = src->lightType; dst.brightness = src->brightness;
-    dst.range = src->range;         dst.spotAngle = src->spotAngle;
+    dst.range = src->range;         dst.spotAngle = src->spotAngle;   dst.lightShadows = src->lightShadows;
     dst.soundId = src->soundId;     dst.volume = src->volume; dst.pitch = src->pitch;
     dst.looped = src->looped;       dst.autoplay = src->autoplay;
     dst.soundGroup = src->soundGroup; dst.soundFx = src->soundFx;

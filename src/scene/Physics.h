@@ -108,6 +108,14 @@ public:
     // constraints (ropes, rods, springs, welds, hinges). Ids of parts that fell
     // out of the world are appended to `fallen`. See RigidBodies.cpp.
     void stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen);
+    // Breakable parts (Shatter.h) something hit harder than their BreakSpeed during the
+    // last stepParts: the part, where, and how fast. The host breaks them afterwards.
+    struct Smash { uint64_t id; glm::vec3 at; float speed; };
+    std::vector<Smash> smashes;
+    // Things that knocked into each other during the last stepParts (newly touching, at
+    // some speed): for the sound of the hit (Impacts.h). `b` 0 = the ground.
+    struct Knock { uint64_t a = 0, b = 0; glm::vec3 at{0.0f}; float speed = 0.0f, mass = 0.0f; };
+    std::vector<Knock> knocks;
     // Network ownership: when set, a loose part only moves in stepParts if this says
     // yes; the others hold still this step, like anchored parts. A joined player's
     // computer sets it to "only my car's parts"; the host to "not the parts a joined

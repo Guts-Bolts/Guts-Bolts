@@ -3,6 +3,7 @@
 #include "../../core/Settings.h"
 #include "../../core/KeyBinds.h"
 #include "../../game/GameGui.h"
+#include "../../game/ImagePublish.h"
 #include <stb_image_write.h>   // (its code is in renderer/Textures.cpp)
 #include <string>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
 #include "../../scene/Physics.h"
+#include "../../scripting/Shapecasts.h"
 #include "../../scene/EditMesh.h"
 #include "../../game/GameSession.h"
 #include "../../game/ClickDetectors.h"
@@ -574,6 +576,43 @@ void ViewportPanel::drawPhysicsView(const glm::mat4& view, const glm::mat4& proj
                  n->breakForce > 0.0f ? IM_COL32(120, 220, 90, 255) : IM_COL32(80, 220, 255, 255), 2.5f);
         });
     }
+    // Shapecasts from the last few seconds (workspace:Spherecast / Blockcast / Shapecast):
+    // where the shape started (cyan), how far it got (white), and where it hit (red, with
+    // the way the surface faces).
+    {
+        const double t = Shapecasts::now();
+        auto shape = [&](const Shapecasts::Shape& s, ImU32 col) {
+            if (!s.ball) {
+                OBB o = s.box;
+                o.half += glm::vec3(s.margin);
+                box(o, col, 1.4f);
+                return;
+            }
+            const float r = s.radius + s.margin;
+            for (int ring = 0; ring < 3; ++ring) {   // three circles, like a wire ball
+                glm::vec3 prev(0.0f);
+                for (int i = 0; i <= 24; ++i) {
+                    const float a = i * 6.2831853f / 24.0f;
+                    glm::vec3 d = ring == 0 ? glm::vec3(std::cos(a), std::sin(a), 0) : ring == 1 ? glm::vec3(std::cos(a), 0, std::sin(a))
+                                                                                                 : glm::vec3(0, std::cos(a), std::sin(a));
+                    const glm::vec3 p = s.box.center + d * r;
+                    if (i) line(prev, p, col, 1.2f);
+                    prev = p;
+                }
+            }
+        };
+        for (const Shapecasts::Drawn& d : Shapecasts::recent()) {
+            if (t - d.when > 3.0) continue;
+            shape(d.from, IM_COL32(80, 230, 255, 220));
+            shape(d.to, d.hit ? IM_COL32(255, 255, 255, 230) : IM_COL32(170, 170, 170, 160));
+            line(d.from.box.center, d.to.box.center, IM_COL32(80, 230, 255, 160), 1.0f);
+            if (d.hit) {
+                ImVec2 s;
+                if (screen(d.position, s)) dl->AddCircleFilled(s, 4.0f, IM_COL32(255, 60, 60, 255));
+                arrow(d.position, d.position + d.normal * 1.5f, IM_COL32(255, 60, 60, 220));
+            }
+        }
+    }
     // What the colours mean.
     const ImVec2 at(imgMin.x + 10, imgMin.y + 34);
     const char* legend = I18n::tr("Physics View: orange = loose part, grey = asleep, yellow = speed, red dots = touching,\n"
@@ -844,7 +883,9 @@ void ViewportPanel::render(float dt) {
                           (xray || (m_state->mode == StudioMode::Modeling && m_state->modeling.xray && !playing));
         m_renderer.setGridSpacing(m_state->snapEnabled && m_state->snapTranslate >= 0.25f ? m_state->snapTranslate : 1.0f);
         updateNavOverlay();
+        m_renderer.temporal = true;   // (this view's own renderer: the upscaler and bounce light can build on its frames)
         m_renderer.render(*m_scene, m_camera, m_fbo, m_state->showGrid && (!playing || m_session->runOnly()));
+        m_renderer.temporal = false;
         if (GameGui::needsBackdrop(*m_scene)) {   // UIBlur: the world behind the UI, blurred
             m_renderer.makeBackdrop(m_fbo);
             unsigned bd[SceneRenderer::kBackdropLevels];
@@ -966,6 +1007,7 @@ void ViewportPanel::render(float dt) {
             Hud::drawNameTags(dl, imgPos, imgMax, *m_scene, proj * view, m_camera.position());
             GameGui::draw(dl, imgPos, imgMax, *m_scene, &m_guiInput);
             GameGui::drawPrompts(dl);
+            ImagePublish::draw();
             {
                 std::vector<GameGui::Event> typed;   // a TextBox being typed in
                 GameGui::textInput(*m_scene, typed);

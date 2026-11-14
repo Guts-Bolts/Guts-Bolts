@@ -46,9 +46,15 @@ constexpr int kBundleMost = 12;                        // items in one bundle
 // A bundle's new body (made in Studio's Bundles window): rig part name ("Head", "Torso",
 // "Left Arm"...) -> {"v": x,y,z..., "f": corner lists, "uv"?, "smooth"?, "size": [x,y,z],
 // "pos": [x,y,z]}. Checks it and puts a tidy copy in `out`. "" if it's fine, or what's wrong.
+// A part can also carry bones (jiggly hair, a tail, a belly): "bones": [{name, parent (-1 =
+// the part, else an earlier bone), pos, rot, type "Normal"/"Jiggle", stiffness, damping,
+// gravity, length}], with "w" (each corner's [bone, weight, ...], at most 4 bones) or none
+// (then the wearer works the weights out), and "bend": true on an arm or leg = it bends
+// softly in the middle (an elbow / knee) instead of staying stiff.
 // (worker/server.js bundleBody has the same rules.)
 inline constexpr const char* kBodyParts[] = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"};
 constexpr int kBodyMostCorners = 20000;                // corners (and faces) in one body part
+constexpr int kBodyMostBones = 32;                     // bones in one body part
 std::string bundleBody(const nlohmann::json& body, nlohmann::json& out);
 std::string gearProblem(const std::string& data);      // "" if it's one Tool from Studio
 constexpr int kMostGear = 4;                           // gear equipped at once

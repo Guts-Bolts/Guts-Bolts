@@ -1,0 +1,35 @@
+/* G&B Academy (academy.js). Only uses app.css's colour tokens, so dark mode and themes keep working. */
+.product-academy .product-icon { background: #2a5bb8; }
+.academy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.academy-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; color: var(--text); background: var(--panel2);
+  border: 2px solid var(--line); text-decoration: none; min-width: 0; }
+.academy-card:hover { border-color: var(--gb-red, #d4202a); text-decoration: none; }
+.academy-card b { font-size: 15px; }
+.academy-studio { border-color: #2a5bb8; }
+.academy-tag { font-size: 11px; font-weight: bold; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.academy-draft { color: #b06a00; }
+.academy-sort { margin-left: 10px; font-size: 12px; }
+.academy-sort a.on { font-weight: bold; color: var(--text); text-decoration: none; }
+.academy-bar { display: block; height: 6px; background: var(--line); margin-top: 4px; }
+.academy-bar.big { height: 10px; max-width: 420px; }
+.academy-bar i { display: block; height: 100%; background: #2e9d4a; }
+.academy-course h1 { margin: 2px 0 4px; }
+.academy-summary { font-size: 15px; max-width: 720px; white-space: pre-wrap; }
+.academy-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.academy-lessons { margin: 6px 0; padding-left: 22px; line-height: 1.9; }
+.academy-lessons li.done a { color: var(--muted); }
+.academy-lessons li.on > a { font-weight: bold; color: var(--text); }
+.academy-tick { color: #2e9d4a; font-weight: bold; }
+.academy-lesson-page { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 12px; align-items: start; }
+.academy-side { margin: 0; font-size: 13px; }
+.academy-lesson { margin: 0; }
+.academy-lesson h1 { margin: 2px 0 10px; }
+.academy-text { font-size: 15px; line-height: 1.6; max-width: 760px; }
+.academy-text pre { overflow-x: auto; }
+.academy-options { gap: 14px; flex-wrap: wrap; }
+.academy-edit-lesson { background: var(--panel2); }
+.academy-edit-lesson textarea { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+@media (max-width: 700px) {
+  .academy-lesson-page { grid-template-columns: 1fr; }
+  .academy-side { order: 2; }
+}

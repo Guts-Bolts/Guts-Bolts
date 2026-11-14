@@ -7,6 +7,10 @@
 namespace UpdateChecker {
 
 enum class State { Idle, Checking, UpToDate, Available, Failed };
+// What's on offer: a normal release, a Nightly test build (only with Nightly on in
+// Settings, never installed without asking), or the stable version back after
+// turning Nightly off on a test build. See UpdateChannel.h.
+enum class Kind { Stable, Nightly, BackToStable };
 
 struct Info {
     State       state = State::Idle;
@@ -19,6 +23,10 @@ struct Info {
     // it didn't work (why, in plain words). Then the app doesn't try again by itself,
     // so it can't get stuck closing and reopening over and over.
     std::string lastTryFailed;
+    Kind        kind = Kind::Stable;
+    std::string buildId;                 // the offered nightly's short commit id ("abc1234")
+    std::string buildDate;               // and its date ("2026-11-13")
+    std::string offeredVersion;          // "0.8.0"
 };
 
 void start();                 // kick off a check (does nothing if one is running)
@@ -27,6 +35,12 @@ const char* currentVersion(); // e.g. "0.3.0 (a1b2c3d)"
 bool canUpdate();             // is there a download of the new version for this computer?
 bool launchUpdater(const char* relaunchApp);   // downloads it, puts it over this one, restarts
 std::string downloadPage();   // the website's Download section, for updating by hand
+const char* buildDate();      // the day this copy's code is from ("2026-11-13", or "")
+
+// Nightly test builds (Settings > Updates). Turning it on or off checks again.
+bool nightlyEnabled();
+void setNightly(bool on);
+bool runningNightly();        // is this copy a nightly test build? (known after a check)
 
 // The pieces below are only shared for tests (tests/UpdaterTests.cpp).
 enum class ScriptKind { PowerShell, Shell };

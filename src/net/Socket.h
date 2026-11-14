@@ -72,6 +72,7 @@ public:
         int         id;
         std::string method, path, body;
         std::string headers;   // lower-case, one per line
+        std::string rawHeaders;   // the same, as sent (header values can be case-sensitive)
     };
     ~HttpServer();
     bool open(int port, std::string& error);

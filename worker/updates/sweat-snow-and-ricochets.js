@@ -1,0 +1,22 @@
+export default {
+  id: 'sweat-snow-and-ricochets', name: 'Sweat, Snow and Ricochets', time: 1794349150, tag: 'Engine',
+  summary: 'The engine feels a lot more real: real recorded sounds, bodies that limp and get tired, bullets that drop and bounce, fire that spreads and footprints in the snow.',
+  items: [
+    'Real recorded sound effects (free CC0 recordings, credited in assets/sounds/real) instead of made-up ones: hits on metal, wood, glass, stone and flesh, breaking glass, footsteps, splashes, fire, panting and bullet whizzes. Each has a few takes, picked at random, so the same hit never sounds exactly the same twice',
+    'Footsteps are one sound per step, in time with your legs, and sound of what you walk on: wood, metal, stone, sand, snow, mud, or squelchy when you are wet',
+    'Loose things knocking into each other make the sound of what they are made of, louder the harder they hit, and breaking things shatter (workspace.ImpactSounds)',
+    'Sound knows the room: walls between you and a sound muffle it, rooms, halls and caves echo, and things racing past bend in pitch (workspace.Acoustics)',
+    'Injuries: a hurt leg limps and walks slower, a hurt arm or side is held. It heals over about a minute and a half (workspace.Injuries, Humanoid:GetInjury)',
+    'Stamina: running, jumping and swimming tire you out, so you slow down, jump lower and pant until you get your breath back. Off to start with: turn it on with workspace.Stamina',
+    'Faces blink now and then, and your head turns to look at people near you',
+    'Blood soaks further into clothes, and blunt hits and hard landings leave bruises that fade',
+    'workspace:FireBullet(origin, velocity): a real bullet that drops over long shots, drifts in the wind, goes through thin wood, glass and bodies, stops in metal and concrete, bounces off hard things it only glances, whizzes past your ears and leaves bullet holes',
+    'Fire spreads to wood, cloth, grass and plastic touching it, chars them black and burns them to pieces. Water puts it out and rain slows it. Off to start with: workspace.FireSpread',
+    'Footprints stay in snow, sand, mud and dirt, and wheels leave tyre tracks, plus black skid marks when they slide',
+    'Cars have tyre grip (they hold the road until pushed too hard, then drift) and suspension that soaks up bouncing: Grip and Suspension attributes on the VehicleSeat',
+    'Getting soaked: rain wets you when nothing is over your head, and wet bodies drip and leave damp footprints',
+    'Light rays: shafts of sunlight through gaps and haze (Lighting.LightRays)',
+    'Eyes adjust: walk into a dark place and it slowly gets easier to see, step into bright light and it dims (Lighting.AutoExposure). Night stays night',
+    'Motion blur when the camera moves fast (Lighting.MotionBlur, off to start with)',
+  ],
+};

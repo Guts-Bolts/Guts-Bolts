@@ -1,4 +1,5 @@
 #pragma once
+#include "Realism.h"
 #include <map>
 #include <algorithm>
 #include <cmath>
@@ -158,6 +159,15 @@ public:
     void kill(float force = 0.0f, const glm::vec3& impulse = glm::vec3(0.0f));
     // Damage with a direction (used by explosions); kills if health runs out.
     void hurt(float damage, float force, const glm::vec3& impulse);
+    // Damage at a real collision point (projectiles / melee): preserves the hit part,
+    // surface normal and incoming velocity for localized deformation and bleeding.
+    void hurtAt(SceneNode* hitPart, const glm::vec3& point, const glm::vec3& normal,
+                const glm::vec3& projectileVelocity, float damage, float force,
+                const glm::vec3& bodyImpulse);
+    // A dent where a hit landed (springs back with workspace.SoftTissue; true = it tore,
+    // and with a scene the tear's gore is made too).
+    static bool deformPartAtImpact(SceneNode* hitPart, const glm::vec3& point,
+                                   const glm::vec3& normal, const glm::vec3& projectileVelocity, Scene* scene = nullptr);
     bool isDead() const { return m_dead; }
     bool hasForceField() const;
     // player:LoadCharacter(): a fresh body at a spawn right now (dead or alive).
@@ -434,7 +444,27 @@ private:
     void      getUp();
     float     m_pendingForce = 0.0f;
     glm::vec3 m_pendingImpulse{0.0f};
+    struct PendingImpact { uint64_t partId = 0; glm::vec3 point{0.0f}, normal{0, 1, 0}, velocity{0.0f}; };
+    std::vector<PendingImpact> m_pendingImpacts;
     float     m_lastHealth = 100.0f;
     uint64_t  m_spawnFF = 0;          // the ForceField we gave on spawn
     float     m_spawnFFTime = 0.0f;
+
+    // Realism (Realism.h): hurt limbs, stamina, glancing about, footsteps one at a time.
+    Realism::Injuries m_injuries;
+    Realism::Stamina  m_stamina;
+    Realism::Gaze     m_gaze;
+    float     m_gazeTimer = 0.0f;
+    int       m_breathSound = 0;       // panting when worn out
+    int       m_stepCount = 0;         // footsteps so far this walk (one sound each)
+    float     m_dropTimer = 0.0f;      // wet: the next drip falling off you
+    bool      m_jumpedNow = false;
+    void      realismStep(float dt);
+    void      stepSound(const glm::vec3& feet);
+public:
+    const Realism::Injuries& injuries() const { return m_injuries; }
+    Realism::Injuries&       injuries() { return m_injuries; }
+    const Realism::Stamina&  stamina() const { return m_stamina; }
+    Realism::Stamina&        stamina() { return m_stamina; }
+    const Realism::Gaze&     gaze() const { return m_gaze; }
 };

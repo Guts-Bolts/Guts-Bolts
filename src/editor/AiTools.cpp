@@ -213,7 +213,7 @@ const std::vector<Tool>& tools() {
           "\"Brick\", \"Cobblestone\", \"Slate\", \"Granite\", \"Marble\", \"Sand\", \"Grass\", \"Fabric\"; Enum.Material.Neon "
           "works too), Name, Parent (an object or a service like \"StarterPack\"), Enabled, Brightness, Range, Text, "
           "Visible... object \"Lighting\" changes the Lighting service (ClockTime, Brightness, FogEnabled, FogDensity, "
-          "FogColor, Ambient, SunColor, GlobalShadows, Weather \"Clear\"/\"Rain\"/\"Snow\", WeatherIntensity 0-1). Setting a script's Source is passed on to edit_script.",
+          "FogColor, Ambient, SunColor, GlobalShadows, Weather \"Clear\"/\"Rain\"/\"Snow\"/\"Storm\"/\"Supercell\", WeatherIntensity 0-1, CloudType \"Auto\"/\"Cumulus\"/\"Stratus\"/\"Cumulonimbus\"/\"Supercell\", SevereWeather). Setting a script's Source is passed on to edit_script.",
           "\"Move/resize/recolour/rename X\", \"make it red/glow/see-through\", \"make it fall\" (Anchored false), "
           "\"make it solid / walk-through\" (CanCollide), \"put X inside Y\" (Parent).",
           "To create something new use insert_object. To change a script's code use edit_script. To change many objects "
@@ -624,20 +624,20 @@ const std::vector<Tool>& tools() {
                  {"currency", {{"type", "string"}}}, {"items", {{"type", "array"}, {"items", {{"type", "object"}}}}},
                  {"title", {{"type", "string"}}}}, {"system"})},
         {"set_atmosphere", "Set the time of day, sky mood, fog and weather", "GAME", false, false, true, Risk::Low,
-         {"Sets how the world looks in one call: a mood preset (day, morning, sunset, night, foggy, spooky, rainy, snowy, "
+         {"Sets how the world looks in one call: a mood preset (day, morning, sunset, night, foggy, spooky, rainy, stormy, snowy, "
           "space) and/or exact values for the clock, fog, colours and weather. Changes the Lighting settings, the same ones "
           "set_property \"Lighting\" changes.",
           "\"Make it night\", \"a spooky atmosphere\", \"sunset\", \"add fog\", \"make it rain / snow\", \"brighter\".",
           "For lamps and glowing things use insert_object PointLight / SpotLight inside parts, or material Neon.",
           "preset (optional, see above); clock_time (0-24); brightness; ambient [r, g, b]; sun_color; fog (true/false); "
-          "fog_density (0-1); fog_color; weather (Clear, Rain, Snow); weather_intensity (0-1). Values you give win over the preset's.",
+          "fog_density (0-1); fog_color; weather (Clear, Rain, Snow, Storm = thunderstorm with lightning, Supercell = a rotating storm that grows tornadoes); weather_intensity (0-1). Values you give win over the preset's.",
           "{lighting: every Lighting setting now}.", "None.", "Lighting changed (undoable outside a playtest).",
           "set_atmosphere -> screenshot.", "\"Make it a spooky night\" -> set_atmosphere {preset: \"spooky\"}."},
-         schema({{"preset", {{"type", "string"}, {"enum", {"day", "morning", "sunset", "night", "foggy", "spooky", "rainy", "snowy", "space"}}}},
+         schema({{"preset", {{"type", "string"}, {"enum", {"day", "morning", "sunset", "night", "foggy", "spooky", "rainy", "stormy", "snowy", "space"}}}},
                  {"clock_time", {{"type", "number"}, {"minimum", 0}, {"maximum", 24}}}, {"brightness", {{"type", "number"}}},
                  {"ambient", {{"type", {"array", "string"}}}}, {"sun_color", {{"type", {"array", "string"}}}},
                  {"fog", {{"type", "boolean"}}}, {"fog_density", {{"type", "number"}}}, {"fog_color", {{"type", {"array", "string"}}}},
-                 {"weather", {{"type", "string"}, {"enum", {"Clear", "Rain", "Snow"}}}},
+                 {"weather", {{"type", "string"}, {"enum", {"Clear", "Rain", "Snow", "Storm", "Supercell"}}}},
                  {"weather_intensity", {{"type", "number"}, {"minimum", 0}, {"maximum", 1}}}}, {})},
         {"physics_replay", "Record the physics, look at any moment, save physics tests", "DEBUG", false, false, false, Risk::Low,
          {"Studio's Physics Replay: runs only the physics (no scripts, no players) on a copy of the scene as it is now, "
@@ -700,6 +700,38 @@ const std::vector<Tool>& tools() {
           "playtest start -> get_output {run: \"latest\"}.", "\"What did the script print?\""},
          schema({{"lines", {{"type", "integer"}, {"minimum", 1}, {"maximum", 400}, {"description", "How many (default 40)"}}},
                  {"run", kRun}}, {})},
+        {"phone_check", "Check the game against a phone's limits", "DEBUG", true, false, true, Risk::None,
+         {"Counts what's in the game (parts, triangles, unanchored parts, lights, particle emitters, sounds, scripts) and "
+          "compares each with rough limits for a smooth game on a cheap phone, a mid-range phone or an old laptop. Each "
+          "check says ok, close or over, and what to do when it isn't ok.",
+          "\"Will it run on phones?\", \"why is it laggy on my phone?\", before publishing a big game.",
+          "It only counts: to feel it, the person can playtest with a phone's graphics (Test menu > Test like a phone).",
+          "device (optional: cheap_phone (default), mid_phone, old_laptop).",
+          "{device, about, over: how many checks are over, checks: [{what, count, limit, verdict, fix?}], note}.",
+          "None.", "Nothing changes.", "phone_check -> (fix the red ones) -> phone_check.", "\"Will my game run on a cheap phone?\""},
+         schema({{"device", {{"type", "string"}, {"enum", {"cheap_phone", "mid_phone", "old_laptop"}}}}}, {})},
+        {"make_animation", "Make an animation from words", "MODELING", false, false, false, Risk::Low,
+         {"Makes an Animation inside a rig (a character Model) from plain words like \"wave twice, then bow\" or "
+          "\"run in a loop\". It knows these motions: wave, point, cheer, clap, bow, nod, shake head, look (left / right / up / "
+          "down / around), jump, jumping jacks, crouch, sit, walk, run, march, punch, kick, spin, salute, shrug, idle, stretch, "
+          "flap, swim, climb, think, facepalm, hug, dab, dance (dance 2, dance 3), laugh. Words that change them: left / right / "
+          "both, once / twice / 3 times, slowly / quickly, small / big, loop / forever. Steps are split by \"then\", commas or "
+          "full stops. For a motion that isn't on the list, send your own `keyframes` instead.",
+          "\"make my NPC wave\", \"an animation where he bows\", \"a looping dance for the shopkeeper\", \"animate the rig doing "
+          "jumping jacks\".",
+          "To change one keyframe of an existing animation, use the Animation Editor (or set_property on its source). To play "
+          "it in the game, write a script: humanoid:LoadAnimation(anim):Play() (or Animator:LoadAnimation).",
+          "rig (required: the Model, or any part in it); prompt (the words), or keyframes ([{t: seconds, poses: {part name: "
+          "{rot: [x, y, z] degrees, pos?: [x, y, z] studs, ease?: Linear/Constant/Cubic/Elastic/Bounce}}}], part names from the "
+          "rig, classic body: arms and legs hang down, rot X -90 points one forward, Head X + looks down, Torso pos Y + lifts the "
+          "body); name (optional); loop (optional true/false).",
+          "{object_id, name, length (s), loop, keyframes, steps: [{text, motion, times, start, end}], parts, not_understood?, "
+          "missing_parts?}. With no motion found: NO_MOTION and the list of motions.",
+          "The rig exists.", "A new Animation object is inside the rig. It does not play until a script plays it.",
+          "get_game_tree -> make_animation -> create_script (LoadAnimation + Play) -> playtest.",
+          "\"Make the guard salute, then march in place\""},
+         schema({{"rig", {{"type", "string"}}}, {"prompt", {{"type", "string"}}}, {"name", {{"type", "string"}}},
+                 {"loop", {{"type", "boolean"}}}, {"keyframes", {{"type", "array"}, {"items", {{"type", "object"}}}}}}, {"rig"})},
         {"get_errors", "Read errors and warnings", "DEBUG", true, false, true, Risk::None,
          {"Only the errors (and warnings) from the Output window: script errors with their line numbers, failed loads, "
           "warn() calls.",
@@ -948,6 +980,35 @@ const std::vector<Tool>& tools() {
                  {"name", {{"type", "string"}}}, {"description", {{"type", "string"}}},
                  {"mode", {{"type", "string"}, {"enum", {"auto", "new", "update"}}}}}, {})},
 
+        // ------------------------------------------------------------- PLATFORM
+        {"manage_game", "Look after the published game on Guts&Bolts", "PLATFORM", false, false, false, Risk::High,
+         {"Looks after the game's page on the Guts&Bolts website, as the account Studio is signed in with: read its info, "
+          "stats (plays, sales, Bolts, the last 30 days), passes, developer products, running servers and update notes; and "
+          "ask to change its settings (name, description, access, genres, max players, gear, comments, private server price), "
+          "make or change a game pass or developer product (and its price), or post an update note. Reading happens straight "
+          "away. Every CHANGE waits until the person presses Allow in Studio (a window shows exactly what you asked); you "
+          "can't approve it yourself. The server's own rules apply (only the game's creator; selling needs Verified).",
+          "\"How is my game doing?\" \"Make a VIP pass for 100 Bolts.\" \"Change the description.\" \"Set max players to 20.\" "
+          "\"Tell players about the update.\" \"What passes does it have?\"",
+          "Not for changing the game itself (objects, scripts): those are the other tools. Not for publishing a new version: "
+          "publish_game. Don't ask for changes the person didn't want, and never to make money for anyone else.",
+          "action (info, stats, passes, products, servers, updates; or settings, post_update, make_pass, make_product, "
+          "edit_pass; or result); game (optional: id or number, default the open game's published id); fields (for changes: "
+          "settings {name, description, access public|friends|private, genres [up to 3], maxPlayers, allowGear, comments, "
+          "privatePrice}; post_update {title, text}; make_pass / make_product {name, description, price}; edit_pass {name, "
+          "description, price, offsale}); pass (edit_pass: the pass or product id from passes / products); job (result).",
+          "{job, state}. state: sending -> done (with result) or failed (with error); a change starts as waiting_for_person, "
+          "then done, failed or denied. Get it with {action: \"result\", job}.",
+          "Signed in (not a guest). The game is published (except stats) and the account made it.",
+          "Read actions change nothing. Allowed changes are live on the website at once; Undo can't take them back.",
+          "manage_game {action: info} -> manage_game {action: result, job} -> (tell the person) -> manage_game {action: "
+          "make_pass, fields} -> tell the person to press Allow -> manage_game {action: result, job}.",
+          "\"How many people played my game this week?\" \"Add a 50 Bolts double-jump pass.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"info", "stats", "passes", "products", "servers", "updates", "settings",
+                                                          "post_update", "make_pass", "make_product", "edit_pass", "result"}}}},
+                 {"game", {{"type", "string"}}}, {"pass", {{"type", "string"}}}, {"job", {{"type", "string"}}},
+                 {"fields", {{"type", "object"}}}}, {"action"})},
+
         // -------------------------------------------------------------- HISTORY
         {"undo", "Undo the last change", "HISTORY", false, false, false, Risk::Low,
          {"Undoes the last change to the game (like Ctrl+Z): a tool call, a script edit, a run_lua build...",
@@ -975,6 +1036,7 @@ json workflowOf(const std::string& name) {
         {"select", {{"find_objects"}, {}}},
         {"find_and_change", {{"find_objects"}, {"find_and_change", "get_object"}}},
         {"create_script", {{"get_game_tree"}, {"diagnose_object", "playtest"}}},
+        {"make_animation", {{"get_game_tree"}, {"create_script", "playtest"}}},
         {"read_script", {{"find_objects"}, {"edit_script"}}},
         {"visual_script", {{"get_game_tree"}, {"playtest", "get_output"}}},
         {"generate_level", {{"get_game_tree"}, {"playtest", "screenshot"}}},
@@ -1010,6 +1072,7 @@ json workflowOf(const std::string& name) {
         {"get_runtime_state", {{"playtest"}, {"get_object", "playtest"}}},
         {"checkpoint", {{}, {"playtest", "checkpoint"}}},
         {"publish_game", {{"validate_scene"}, {"publish_game"}}},
+        {"manage_game", {{"publish_game"}, {"manage_game"}}},
     };
     auto it = flows.find(name);
     if (it == flows.end()) return {{"before", json::array()}, {"after", json::array()}};
@@ -1070,7 +1133,7 @@ Every Output line says which playtest (run) it came from; 0 means outside a play
 - Explosions: the Explosion object / Explode(). DON'T push every nearby part by hand.
 - Emotes: humanoid:PlayEmote("wave") plays a built-in keyframed emote everyone sees (dance, dance2, dance3, wave, point, cheer, laugh; moving or jumping stops it). Players also have the B emote menu; a game turns it off with game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false). DON'T animate a character by moving its arms in a loop.
 - Player input ("press E to ...", a sprint key, a mobile button): ContextActionService:BindAction(name, fn, createTouchButton, Enum.KeyCode.E, ...) in a LocalScript; fn(name, state, input) returns Enum.ContextActionResult.Sink (keep it: the game's own controls ignore it) or Pass. createTouchButton = true adds a phone button (SetTitle / SetImage).
-- Custom materials ("make a brick / rusty metal / glowing lava material"): insert_object MaterialVariant (it goes in MaterialService), set its BaseMaterial, ColorMap / NormalMap / RoughnessMap / MetalnessMap (pictures like a Decal's), StudsPerTile, and Roughness / Metalness / Glow for what has no picture. A part shows it when its Material is the BaseMaterial and its MaterialVariant is the variant's name.
+- Custom materials ("make a brick / rusty metal / glowing lava material"): insert_object MaterialVariant (it goes in MaterialService), set its BaseMaterial, ColorMap / NormalMap / RoughnessMap / MetalnessMap (pictures like a Decal's; or one packed OrmMap: red occlusion, green roughness, blue metalness), StudsPerTile, and Roughness / Metalness / Glow for what has no picture. A part shows it when its Material is the BaseMaterial and its MaterialVariant is the variant's name.
 - Only write scripts for behaviour the built-in objects and properties can't give, or when the person asks for code.
 
 ## Editor vs playtest
@@ -1210,7 +1273,7 @@ Only runs during a playtest (or a published game). Parts are ANCHORED by default
 COLLISION
 CanCollide decides whether things bump into a part. A character touching a part fires Touched even when its CanCollide is off (coins, checkpoints). Water parts and FluidVolumes are swum through.
 Collision groups (PhysicsService) decide which parts bump into which: every part has CollisionGroup ("Default" to start with); PhysicsService:RegisterCollisionGroup("Players") adds a group (32 at most, Default included), :CollisionGroupSetCollidable("Players", "Players", false) makes two groups pass through each other, :CollisionGroupsAreCollidable(a, b), :IsCollisionGroupRegistered, :GetRegisteredCollisionGroups, :RenameCollisionGroup, :UnregisterCollisionGroup. Unknown group names in SetCollidable are errors; a part in an unregistered group acts as Default. A character is in its HumanoidRootPart's group (set every BasePart of the character to be safe); the terrain is Default. Loose parts, character movement and RaycastParams.CollisionGroup all honour it; Touched still fires. "Players walk through each other" -> a Players group not collidable with itself. "A door only the red team can pass" -> RedDoor and RedTeam groups not collidable, the door part in RedDoor, red characters' parts in RedTeam. Groups are set up in Studio too (MODEL > Collision Groups) and saved with the place.
-Finding parts in a space (spatial queries): workspace:GetPartsInPart(part [, params]) lists every part that really overlaps that part (its true shape; the part itself is left out), workspace:GetPartBoundsInBox(cframe, size [, params]) and :GetPartBoundsInRadius(position, radius [, params]) are quicker and count each part as the box around it. params = OverlapParams.new() with FilterDescendantsInstances, FilterType (Enum.RaycastFilterType.Exclude / Include), MaxParts (0 = no limit), CollisionGroup and RespectCanCollide. They return a plain list of parts, so a "damage zone" is: for _, p in workspace:GetPartsInPart(zone) do local h = p.Parent:FindFirstChild("Humanoid") ... end (one character gives several parts: remember who was hit). Hidden storage folders are not searched.
+Finding parts in a space (spatial queries): workspace:GetPartsInPart(part [, params]) lists every part that really overlaps that part (its true shape; the part itself is left out), workspace:GetPartBoundsInBox(cframe, size [, params]) and :GetPartBoundsInRadius(position, radius [, params]) are quicker and count each part as the box around it. params = OverlapParams.new() with FilterDescendantsInstances, FilterType (Enum.RaycastFilterType.Exclude / Include), MaxParts (0 = no limit), CollisionGroup and RespectCanCollide. They return a plain list of parts, so a "damage zone" is: for _, p in workspace:GetPartsInPart(zone) do local h = p.Parent:FindFirstChild("Humanoid") ... end (one character gives several parts: remember who was hit). Hidden storage folders are not searched. Shapecasts (slide a shape and find the first thing it bumps into, better than a ray for thick bullets, cars and falling crates): workspace:Spherecast(position, radius, direction [, params]), workspace:Blockcast(cframe, size, direction [, params]) and workspace:Shapecast(part, direction [, params [, {CFrame = ..., Size = ...}]]) return a RaycastResult (Instance, Position = where they touch, Normal, Distance = how far the shape got) or nil. params is RaycastParams.new() plus Margin (studs fatter all round, rounded) and SizeGradient (studs it grows each side per stud moved; below 0 shrinks). Parts the shape starts inside don't count. Drawing in games: local img = game:GetService("AssetService"):CreateEditableImage({Size = Vector2.new(256, 256)}) gives a see-through picture (each side up to 1024) to paint with img:DrawRectangle(position, size, color, transparency), img:DrawCircle(center, radius, color, transparency), img:DrawLine(from, to, color, transparency, nil, thickness), img:SetPixel / GetPixel / ReadPixels / WritePixels / Clear; positions are Vector2 pixels from the top left, transparency 0 = solid. Show it with imageLabel.Image = img.ContentId (or a Decal's Texture). To let the player keep their drawing, a LocalScript calls AssetService:PromptPublishImageAsync(Players.LocalPlayer, img, {Name = "My drawing"}): it asks them, then puts it in their inventory as a free decal and returns "Published", the new id, a message (or "Cancelled" / "Failed").
 
 CLICKING
 A ClickDetector inside a part (or a model: any part in it) lets players click it: buttons, levers, "click to buy" signs. Its events MouseClick, RightMouseClick, MouseHoverEnter and MouseHoverLeave pass the player; server Scripts get them in online games too, and the pointer turns into a hand over it. MaxActivationDistance is in units (default 16 = Roblox's 32 studs); CursorIcon is an optional pointer picture. Example: part.ClickDetector.MouseClick:Connect(function(player) ... end).
@@ -1225,7 +1288,7 @@ EXPLOSIONS
 Instance.new("Explosion") with Position, BlastRadius, BlastPressure (500000 = normal) parented to workspace, or Explode(position, radius, power) / Effects.Explosion(...). They push unanchored parts, hurt characters, can break joints and (Destroy = true) rip anchored parts loose. Use them; don't push parts by hand.
 
 GUNS (and other weapons that shoot)
-A good gun is a Tool with a Handle (the grip; the barrel points along the Handle's -Z, which is forward when held), a small see-through part "Muzzle" at the barrel's tip, a RemoteEvent "Fire", a LocalScript and a Script. The LocalScript: on tool.Activated, loop while the button is held (tool.Deactivated stops it), sending fire:FireServer("shoot", player:GetMouse().Hit.Position) every shot; R (UserInputService.InputBegan) sends "reload"; fire.OnClientEvent updates an ammo TextLabel in a ScreenGui in player.PlayerGui. The Script: fire.OnServerEvent:Connect(function(player, action, target)): check the tool is held by that player (Players:GetPlayerFromCharacter(tool.Parent) == player), the fire delay (time()), ammo and typeof(target) == "Vector3"; then workspace:Raycast(muzzle.Position, (target - muzzle.Position).Unit * range, params) with params.FilterDescendantsInstances = {character, tracerFolder}; on a hit find result.Instance:FindFirstAncestorOfClass("Model"), its Humanoid, and TakeDamage (double for "Head"; skip teammates: compare player.Team); draw a thin Neon tracer part (CFrame.lookAt(from, to) * CFrame.new(0, 0, -length / 2), removed with Debris:AddItem(beam, 0.06)), Effects.Sparks(hitPos, 6) and Sounds.Play("gunshot", from) ("reload" is a sound too). Damage must happen in the Script: a LocalScript's damage only happens on that player's screen, and a Script can't see a joined player's mouse. Raycasts are instant hits, so they never miss; a physical bullet (an unanchored part with Velocity and Touched) also works but is slower and less accurate. The ready-made "Blaster" (insert_object kind "Blaster") is a complete gun to use or copy.
+A good gun is a Tool with a Handle (the grip; the barrel points along the Handle's -Z, which is forward when held), a small see-through part "Muzzle" at the barrel's tip, a RemoteEvent "Fire", a LocalScript and a Script. The LocalScript: on tool.Activated, loop while the button is held (tool.Deactivated stops it), sending fire:FireServer("shoot", player:GetMouse().Hit.Position) every shot; R (UserInputService.InputBegan) sends "reload"; fire.OnClientEvent updates an ammo TextLabel in a ScreenGui in player.PlayerGui. The Script: fire.OnServerEvent:Connect(function(player, action, target)): check the tool is held by that player (Players:GetPlayerFromCharacter(tool.Parent) == player), the fire delay (time()), ammo and typeof(target) == "Vector3"; then workspace:Raycast(muzzle.Position, (target - muzzle.Position).Unit * range, params) with params.FilterDescendantsInstances = {character, tracerFolder}; on a hit find result.Instance:FindFirstAncestorOfClass("Model"), its Humanoid, and call humanoid:TakeDamage(damage, result, aim.Unit * RANGE) so the engine attaches the wound and deformation to the actual hit point (double for "Head"; skip teammates: compare player.Team); draw a thin Neon tracer part (CFrame.lookAt(from, to) * CFrame.new(0, 0, -length / 2), removed with Debris:AddItem(beam, 0.06)), Effects.Sparks(hitPos, 6) and Sounds.Play("gunshot", from) ("reload" is a sound too). Damage must happen in the Script: a LocalScript's damage only happens on that player's screen, and a Script can't see a joined player's mouse. Raycasts are instant hits, so they never miss; a physical bullet (an unanchored part with Velocity and Touched) also works but is slower and less accurate. The ready-made "Blaster" (insert_object kind "Blaster") is a complete gun to use or copy.
 
 RUNTIME vs EDITOR
 Editor state is the saved game. Runtime state is the game while it runs (playtest): scripts run, physics moves things, characters spawn. Changes during a playtest are thrown away when it stops. get_object says which one you're looking at ("state_source") and adds velocity while playing.

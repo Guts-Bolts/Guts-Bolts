@@ -73,7 +73,18 @@ For pre-release testing, the installer also accepts a local package and its matc
 
 Use the ZIP and sidecar from the successful dedicated-server Windows build artifact. The local mode performs the same SHA-256 verification, archive-path checks, package-layout checks, installation, and scheduled-task setup. It does not establish publisher authenticity by itself: obtain both files from the trusted Guts & Bolts GitHub Actions artifact for the intended commit. Run the installer from the normal interactive Windows account, not from an elevated shell or a LocalSystem service.
 
-## Windows PC setup
+**When the USB installer works:** it downloads the server kit from a GitHub release. The kit is only added to releases made after this change is merged, so the first release that includes it (0.8.0) must be published before the normal (online) mode works. Until then, use the local `-PackagePath` mode above with the `dedicated-server-windows` artifact from a successful `main` build.
+
+## The game server's account must be staff
+
+`GutsAndBoltsGameServer.exe` signs in with the Guts & Bolts account saved on that Windows user (`%APPDATA%\GutsAndBolts\account.key`, the same one the Player uses). Only a staff account may run games. If the account is not staff, the server prints its account ID, says to give it the Staff badge, and exits; the agent then reports it as a crash.
+
+- Easiest: sign in to the official account in the Player on that PC and Windows user before running the installer.
+- Or: run `GutsAndBoltsGameServer.exe --id` in the install folder (`%LOCALAPPDATA%\GutsAndBolts\DedicatedServer`), then in the Player open **Staff**, search the first 12 characters of that ID and press **Make Staff**.
+
+## Windows PC setup without the USB installer (manual)
+
+Skip this section if you used the USB installer: it already installs the agent and a startup task.
 
 1. Keep the PC powered on and connected to the internet. Disable sleep while it is expected to host the game server.
 2. Download `tools/Remote Server Agent.ps1` from the repository after the change is merged.
@@ -89,7 +100,7 @@ Use the ZIP and sidecar from the successful dedicated-server Windows build artif
 6. On the phone, sign in to the official Guts & Bolts account and open `https://gutsandbolts.net/server/`. Paste the code into Device pairing.
 7. The agent should report that pairing succeeded. It will then reconnect automatically if the network drops.
 
-The first release manages only the process launched and recorded by this agent. If the game server was started manually or by another manager, stop it yourself first; the agent deliberately refuses to take ownership of it. The agent does not install itself as a Windows service or scheduled task in this version, so keep its PowerShell process running while remote access is needed.
+The first release manages only the process launched and recorded by this agent. If the game server was started manually or by another manager, stop it yourself first; the agent deliberately refuses to take ownership of it. When started by hand like this, the agent does not add a startup task, so keep its PowerShell window open while remote access is needed. (The USB installer adds a startup task for you.)
 
 ## Phone setup
 

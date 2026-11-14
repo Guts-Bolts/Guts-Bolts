@@ -6,15 +6,18 @@
 #include <miniaudio.h>
 
 #include "Audio.h"
+#include <atomic>
 #include "Voice.h"
 #include "SoundJump.h"      // generated from assets/sounds
 #include "SoundRespawn.h"
 #include "SoundSpawn.h"
 #include "SoundFootsteps.h"
+#include "RealSounds.h"     // recorded effects from assets/sounds/real (CC0)
 #include "Paths.h"
 #include "Log.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -157,6 +160,7 @@ struct FxNode {
     std::unique_ptr<SoundFx::Chain> chain;
     std::vector<SoundFx::Settings>  settings;
     bool         ready = false;
+    std::atomic<float> level{0.0f};           // how loud the last bit that went through was (RMS, 0..1)
 };
 
 void fxProcess(ma_node* node, const float** in, ma_uint32* inCount, float** out, ma_uint32* outCount) {
@@ -168,6 +172,11 @@ void fxProcess(ma_node* node, const float** in, ma_uint32* inCount, float** out,
     // Never wait in the mixer: if the settings are being changed right now, pass this bit through.
     std::unique_lock<std::mutex> hold(n->lock, std::try_to_lock);
     if (hold.owns_lock() && n->chain) n->chain->process(out[0], frames);
+    // The loudness meter (Sound.PlaybackLoudness, lip sync).
+    double sum = 0.0;
+    const ma_uint32 count = frames * ch;
+    for (ma_uint32 i = 0; i < count; ++i) sum += (double)out[0][i] * out[0][i];
+    n->level.store(count ? (float)std::sqrt(sum / count) : 0.0f, std::memory_order_relaxed);
 }
 
 // Keeps going with nothing attached, so an echo or reverb can ring on after its sounds stop.
@@ -181,6 +190,10 @@ struct Instance {
     std::unique_ptr<FxNode> fx;               // its own effects (null = none yet)
     uint64_t          route = 0;              // the SoundGroup bus it goes to (0 = straight out)
     float             tail = 0.0f;            // seconds its effects ring on after it ends
+    bool              positional = false;     // somewhere in the world (the room's echo is on it)
+    float             volume = 1.0f;          // as asked (before walls muffle it)
+    float             occluded = 0.0f;        // 0..1: how much is between it and the listener
+    std::vector<SoundFx::Settings> userFx;    // its own effects (the muffling goes after them)
     double            endedAt = -1.0;
 };
 
@@ -212,6 +225,9 @@ Samples decode(const unsigned char* data, size_t size) {
     if (peak > 0.01f) for (float& v : out) v *= 0.8f / peak;
     return out;
 }
+// Real recordings come in takes ("hit_metal_1", "hit_metal_2"...): asking for "hit_metal"
+// picks one of them at random, so the same hit doesn't sound the same every time.
+std::map<std::string, std::vector<std::string>> g_takes;
 int                                     g_next = 1;
 float                                   g_masterVolume = 1.0f;
 bool                                    g_suspended = false;
@@ -242,6 +258,10 @@ void setChain(FxNode& n, const std::vector<SoundFx::Settings>& fx) {
     n.settings = fx;
 }
 
+// The room you're in (Acoustics.h): one reverb every sound in the world goes through.
+std::unique_ptr<FxNode> g_room;
+float g_roomWet = 0.0f;
+
 // Where something's sound goes next: a SoundGroup's bus, or straight out.
 ma_node* target(uint64_t bus) {
     auto it = g_buses.find(bus);
@@ -250,6 +270,7 @@ ma_node* target(uint64_t bus) {
 
 void reroute(Instance& in) {
     ma_node* to = target(in.route);
+    if (in.route == 0 && in.positional && g_room && g_room->ready && g_roomWet > 0.0f) to = (ma_node*)&g_room->base;
     if (in.fx && in.fx->ready) {
         ma_node_attach_output_bus(&in.sound, 0, &in.fx->base, 0);
         ma_node_attach_output_bus(&in.fx->base, 0, to, 0);
@@ -269,10 +290,31 @@ Instance* find(int handle) {
 
 } // namespace
 
+std::string takeBase(const std::string& name) {
+    const size_t u = name.rfind('_');
+    if (u == std::string::npos || u + 1 >= name.size()) return name;
+    for (size_t i = u + 1; i < name.size(); ++i) if (!std::isdigit((unsigned char)name[i])) return name;
+    return name.substr(0, u);
+}
+
+std::vector<std::string> realSoundNames() {
+    std::vector<std::string> out;
+    for (const RealSound& r : kRealSounds) {
+        const std::string b = takeBase(r.name);
+        if (std::find(out.begin(), out.end(), b) == out.end()) out.push_back(b);
+    }
+    return out;
+}
+
 const std::vector<std::string>& builtinNames() {
     static const std::vector<std::string> names = {
         "jump", "coin", "oof", "explosion", "splat", "click", "hit", "win", "boing", "spawn", "respawn", "footsteps", "splash", "gunshot", "reload"};
-    return names;
+    static const std::vector<std::string> all = [] {
+        std::vector<std::string> v = names;
+        for (const std::string& r : realSoundNames()) if (std::find(v.begin(), v.end(), r) == v.end()) v.push_back(r);
+        return v;
+    }();
+    return all;
 }
 
 void init() {
@@ -290,6 +332,12 @@ void init() {
                               Recorded{"spawn", kSoundSpawn, kSoundSpawnSize},
                               Recorded{"footsteps", kSoundFootsteps, kSoundFootstepsSize}})
         if (Samples s = decode(r.data, r.size); !s.empty()) g_builtin[r.name] = std::move(s);
+    for (const RealSound& r : kRealSounds) {
+        Samples s = decode(r.data, r.size);
+        if (s.empty()) continue;
+        g_builtin[r.name] = std::move(s);
+        g_takes[takeBase(r.name)].push_back(r.name);
+    }
     g_ready = true;
 }
 
@@ -329,7 +377,10 @@ int play(const std::string& soundId, float volume, float pitch, bool loop, const
     in->handle = g_next++;
     ma_uint32 flags = position ? 0 : MA_SOUND_FLAG_NO_SPATIALIZATION;
 
-    auto builtin = g_builtin.find(soundId);
+    auto takes = g_takes.find(soundId);
+    auto builtin = takes != g_takes.end() && !takes->second.empty()
+                 ? g_builtin.find(takes->second[(size_t)g_next % takes->second.size()])
+                 : g_builtin.find(soundId);
     if (builtin != g_builtin.end()) {
         const Samples& s = builtin->second;
         ma_audio_buffer_config bc = ma_audio_buffer_config_init(ma_format_f32, 1, s.size(), s.data(), nullptr);
@@ -360,6 +411,8 @@ int play(const std::string& soundId, float volume, float pitch, bool loop, const
     }
 
     ma_sound_set_volume(&in->sound, std::max(0.0f, volume));
+    in->volume = std::max(0.0f, volume);
+    in->positional = position != nullptr;
     ma_sound_set_pitch(&in->sound, std::max(0.05f, pitch));
     ma_sound_set_looping(&in->sound, loop);
     if (position) {
@@ -390,19 +443,102 @@ bool isPlaying(int handle) {
     return in && ma_sound_is_playing(&in->sound);
 }
 
+namespace {
+// Its own effects, then (behind a wall) the muffling: the highs go first, like real walls.
+void applyChain(Instance& in) {
+    std::vector<SoundFx::Settings> fx = in.userFx;
+    if (in.occluded > 0.02f) {
+        SoundFx::Settings eq = SoundFx::defaults(SoundFx::Type::Equalizer, ~0ull - 7);
+        eq.v[0] = -26.0f * in.occluded;   // HighGain
+        eq.v[2] = -9.0f * in.occluded;    // MidGain
+        fx.push_back(eq);
+    }
+    if (fx.empty() && !in.fx) return;
+    if (!in.fx) {
+        in.fx = std::make_unique<FxNode>();
+        if (!makeFxNode(*in.fx)) { in.fx.reset(); return; }
+        setChain(*in.fx, fx);
+        reroute(in);
+    } else {
+        setChain(*in.fx, fx);
+    }
+    in.tail = SoundFx::tailSeconds(in.userFx);
+}
+} // namespace
+
 void setEffects(int handle, const std::vector<SoundFx::Settings>& fx) {
     Instance* in = find(handle);
     if (!in) return;
-    if (fx.empty() && !in->fx) return;
-    if (!in->fx) {
-        in->fx = std::make_unique<FxNode>();
-        if (!makeFxNode(*in->fx)) { in->fx.reset(); return; }
-        setChain(*in->fx, fx);
-        reroute(*in);
-    } else {
-        setChain(*in->fx, fx);
+    in->userFx = fx;
+    applyChain(*in);
+}
+
+void setOcclusion(int handle, float amount) {
+    Instance* in = find(handle);
+    if (!in) return;
+    amount = std::clamp(amount, 0.0f, 1.0f);
+    if (std::abs(amount - in->occluded) < 0.03f && !(amount == 0.0f && in->occluded > 0.0f)) return;
+    in->occluded = amount;
+    ma_sound_set_volume(&in->sound, in->volume * (1.0f - 0.55f * amount));
+    applyChain(*in);
+}
+
+float occlusion(int handle) {
+    Instance* in = find(handle);
+    return in ? in->occluded : 0.0f;
+}
+
+void setVelocity(int handle, const glm::vec3& v) {
+    if (Instance* in = find(handle)) ma_sound_set_velocity(&in->sound, v.x, v.y, v.z);
+}
+
+void setListenerVelocity(const glm::vec3& v) {
+    if (g_ready) ma_engine_listener_set_velocity(&g_engine, 0, v.x, v.y, v.z);
+}
+
+void setRoom(float decaySeconds, float wet) {
+    if (!g_ready) return;
+    wet = std::clamp(wet, 0.0f, 1.0f);
+    const bool wasOn = g_room && g_roomWet > 0.0f;
+    if (!g_room && wet > 0.0f) {
+        g_room = std::make_unique<FxNode>();
+        if (!makeFxNode(*g_room)) { g_room.reset(); return; }
+        ma_node_attach_output_bus(&g_room->base, 0, ma_engine_get_endpoint(&g_engine), 0);
     }
-    in->tail = SoundFx::tailSeconds(fx);
+    if (g_room) {
+        SoundFx::Settings r = SoundFx::defaults(SoundFx::Type::Reverb, ~0ull - 8);
+        r.v[0] = std::clamp(decaySeconds, 0.1f, 8.0f);   // DecayTime
+        r.v[3] = 0.0f;                                    // DryLevel: the sound itself, as loud as ever
+        r.v[4] = wet > 0.0f ? -30.0f + 24.0f * wet : -80.0f;   // WetLevel: -30 dB (hardly) .. -6 dB (a cathedral)
+        setChain(*g_room, {r});
+    }
+    g_roomWet = wet;
+    if (wasOn != (wet > 0.0f))
+        for (auto& [h, in] : g_playing) if (in->positional) reroute(*in);
+}
+
+float roomWet() { return g_roomWet; }
+
+bool hasTakes(const std::string& name) { return g_takes.count(name) > 0; }
+
+float loudness(int handle) {
+    Instance* in = find(handle);
+    if (!in || !ma_sound_is_playing(&in->sound)) return 0.0f;
+    if (!in->fx) {
+        // Nothing measures it yet: put an empty effects node after it (it just listens).
+        in->fx = std::make_unique<FxNode>();
+        if (!makeFxNode(*in->fx)) { in->fx.reset(); return 0.0f; }
+        reroute(*in);
+        return 0.0f;
+    }
+    return in->fx->level.load(std::memory_order_relaxed);
+}
+
+float loudnessOf(const float* samples, size_t count) {
+    if (!samples || !count) return 0.0f;
+    double sum = 0.0;
+    for (size_t i = 0; i < count; ++i) sum += (double)samples[i] * samples[i];
+    return (float)std::sqrt(sum / (double)count);
 }
 
 void setRoute(int handle, uint64_t bus) {
@@ -449,7 +585,12 @@ void keepBuses(const std::set<uint64_t>& used) {
     }
 }
 
-void setVolume(int handle, float v) { if (Instance* in = find(handle)) ma_sound_set_volume(&in->sound, std::max(0.0f, v)); }
+void setVolume(int handle, float v) {
+    if (Instance* in = find(handle)) {
+        in->volume = std::max(0.0f, v);
+        ma_sound_set_volume(&in->sound, in->volume * (1.0f - 0.55f * in->occluded));
+    }
+}
 void seek(int handle, double seconds) {
     Instance* in = find(handle);
     if (!in) return;
@@ -475,7 +616,7 @@ double captionClock() {
 std::string builtinCaption(const std::string& id) {
     static const std::pair<const char*, const char*> words[] = {
         {"jump", "Jump"}, {"coin", "Coin"}, {"oof", "Oof!"}, {"explosion", "Explosion"}, {"splat", "Splat"}, {"hit", "Hit"},
-        {"win", "Win!"}, {"boing", "Boing"}, {"spawn", "Spawn"}, {"respawn", "Respawn"}, {"splash", "Splash"}};
+        {"win", "Win!"}, {"boing", "Boing"}, {"spawn", "Spawn"}, {"respawn", "Respawn"}, {"splash", "Splash"}, {"thunder", "Thunder"}, {"storm_wind", "Roaring wind"}, {"quake_rumble", "Ground rumbling"}};
     for (const auto& [k, w] : words) if (id == k) return w;
     return "";
 }
@@ -503,6 +644,8 @@ std::vector<Caption> captions(double keepSeconds) {
     for (const Caption& c : g_captions) if (now - c.at <= keepSeconds) out.push_back(c);
     return out;
 }
+
+glm::vec3 listenerPosition() { return g_listenerAt; }
 
 void setListener(const glm::vec3& p, const glm::vec3& f) {
     g_listenerAt = p;

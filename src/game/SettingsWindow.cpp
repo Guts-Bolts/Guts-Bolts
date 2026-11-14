@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "SettingsWindow.h"
 #include "../core/Settings.h"
+#include "../renderer/GpuCaps.h"
 #include "../core/KeyBinds.h"
 #include "../core/UpdateChecker.h"
 #include "../core/I18n.h"
@@ -115,14 +116,38 @@ void draw(bool* open) {
         if (q != GraphicsSettings::Custom) s.applyPreset(q); else s.quality = q;
     }
     help("Auto turns the graphics down by itself when a game gets laggy, and back up when it can. "
-         "Very Low and Low are for slow computers; High and Ultra look best.");
+         "Very Low and Low are for slow computers; High and Epic look best. Cinematic is for screenshots and trailers, not for playing.");
     ImGui::PushTextWrapPos(0);
     ImGui::TextDisabled("%s", GraphicsSettings::qualityHelp(s.quality));
     if (s.quality == GraphicsSettings::Auto && s.autoFps() > 0.0f)
         ImGui::TextDisabled("Auto is on %s right now (%.0f FPS).", GraphicsSettings::autoLevelName(s.autoLevel()), s.autoFps());
     ImGui::PopTextWrapPos();
 
+    // The quality groups (Scalability.h): each its own level, like Unreal's scalability
+    // settings. Changing one makes the quality Custom.
+    if (ImGui::TreeNodeEx("Quality groups", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Device: %s", s.device().name.c_str());
+        ImGui::PopTextWrapPos();
+        for (int g = 0; g < Scalability::kGroups; ++g) {
+            ImGui::PushID(g);
+            int lv = s.groupLevel(g);
+            const int cap = s.groupCap(g);
+            const char* names[Scalability::kLevels];
+            for (int l = 0; l < Scalability::kLevels; ++l) names[l] = Scalability::levelName(l);
+            if (ImGui::Combo(Scalability::groupName(g), &lv, names, cap + 1)) s.setGroup(g, lv);
+            help(Scalability::groupHelp(g));
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("  %s%s", Scalability::levelHelp(g, lv), cap < Scalability::kLevels - 1 ? " (the highest this device allows)" : "");
+            ImGui::PopTextWrapPos();
+            ImGui::PopID();
+        }
+        if (s.benchMs > 0.0f) ImGui::TextDisabled("Benchmark: %.1f ms a frame at High on this graphics chip.", s.benchMs);
+        ImGui::TreePop();
+    }
+
     bool custom = false;
+    if (ImGui::TreeNode("Fine tuning")) {
     custom |= ImGui::Checkbox("Shadows", &s.shadows);
     help("Turning shadows off is the biggest single speed-up on slow computers.");
     ImGui::BeginDisabled(!s.shadows);
@@ -133,12 +158,18 @@ void draw(bool* open) {
     const char* sq[] = {"Hard", "Soft", "Realistic (contact-hardening)"};
     custom |= ImGui::Combo("Shadow Style", &s.shadowQuality, sq, 3);
     ImGui::EndDisabled();
-    custom |= ImGui::Checkbox("Ambient Occlusion", &s.ssao);
-    help("Darkens corners and contact points");
+    {
+        const char* gi[] = {"Off", "Ambient occlusion only", "Bounce light (Medium)", "Bounce light (High)", "Bounce light (Epic)", "Bounce light (Cinematic)"};
+        int v = s.giQuality + 1;
+        if (ImGui::Combo("Lighting", &v, gi, 6)) { s.giQuality = v - 1; custom = true; }
+        help("Darkens corners and contact points; the bounce light also lights things with the colour of what's next to them.");
+        const char* aa[] = {"Off", "FXAA", "Temporal (TAA)", "Temporal upscaling (TSR)", "TSR (Epic)", "TSR (Cinematic)"};
+        v = s.aaQuality + 1;
+        if (ImGui::Combo("Anti-aliasing", &v, aa, 6)) { s.aaQuality = v - 1; custom = true; }
+        help("Smooths jagged edges. TAA and TSR use several frames together; TSR also makes a lower Render Scale look sharp.");
+    }
     custom |= ImGui::Checkbox("Bloom", &s.bloom);
     help("Glow around bright lights and Neon");
-    custom |= ImGui::Checkbox("Anti-aliasing (FXAA)", &s.fxaa);
-    help("Smooths jagged edges");
     custom |= ImGui::Checkbox("Tone mapping & colour grading", &s.postFx);
     custom |= ImGui::SliderFloat("Render Scale", &s.renderScale, 0.5f, 2.0f, "%.2fx");
     help("Below 1 = faster but blurrier. Above 1 = super-sampling (very sharp, slow).");
@@ -154,6 +185,8 @@ void draw(bool* open) {
     const char* wq[] = {"Low", "Medium", "High", "Ultra"};
     custom |= ImGui::Combo("Water Quality", &s.waterQuality, wq, 4);
     help("Real liquid (FluidSource / FluidEmitter). Low: half resolution, 1 smoothing pass, 5,000 drops. Medium: 3/4 resolution, 2 passes, 20,000 drops. High: full resolution, 3 passes, 60,000 drops. Ultra: full resolution, 4 passes, 150,000 drops. Lower water quality reduces simulation and rendering work.");
+    ImGui::TreePop();
+    }
     if (custom) s.quality = GraphicsSettings::Custom;
 
     ImGui::SeparatorText("Graphics API");
@@ -164,6 +197,22 @@ void draw(bool* open) {
     if (!GraphicsSettings::activeApi().empty()) ImGui::TextDisabled("Using %s", GraphicsSettings::activeApi().c_str());
     if (s.graphicsApi != startedWith)
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Close and reopen the app to switch.");
+    {   // What this device can't do (DeviceFeatures.h): Macs, iPhones and the web Player
+        // have no compute shaders, so a few features use a simpler version there.
+        DeviceFeatures::Feature miss[DeviceFeatures::kFeatures];
+        const GpuCaps& caps = GpuCapsQuery::get();
+        if (const int n = DeviceFeatures::missing(caps, miss)) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", DeviceFeatures::kNotice);
+            for (int i = 0; i < n; ++i) {
+                ImGui::BulletText("%s", DeviceFeatures::info(miss[i]).name);
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", DeviceFeatures::info(miss[i]).instead);
+            }
+            ImGui::TextDisabled("%s", DeviceFeatures::reason(caps));
+            ImGui::PopTextWrapPos();
+        }
+    }
 
     ImGui::Spacing();
     if (ImGui::Button("Reset to High")) s.applyPreset(GraphicsSettings::High);
@@ -173,6 +222,25 @@ void draw(bool* open) {
     ImGui::TextDisabled("Version %s", UpdateChecker::currentVersion());
     ImGui::SameLine();
     if (ImGui::SmallButton("Check now")) UpdateChecker::start();
+    if (*UpdateChecker::buildDate()) ImGui::TextDisabled("Built from code of %s%s", UpdateChecker::buildDate(),
+                                                        UpdateChecker::runningNightly() ? " (test build)" : "");
+#if !defined(GB_MOBILE) && !defined(__EMSCRIPTEN__)
+    {   // Nightly test builds: the newest code from main, only when asked (UpdateChannel.h).
+        static int nightly = -1;   // read the file once, not every frame
+        if (nightly < 0) nightly = UpdateChecker::nightlyEnabled() ? 1 : 0;
+        bool on = nightly == 1;
+        if (ImGui::Checkbox("Nightly test builds", &on)) { nightly = on ? 1 : 0; UpdateChecker::setNightly(on); }
+        help("Get the newest test build every time new code is added, instead of waiting for the next release. "
+             "You're always asked before one is installed.");
+        ImGui::PushTextWrapPos(0);
+        if (on)
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
+                               "Test builds may be unstable: things can break, and games saved in them might not open in older versions.");
+        else if (UpdateChecker::runningNightly())
+            ImGui::TextDisabled("You're on a test build. You'll be asked if you want to go back to the stable version.");
+        ImGui::PopTextWrapPos();
+    }
+#endif
     switch (UpdateChecker::info().state) {
         case UpdateChecker::State::Checking:  ImGui::TextDisabled("Checking..."); break;
         case UpdateChecker::State::UpToDate:  ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.45f, 1), "You're up to date!"); break;

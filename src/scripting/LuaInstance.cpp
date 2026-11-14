@@ -5,9 +5,12 @@
 #include "ScriptEngine.h"
 #include "ScriptHistory.h"
 #include "../scene/IkControls.h"
+#include "../scene/Gore.h"
+#include "../scene/Shatter.h"
 #include "../scene/Animation.h"
 #include "../scene/Physics.h"
 #include "../scene/Player.h"
+#include "../scene/Npc.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
 #include "../scene/Serializer.h"
@@ -531,6 +534,23 @@ int m_ApplyImpulse(lua_State* L) {
     n->sleepTime = 0;
     return 0;
 }
+// part:Shatter([point], [force]): break it into loose pieces (smaller ones round
+// `point`, thrown away from it). Returns the pieces. Only the host / a server script
+// breaks things (the pieces are ordinary parts, so everyone gets them).
+int m_Shatter(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    Scene& scene = *E(L)->scene();
+    glm::vec3 at = n->isPart() ? glm::vec3(n->worldMatrix()[3]) : glm::vec3(0.0f);
+    if (glm::vec3* v = LuaApi::toVector3(L, 2)) at = *v;
+    const float force = lua_isnumber(L, 3) ? (float)lua_tonumber(L, 3) : 0.6f;
+    const std::vector<SceneNode*> made = Shatter::breakPart(scene, n, at, force);
+    lua_createtable(L, (int)made.size(), 0);
+    for (size_t i = 0; i < made.size(); ++i) {
+        LuaApi::pushInstance(L, made[i]->id);
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    return 1;
+}
 int m_ApplyAngularImpulse(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
     if (!n->isPart()) return 0;
@@ -908,7 +928,7 @@ const luaL_Reg kMethods[] = {
     {"GetPivot", m_GetPivot}, {"PivotTo", m_PivotTo}, {"BreakJoints", m_BreakJoints},
     {"SetPrimaryPartCFrame", m_SetPrimaryPartCFrame}, {"GetPrimaryPartCFrame", m_GetPrimaryPartCFrame},
     {"Play", m_Play}, {"Stop", m_Stop},
-    {"ApplyImpulse", m_ApplyImpulse}, {"ApplyAngularImpulse", m_ApplyAngularImpulse},
+    {"ApplyImpulse", m_ApplyImpulse}, {"ApplyAngularImpulse", m_ApplyAngularImpulse}, {"Shatter", m_Shatter},
     {"GetAttribute", m_GetAttribute}, {"SetAttribute", m_SetAttribute}, {"GetAttributes", m_GetAttributes},
     {"GetAttributeChangedSignal", m_GetAttributeChangedSignal},
     {"HasTag", m_HasTag}, {"AddTag", m_AddTag}, {"RemoveTag", m_RemoveTag}, {"GetTags", m_GetTags},
@@ -1350,6 +1370,7 @@ std::string* variantPicture(MaterialVariantProps& v, const char* k) {
     if (is(k, "NormalMap"))    return &v.normalMap;
     if (is(k, "RoughnessMap")) return &v.roughnessMap;
     if (is(k, "MetalnessMap")) return &v.metalnessMap;
+    if (is(k, "OrmMap"))       return &v.ormMap;
     return nullptr;
 }
 
@@ -2443,6 +2464,7 @@ int inst_index(lua_State* L) {
         if (is(k, "PlaybackSpeed") || is(k, "Pitch")) { lua_pushnumber(L, n->pitch); return 1; }
         if (is(k, "Looped"))        { lua_pushboolean(L, n->looped); return 1; }
         if (is(k, "Playing") || is(k, "IsPlaying")) { lua_pushboolean(L, Audio::isPlaying(n->audioHandle)); return 1; }
+        if (is(k, "PlaybackLoudness")) { lua_pushnumber(L, std::min(1000.0f, Audio::loudness(n->audioHandle) * 1000.0f)); return 1; }
         if (is(k, "SoundGroup")) {
             SceneNode* g = n->soundGroup ? E(L)->resolve(n->soundGroup) : nullptr;
             if (g && g->isSoundGroup()) LuaApi::pushInstance(L, g->id); else lua_pushnil(L);
@@ -2467,6 +2489,7 @@ int inst_index(lua_State* L) {
         if (is(k, "Brightness")) { lua_pushnumber(L, n->brightness); return 1; }
         if (is(k, "Range"))      { lua_pushnumber(L, n->range); return 1; }
         if (is(k, "Angle"))      { lua_pushnumber(L, n->spotAngle); return 1; }
+        if (is(k, "Shadows"))    { lua_pushboolean(L, n->lightShadows); return 1; }
         if (is(k, "Color"))      { LuaApi::pushColor3(L, n->color); return 1; }
     }
     if (n == E(L)->scene()->root()) {
@@ -2487,6 +2510,30 @@ int inst_index(lua_State* L) {
         if (is(k, "StreamingEnabled"))      { lua_pushboolean(L, w.streaming); return 1; }
         if (is(k, "StreamingTargetRadius")) { lua_pushnumber(L, w.streamRadius); return 1; }
         if (is(k, "BloodColor"))  { LuaApi::pushColor3(L, w.bloodColor); return 1; }
+        if (is(k, "BloodStay"))   { lua_pushnumber(L, w.bloodStay); return 1; }
+        if (is(k, "Dismemberment")) { lua_pushboolean(L, w.dismemberment); return 1; }
+        if (is(k, "LiquidBlood")) { lua_pushboolean(L, w.liquidBlood); return 1; }
+        if (is(k, "SoftTissue"))  { lua_pushboolean(L, w.softTissue); return 1; }
+        if (is(k, "GlobalWind"))  { LuaApi::pushVector3(L, w.globalWind); return 1; }
+        if (is(k, "EarthquakeIntensity")) { lua_pushnumber(L, E(L)->scene()->environment().quake); return 1; }
+        // workspace:StartEarthquake(magnitude 1-9.5, seconds = 20), workspace:StopEarthquake()
+        if (is(k, "StartEarthquake")) {
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                Storms::startEarthquake(*E(L)->scene(), (float)luaL_checknumber(L, 2), (float)luaL_optnumber(L, 3, 20.0));
+                return 0;
+            });
+            return 1;
+        }
+        if (is(k, "StopEarthquake")) {
+            lua_pushcfunction(L, [](lua_State* L) -> int { Storms::stopEarthquake(*E(L)->scene()); return 0; });
+            return 1;
+        }
+        if (is(k, "AirDensity"))  { lua_pushnumber(L, w.airDensity); return 1; }
+        if (is(k, "Injuries"))    { lua_pushboolean(L, w.injuries); return 1; }
+        if (is(k, "Stamina"))     { lua_pushboolean(L, w.stamina); return 1; }
+        if (is(k, "FireSpread"))  { lua_pushboolean(L, w.fireSpread); return 1; }
+        if (is(k, "Acoustics"))   { lua_pushboolean(L, w.acoustics); return 1; }
+        if (is(k, "ImpactSounds")) { lua_pushboolean(L, w.impactSounds); return 1; }
         if (is(k, "BloodAmount")) { lua_pushnumber(L, w.bloodAmount); return 1; }
         if (is(k, "MaxFluidParticles")) { lua_pushinteger(L, w.maxFluidParticles); return 1; }
     }
@@ -3019,6 +3066,7 @@ int inst_set(lua_State* L) {
         if (is(k, "Brightness")) { n->brightness = std::max(0.0f, (float)luaL_checknumber(L, 3)); return 0; }
         if (is(k, "Range"))      { n->range = std::max(0.1f, (float)luaL_checknumber(L, 3)); return 0; }
         if (is(k, "Angle"))      { n->spotAngle = glm::clamp((float)luaL_checknumber(L, 3), 1.0f, 179.0f); return 0; }
+        if (is(k, "Shadows"))    { n->lightShadows = lua_toboolean(L, 3); return 0; }
         if (is(k, "Color"))      { n->color = LuaApi::checkColor3(L, 3); return 0; }
     }
     if (n == scene->root()) {
@@ -3043,6 +3091,17 @@ int inst_set(lua_State* L) {
         if (is(k, "StreamingTargetRadius")) { w.streamRadius = std::clamp((float)luaL_checknumber(L, 3), 32.0f, 5000.0f); return 0; }
         if (is(k, "BloodColor"))  { w.bloodColor = LuaApi::checkColor3(L, 3); return 0; }
         if (is(k, "BloodAmount")) { w.bloodAmount = glm::clamp((float)luaL_checknumber(L, 3), 0.0f, 5.0f); return 0; }
+        if (is(k, "BloodStay"))   { w.bloodStay = glm::clamp((float)luaL_checknumber(L, 3), 1.0f, 600.0f); return 0; }
+        if (is(k, "Dismemberment")) { w.dismemberment = lua_toboolean(L, 3); return 0; }
+        if (is(k, "LiquidBlood")) { w.liquidBlood = lua_toboolean(L, 3); return 0; }
+        if (is(k, "SoftTissue"))  { w.softTissue = lua_toboolean(L, 3); return 0; }
+        if (is(k, "GlobalWind"))  { w.globalWind = glm::clamp(LuaApi::checkVector3(L, 3), glm::vec3(-500.0f), glm::vec3(500.0f)); return 0; }
+        if (is(k, "AirDensity"))  { w.airDensity = glm::clamp((float)luaL_checknumber(L, 3), 0.0f, 10.0f); return 0; }
+        if (is(k, "Injuries"))    { w.injuries = lua_toboolean(L, 3); return 0; }
+        if (is(k, "Stamina"))     { w.stamina = lua_toboolean(L, 3); return 0; }
+        if (is(k, "FireSpread"))  { w.fireSpread = lua_toboolean(L, 3); return 0; }
+        if (is(k, "Acoustics"))   { w.acoustics = lua_toboolean(L, 3); return 0; }
+        if (is(k, "ImpactSounds")) { w.impactSounds = lua_toboolean(L, 3); return 0; }
         if (is(k, "MaxFluidParticles")) { w.maxFluidParticles = std::clamp((int)luaL_checkinteger(L, 3), 0, 1 << 20); return 0; }
     }
     // A property kept as an attribute (see inst_index): set it the same way.
@@ -3498,10 +3557,56 @@ Humanoid& hum(lua_State* L) {
 void touched(lua_State* L) { E(L)->scene()->markHumanoidEdited(humRoot(L), E(L)->time()); }
 
 int hum_takeDamage(lua_State* L) {
+    Scene& scene = *E(L)->scene();
+    const uint64_t rootId = humRoot(L);
     Humanoid& h = hum(L);
-    // Like Roblox: TakeDamage does nothing while the character has a ForceField.
-    if (SceneNode* r = E(L)->scene()->findById(humRoot(L)); r && r->hasForceField()) return 0;
-    h.health = glm::clamp(h.health - (float)luaL_checknumber(L, 2), 0.0f, h.maxHealth);
+    if (SceneNode* r = scene.findById(rootId); r && r->hasForceField()) return 0;
+    const float damage = (float)luaL_checknumber(L, 2);
+
+    // Optional context: humanoid:TakeDamage(amount, raycastResult, projectileVelocity).
+    // One-argument calls remain fully compatible.
+    SceneNode* hitPart = nullptr;
+    glm::vec3 hitPoint(0.0f), hitNormal(0, 1, 0), projectileVelocity(0.0f);
+    bool positional = false;
+    if (lua_istable(L, 3)) {
+        lua_getfield(L, 3, "Instance");
+        const uint64_t partId = LuaApi::toInstanceId(L, -1);
+        lua_pop(L, 1);
+        lua_getfield(L, 3, "Position");
+        if (glm::vec3* v = LuaApi::toVector3(L, -1)) hitPoint = *v;
+        else { lua_pop(L, 1); return luaL_error(L, "TakeDamage hit result needs a Vector3 Position"); }
+        lua_pop(L, 1);
+        lua_getfield(L, 3, "Normal");
+        if (glm::vec3* v = LuaApi::toVector3(L, -1)) hitNormal = *v;
+        else { lua_pop(L, 1); return luaL_error(L, "TakeDamage hit result needs a Vector3 Normal"); }
+        lua_pop(L, 1);
+        if (lua_gettop(L) >= 4)
+            if (glm::vec3* v = LuaApi::toVector3(L, 4)) projectileVelocity = *v;
+        SceneNode* character = scene.findById(rootId);
+        hitPart = scene.findById(partId);
+        positional = damage > 0.0f && character && hitPart && hitPart->isPart() && character->isAncestorOf(hitPart);
+    }
+
+    if (positional) {
+        const float speed = glm::length(projectileVelocity);
+        const glm::vec3 impulse = speed > 1e-4f
+            ? glm::normalize(projectileVelocity) * std::min(1.5f, speed * 0.01f)
+            : glm::vec3(0.0f);
+        if (Player* player = scene.player(); player && player->rootId() == rootId) {
+            player->hurtAt(hitPart, hitPoint, hitNormal, projectileVelocity, damage, 0.0f, impulse);
+        } else {
+            Player::deformPartAtImpact(hitPart, hitPoint, hitNormal, projectileVelocity, &scene);
+            if (scene.npcs().find(rootId)) {
+                scene.npcs().recordImpact(rootId, hitPart->id, hitPoint, hitNormal, projectileVelocity);
+            } else if (scene.goreEnabled()) {
+                // The wound (and, for a bullet, the hole out the other side).
+                Gore::hit(scene, hitPart, hitPoint, hitNormal, projectileVelocity, damage);
+            }
+            h.health = glm::clamp(h.health - damage, 0.0f, h.maxHealth);
+        }
+    } else {
+        h.health = glm::clamp(h.health - damage, 0.0f, h.maxHealth);
+    }
     touched(L);
     return 0;
 }
@@ -3893,6 +3998,21 @@ int hum_index(lua_State* L) {
     }
     if (is(k, "GetPlayingAnimationTracks")) { lua_pushcfunction(L, hum_playing); return 1; }
     if (is(k, "Animator"))   { pushAnimator(L, humRoot(L)); return 1; }
+    // Realism: how much puff is left (workspace.Stamina), and how hurt a limb is (Injuries).
+    if (is(k, "Stamina")) {
+        Player* p = E(L)->scene()->player();
+        lua_pushnumber(L, p && p->rootId() == humRoot(L) ? p->stamina().value : 1.0f);
+        return 1;
+    }
+    if (is(k, "GetInjury")) {
+        lua_pushcfunction(L, [](lua_State* L) -> int {
+            const Realism::Limb limb = Realism::limbOf(luaL_checkstring(L, 2));
+            Player* p = E(L)->scene()->player();
+            lua_pushnumber(L, p && p->rootId() == humRoot(L) && limb != Realism::None ? p->injuries().hurt[limb] : 0.0f);
+            return 1;
+        });
+        return 1;
+    }
     if (is(k, "FindFirstChild") || is(k, "FindFirstChildOfClass") || is(k, "WaitForChild"))
         { lua_pushcfunction(L, hum_findChild); return 1; }
     return luaL_error(L, "'%s' is not a valid member of Humanoid", k);
@@ -3902,6 +4022,10 @@ int hum_newindex(lua_State* L) {
     const char* k = luaL_checkstring(L, 2);
     Humanoid& h = hum(L);
     if (is(k, "Health"))     h.health = glm::clamp((float)luaL_checknumber(L, 3), 0.0f, h.maxHealth);
+    else if (is(k, "Stamina")) {
+        if (Player* p = E(L)->scene()->player(); p && p->rootId() == humRoot(L))
+            p->stamina().value = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f);
+    }
     else if (is(k, "MaxHealth")) { h.maxHealth = std::max(1.0f, (float)luaL_checknumber(L, 3));
                                    h.health = std::min(h.health, h.maxHealth); }
     else if (is(k, "WalkSpeed"))  h.walkSpeed = std::max(0.0f, (float)luaL_checknumber(L, 3));
@@ -4127,6 +4251,28 @@ int light_isA(lua_State* L) {
     return 1;
 }
 
+// Lighting:SpawnTornado(position, strength 0-5 = 2, seconds = 75)
+int light_spawnTornado(lua_State* L) {
+    const glm::vec3 at = LuaApi::checkVector3(L, 2);
+    Storms::spawnTornado(*E(L)->scene(), at, (float)luaL_optnumber(L, 3, 2.0), (float)luaL_optnumber(L, 4, 75.0));
+    return 0;
+}
+// Lighting:SpawnDownburst(position, strength 0-1 = 1, seconds = 22)
+int light_spawnDownburst(lua_State* L) {
+    const glm::vec3 at = LuaApi::checkVector3(L, 2);
+    Storms::spawnDownburst(*E(L)->scene(), at, (float)luaL_optnumber(L, 3, 1.0), (float)luaL_optnumber(L, 4, 22.0));
+    return 0;
+}
+int light_clearStorms(lua_State* L) {
+    Storms::clear(*E(L)->scene());
+    return 0;
+}
+// Lighting:GetWindAt(position): the wind there, tornadoes and downbursts included.
+int light_getWindAt(lua_State* L) {
+    LuaApi::pushVector3(L, Storms::windAt(*E(L)->scene(), LuaApi::checkVector3(L, 2)));
+    return 1;
+}
+
 int light_index(lua_State* L) {
     const char* k = luaL_checkstring(L, 2);
     Environment& e = E(L)->scene()->environment();
@@ -4136,10 +4282,28 @@ int light_index(lua_State* L) {
     if (is(k, "FogEnabled"))    { lua_pushboolean(L, e.fogEnabled);     return 1; }
     if (is(k, "FogDensity"))    { lua_pushnumber(L, e.fogDensity);      return 1; }
     if (is(k, "FogColor"))      { LuaApi::pushColor3(L, e.fogColor);    return 1; }
+    if (is(k, "FogHeight"))     { lua_pushnumber(L, e.fogHeight);       return 1; }
+    if (is(k, "FogFalloff"))    { lua_pushnumber(L, e.fogFalloff);      return 1; }
+    if (is(k, "FogWisps"))      { lua_pushnumber(L, e.fogWisps);        return 1; }
     if (is(k, "Ambient"))       { LuaApi::pushColor3(L, e.ambientColor); return 1; }
     if (is(k, "SunColor"))      { LuaApi::pushColor3(L, e.sunColor);    return 1; }
     if (is(k, "Weather"))       { lua_pushstring(L, kWeatherNames[std::clamp(e.weather, 0, kWeatherCount - 1)]); return 1; }
     if (is(k, "WeatherIntensity")) { lua_pushnumber(L, e.weatherAmount); return 1; }
+    if (is(k, "CloudType"))     { lua_pushstring(L, kCloudTypeNames[std::clamp(e.cloudType, 0, kCloudTypeCount - 1)]); return 1; }
+    if (is(k, "SevereWeather")) { lua_pushboolean(L, e.severeWeather);  return 1; }
+    if (is(k, "StormCenter"))   { LuaApi::pushVector3(L, e.stormCenter); return 1; }
+    if (is(k, "TornadoStrength"))   { lua_pushnumber(L, e.tornado);     return 1; }
+    if (is(k, "TornadoPosition"))   { LuaApi::pushVector3(L, e.tornadoPos); return 1; }
+    if (is(k, "DownburstStrength")) { lua_pushnumber(L, e.downburst);   return 1; }
+    if (is(k, "DownburstPosition")) { LuaApi::pushVector3(L, e.downburstPos); return 1; }
+    if (is(k, "SpawnTornado"))   { lua_pushcfunction(L, light_spawnTornado);   return 1; }
+    if (is(k, "SpawnDownburst")) { lua_pushcfunction(L, light_spawnDownburst); return 1; }
+    if (is(k, "ClearStorms"))    { lua_pushcfunction(L, light_clearStorms);    return 1; }
+    if (is(k, "GetWindAt"))      { lua_pushcfunction(L, light_getWindAt);      return 1; }
+    if (is(k, "BounceLight"))   { lua_pushnumber(L, e.bounceLight);     return 1; }
+    if (is(k, "LightRays"))     { lua_pushnumber(L, e.lightRays);       return 1; }
+    if (is(k, "AutoExposure"))  { lua_pushboolean(L, e.autoExposure);   return 1; }
+    if (is(k, "MotionBlur"))    { lua_pushnumber(L, e.motionBlur);      return 1; }
     if (is(k, "Name") || is(k, "ClassName")) { lua_pushstring(L, "Lighting"); return 1; }
     if (is(k, "Parent")) { lua_pushnil(L); return 1; }
     if (is(k, "IsA")) { lua_pushcfunction(L, light_isA); return 1; }
@@ -4157,6 +4321,9 @@ int light_newindex(lua_State* L) {
     if (is(k, "FogEnabled"))    { e.fogEnabled = lua_toboolean(L, 3); return 0; }
     if (is(k, "FogDensity"))    { e.fogDensity = (float)luaL_checknumber(L, 3); return 0; }
     if (is(k, "FogColor"))      { e.fogColor = LuaApi::checkColor3(L, 3);     return 0; }
+    if (is(k, "FogHeight"))     { e.fogHeight = std::clamp((float)luaL_checknumber(L, 3), -10000.0f, 10000.0f); return 0; }
+    if (is(k, "FogFalloff"))    { e.fogFalloff = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+    if (is(k, "FogWisps"))      { e.fogWisps = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     if (is(k, "Ambient"))       { e.ambientColor = LuaApi::checkColor3(L, 3); return 0; }
     if (is(k, "SunColor"))      { e.sunColor = LuaApi::checkColor3(L, 3);     return 0; }
     if (is(k, "Weather")) {   // "Rain", Enum-style tables print as their name too
@@ -4172,9 +4339,30 @@ int light_newindex(lua_State* L) {
                 return 0;
             }
         }
-        return luaL_error(L, "'%s' isn't a kind of weather (use \"Clear\", \"Rain\" or \"Snow\")", name.c_str());
+        return luaL_error(L, "'%s' isn't a kind of weather (use \"Clear\", \"Rain\", \"Snow\", \"Storm\" or \"Supercell\")", name.c_str());
     }
+    if (is(k, "CloudType")) {
+        const char* w = luaL_tolstring(L, 3, nullptr);
+        std::string name = w ? w : "";
+        lua_pop(L, 1);
+        if (const size_t dot = name.rfind('.'); dot != std::string::npos) name = name.substr(dot + 1);
+        for (int i = 0; i < kCloudTypeCount; ++i) {
+            const std::string want = kCloudTypeNames[i];
+            if (name.size() == want.size() &&
+                std::equal(name.begin(), name.end(), want.begin(), [](char a, char b) { return std::tolower((unsigned char)a) == std::tolower((unsigned char)b); })) {
+                e.cloudType = i;
+                return 0;
+            }
+        }
+        return luaL_error(L, "'%s' isn't a kind of cloud (use \"Auto\", \"Cumulus\", \"Stratus\", \"Cumulonimbus\" or \"Supercell\")", name.c_str());
+    }
+    if (is(k, "SevereWeather")) { e.severeWeather = lua_toboolean(L, 3); return 0; }
+    if (is(k, "StormCenter"))   { e.stormCenter = LuaApi::checkVector3(L, 3); e.stormCenter.y = 0.0f; return 0; }
     if (is(k, "WeatherIntensity")) { e.weatherAmount = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+    if (is(k, "BounceLight"))   { e.bounceLight = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 2.0f); return 0; }
+    if (is(k, "LightRays"))     { e.lightRays = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+    if (is(k, "AutoExposure"))  { e.autoExposure = lua_toboolean(L, 3); return 0; }
+    if (is(k, "MotionBlur"))    { e.motionBlur = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     return luaL_error(L, "'%s' can't be set on Lighting", k);
 }
 

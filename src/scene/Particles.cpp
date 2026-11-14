@@ -1,13 +1,18 @@
 #include "Particles.h"
+#include "Gore.h"
 #include "Physics.h"
 #include "Scene.h"
 #include "SceneNode.h"
+#include "EditMesh.h"
+#include "Skin.h"
 #include "../core/Audio.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <random>
+#include <unordered_map>
+#include <utility>
 
 namespace {
 std::mt19937& rng() { static std::mt19937 r{987u}; return r; }
@@ -19,6 +24,39 @@ glm::vec3 rndDir() {
 }
 
 const glm::vec3 kOil      = {0.06f, 0.06f, 0.07f};
+
+// Closest point on a triangle, returned as barycentric coordinates. This keeps
+// wound decals attached to the surface triangle rather than a single vertex.
+glm::vec3 closestTriangleBarycentric(const glm::vec3& p, const glm::vec3& a,
+                                     const glm::vec3& b, const glm::vec3& c) {
+    const glm::vec3 ab = b - a, ac = c - a, ap = p - a;
+    const float d1 = glm::dot(ab, ap), d2 = glm::dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) return {1, 0, 0};
+    const glm::vec3 bp = p - b;
+    const float d3 = glm::dot(ab, bp), d4 = glm::dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return {0, 1, 0};
+    const float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+        const float v = d1 / (d1 - d3);
+        return {1.0f - v, v, 0.0f};
+    }
+    const glm::vec3 cp = p - c;
+    const float d5 = glm::dot(ab, cp), d6 = glm::dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return {0, 0, 1};
+    const float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+        const float w = d2 / (d2 - d6);
+        return {1.0f - w, 0.0f, w};
+    }
+    const float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && d4 - d3 >= 0.0f && d5 - d6 >= 0.0f) {
+        const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return {0.0f, 1.0f - w, w};
+    }
+    const float denom = 1.0f / (va + vb + vc);
+    const float v = vb * denom, w = vc * denom;
+    return {1.0f - v - w, v, w};
+}
 } // namespace
 
 void ParticleSystem::add(const Particle& p) {
@@ -52,7 +90,14 @@ void ParticleSystem::spray(GoreKind kind, const glm::vec3& pos, const glm::vec3&
         p.life   = p.maxLife = rnd(1.5f, 3.0f);
         p.wet    = true;
         add(p);
+        if (i % 3 == 0) toLiquid(kind, p.pos, p.vel);
     }
+}
+
+void ParticleSystem::toLiquid(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel) {
+    if (!m_liquidSink) return;
+    m_liquidSink(kind, pos, vel);
+    ++m_liquidSent;
 }
 
 void ParticleSystem::waterSpray(const glm::vec3& pos, int count, float speed, const glm::vec3& color, float radius) {
@@ -138,8 +183,8 @@ void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3
     const float speed = 4.0f + violence * 10.0f;
     for (int i = 0; i < pieces; ++i) {
         Particle p;
-        glm::vec3 local(rnd(-0.4f, 0.4f), rnd(-0.4f, 0.4f), rnd(-0.4f, 0.4f));
-        p.pos  = glm::vec3(M * glm::vec4(local, 1.0f));
+        // From inside its real shape (a bundle's curvy body part isn't a box).
+        p.pos  = Gore::insidePoint(*part, rnd(0.0f, 1.0f), rnd(0.0f, 1.0f), rnd(0.0f, 1.0f));
         glm::vec3 out = p.pos - c;
         out = glm::length(out) > 1e-3f ? glm::normalize(out) : rndDir();
         p.vel  = vel + (out + rndDir() * 0.5f) * speed * rnd(0.4f, 1.0f) + glm::vec3(0, rnd(1.0f, 4.0f), 0);
@@ -310,6 +355,7 @@ void ParticleSystem::spurt(GoreKind kind, const glm::vec3& pos, const glm::vec3&
         p.life  = p.maxLife = rnd(2.0f, 3.0f);
         p.wet   = true;
         add(p);
+        if (i % 2 == 0) toLiquid(kind, p.pos, p.vel);   // a stream: a real trickle runs from it
     }
 }
 
@@ -324,6 +370,7 @@ void ParticleSystem::ooze(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
     p.life  = p.maxLife = rnd(2.0f, 3.0f);
     p.wet   = true;
     add(p);
+    if (rnd(0, 1) < 0.5f) toLiquid(kind, p.pos, p.vel);
 }
 
 void ParticleSystem::smear(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel, const glm::vec3& normal, float width, float wet) {
@@ -350,7 +397,7 @@ float ParticleSystem::wetBloodAt(const glm::vec3& pos, float radius, float take)
     const float fresh = dryTime() * 0.6f;   // blood older than this has gone tacky: it doesn't stick to you
     float best = 0.0f;
     for (Particle& q : m_items) {
-        if (q.kind != Particle::Splat || q.onPart || q.normal.y < 0.9f || q.look == 2) continue;
+        if (q.kind != Particle::Splat || q.onPart || q.normal.y < 0.9f || q.look == 2 || q.mark) continue;
         if (q.age > fresh || q.life < 1.0f) continue;
         if (std::abs(q.pos.y - pos.y) > 0.35f) continue;
         glm::vec2 d(q.pos.x - pos.x, q.pos.z - pos.z);
@@ -384,6 +431,50 @@ void ParticleSystem::footprint(GoreKind kind, const glm::vec3& pos, const glm::v
     p.wet    = true;
     p.life   = p.maxLife = m_bloodStay * rnd(0.8f, 1.2f);
     add(p);
+}
+
+void ParticleSystem::mark(const glm::vec3& pos, const glm::vec3& normal, const glm::vec3& dir, const glm::vec3& size,
+                          const glm::vec3& color, int look, float alpha, float life, bool wet) {
+    if (alpha <= 0.02f || life <= 0.0f) return;
+    Particle p;
+    p.kind   = Particle::Splat;
+    p.look   = look;
+    p.mark   = wet ? 2 : 1;
+    p.normal = glm::length(normal) > 1e-4f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
+    p.pos    = pos + p.normal * 0.012f;
+    glm::vec3 d = dir - p.normal * glm::dot(dir, p.normal);
+    p.rot    = glm::vec3(0, glm::length(d) > 1e-4f ? turnAlong(p.normal, d) : rnd(0.0f, 360.0f), 0);
+    p.size   = size;
+    p.color  = color;
+    p.alpha  = std::clamp(alpha, 0.0f, 1.0f);   // (1 = drawn solid: shows on glass too)
+    p.seed   = rnd(0, 1);
+    p.life   = p.maxLife = life;
+    add(p);
+}
+
+void ParticleSystem::bruise(const SceneNode* part, const glm::vec3& at, float size, float life) {
+    if (!part) return;
+    const size_t before = m_items.size();
+    stain(GoreKind::Blood, part, at, size);
+    if (m_items.size() == before) return;   // (an old stain just grew)
+    Particle& p = m_items.back();
+    p.mark  = 1;
+    p.wet   = false;
+    p.color = glm::vec3(0.30f, 0.16f, 0.30f) * rnd(0.85f, 1.1f);   // purple-blue under the skin
+    p.alpha = 0.55f;
+    p.life  = p.maxLife = life;
+}
+
+void ParticleSystem::soak(float dt, const std::function<bool(uint64_t part)>& clothed) {
+    for (Particle& q : m_items) {
+        if (q.kind != Particle::Splat || !q.onPart || q.mark || q.look != 0 || q.age > 25.0f) continue;
+        if (!clothed(q.onPart)) continue;
+        // Cloth wicks blood outward: the stain keeps growing (to about twice its size).
+        if (q.maxLife < 1e5f) continue;
+        const float cap = std::max(q.spread, 0.2f) * 2.0f;
+        q.size.x = std::min(cap, q.size.x + dt * 0.02f);
+        q.size.z = std::min(cap * 1.2f, q.size.z + dt * 0.026f);   // a little more downward
+    }
 }
 
 void ParticleSystem::walk(BloodyFeet& feet, GoreKind kind, const glm::vec3& at, bool onGround) {
@@ -426,7 +517,7 @@ void ParticleSystem::stain(GoreKind kind, const SceneNode* part, const glm::vec3
     lt[(axis + 1) % 3] = 1.0f;
     // A stain already there just gets bigger.
     for (Particle& q : m_items) {
-        if (q.onPart != part->id || glm::dot(q.localNormal, ln) < 0.9f) continue;
+        if (q.onPart != part->id || q.mark || glm::dot(q.localNormal, ln) < 0.9f) continue;
         if (glm::length(q.localPos - lp) < 0.25f) { q.spread = std::min(1.1f, q.spread + size * 0.5f); q.age *= 0.3f; return; }
     }
     Particle p;
@@ -446,7 +537,84 @@ void ParticleSystem::stain(GoreKind kind, const SceneNode* part, const glm::vec3
     add(p);
 }
 
+// Persistent wound decal in the collision surface's own frame. Unlike stain(),
+// this follows the exact hit point and normal rather than snapping to a box side.
+void ParticleSystem::wound(GoreKind kind, const SceneNode* part, const glm::vec3& at,
+                           const glm::vec3& normal, const glm::vec3& tangent,
+                           float width, float length) {
+    if (!part || width <= 0.0f || length <= 0.0f) return;
+    const glm::mat4 M = part->worldMatrix();
+    const glm::mat3 R(M);
+    if (std::abs(glm::determinant(R)) < 1e-7f) return;
+    const glm::mat3 invR = glm::inverse(R);
+    const glm::vec3 n = glm::length(normal) > 1e-5f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
+    glm::vec3 t = tangent - n * glm::dot(tangent, n);
+    if (glm::length(t) < 1e-4f)
+        t = glm::cross(n, std::abs(n.y) < 0.9f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0));
+    t = glm::normalize(t);
+    Particle p;
+    p.kind = Particle::Splat; p.look = 1; p.onPart = part->id;
+    p.localPos = glm::vec3(glm::inverse(M) * glm::vec4(at, 1.0f));
+    p.localNormal = glm::normalize(glm::transpose(R) * n);
+    glm::vec3 localTangent = invR * t;
+    localTangent -= p.localNormal * glm::dot(localTangent, p.localNormal);
+    p.localTangent = glm::length(localTangent) > 1e-5f ? glm::normalize(localTangent) : glm::vec3(1, 0, 0);
+    if (part->editMesh && part->editMesh->skinned()) {
+        const EditMesh& mesh = *part->editMesh;
+        // The raycast hit is in the currently posed surface, not the mesh's rest
+        // pose. Anchor the decal to the same deformed vertices that follow() uses,
+        // otherwise an animated limb can select a neighbouring rest-pose triangle.
+        std::vector<glm::vec3> posedVertices;
+        const bool hasPose = Skin::deform(*part, posedVertices) && posedVertices.size() == mesh.verts.size();
+        const std::vector<glm::vec3>& anchorVertices = hasPose ? posedVertices : mesh.verts;
+        float bestDistance = 1e30f;
+        for (const auto& face : mesh.faces) {
+            if (face.size() < 3) continue;
+            for (size_t k = 1; k + 1 < face.size(); ++k) {
+                const uint32_t ia = face[0], ib = face[k], ic = face[k + 1];
+                if (ia >= anchorVertices.size() || ib >= anchorVertices.size() || ic >= anchorVertices.size()) continue;
+                const glm::vec3& a = anchorVertices[ia];
+                const glm::vec3& b = anchorVertices[ib];
+                const glm::vec3& c = anchorVertices[ic];
+                glm::vec3 faceNormal = glm::cross(b - a, c - a);
+                if (glm::length(faceNormal) < 1e-6f) continue;
+                faceNormal = glm::normalize(faceNormal);
+                const glm::vec3 bary = closestTriangleBarycentric(p.localPos, a, b, c);
+                const glm::vec3 closest = a * bary.x + b * bary.y + c * bary.z;
+                const float distance = glm::dot(closest - p.localPos, closest - p.localPos);
+                if (distance >= bestDistance) continue;
+                p.skinTriangle = glm::uvec3(ia, ib, ic);
+                p.skinBarycentric = bary;
+                p.skinNormalSign = glm::dot(faceNormal, p.localNormal) < 0.0f ? -1.0f : 1.0f;
+                faceNormal *= p.skinNormalSign;
+                glm::vec3 faceTangent = b - a;
+                faceTangent -= faceNormal * glm::dot(faceTangent, faceNormal);
+                if (glm::length(faceTangent) < 1e-5f) {
+                    faceTangent = c - a;
+                    faceTangent -= faceNormal * glm::dot(faceTangent, faceNormal);
+                }
+                if (glm::length(faceTangent) < 1e-5f) continue;
+                faceTangent = glm::normalize(faceTangent);
+                const glm::vec3 faceBitangent = glm::normalize(glm::cross(faceNormal, faceTangent));
+                const glm::vec3 offset = p.localPos - closest;
+                p.skinOffset = glm::vec3(glm::dot(offset, faceTangent),
+                                         glm::dot(offset, faceNormal),
+                                         glm::dot(offset, faceBitangent));
+                bestDistance = distance;
+            }
+        }
+    }
+    p.normal = n; p.tangent = t; p.pos = at + n * 0.012f;
+    p.size = glm::vec3(width, 0.012f, length);
+    p.color = kind == GoreKind::Blood ? m_bloodColor * rnd(0.52f, 0.72f) : kOil * 0.85f;
+    p.alpha = 1.0f; p.seed = rnd(0, 1); p.wet = true;
+    p.life = p.maxLife = 1e6f;
+    add(p);
+}
+
 void ParticleSystem::follow(Scene& scene) {
+    struct SkinnedPose { std::vector<glm::vec3> vertices, normals; };
+    std::unordered_map<uint64_t, SkinnedPose> poses;
     for (Particle& p : m_items) {
         if (!p.onPart) continue;
         SceneNode* n = scene.findById(p.onPart);
@@ -456,7 +624,59 @@ void ParticleSystem::follow(Scene& scene) {
         glm::mat3 N = glm::transpose(glm::inverse(R));
         p.normal  = glm::normalize(N * p.localNormal);
         p.tangent = glm::normalize(R * p.localTangent);
-        p.pos     = glm::vec3(M * glm::vec4(p.localPos, 1.0f)) + p.normal * 0.012f;
+        glm::vec3 localPosition = p.localPos;
+        if (p.skinTriangle.x != 0xffffffffu && n->editMesh && n->editMesh->skinned()) {
+            auto it = poses.find(n->id);
+            if (it == poses.end()) {
+                SkinnedPose pose;
+                if (Skin::deform(*n, pose.vertices)) {
+                    pose.normals.assign(pose.vertices.size(), glm::vec3(0.0f));
+                    for (const auto& face : n->editMesh->faces) {
+                        if (face.size() < 3) continue;
+                        glm::vec3 faceNormal(0.0f);
+                        const glm::vec3 a = pose.vertices[face[0]];
+                        for (size_t k = 1; k + 1 < face.size(); ++k)
+                            faceNormal += glm::cross(pose.vertices[face[k]] - a, pose.vertices[face[k + 1]] - a);
+                        for (uint32_t v : face)
+                            if (v < pose.normals.size()) pose.normals[v] += faceNormal;
+                    }
+                    for (glm::vec3& normal : pose.normals)
+                        normal = glm::length(normal) > 1e-6f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
+                }
+                it = poses.emplace(n->id, std::move(pose)).first;
+            }
+            const glm::uvec3 tri = p.skinTriangle;
+            if (tri.x < it->second.vertices.size() && tri.y < it->second.vertices.size() &&
+                tri.z < it->second.vertices.size()) {
+                const glm::vec3& a = it->second.vertices[tri.x];
+                const glm::vec3& b = it->second.vertices[tri.y];
+                const glm::vec3& c = it->second.vertices[tri.z];
+                glm::vec3 localNormal = glm::cross(b - a, c - a);
+                if (glm::length(localNormal) > 1e-6f) {
+                    localNormal = glm::normalize(localNormal) * p.skinNormalSign;
+                    glm::vec3 localTangent = b - a;
+                    localTangent -= localNormal * glm::dot(localTangent, localNormal);
+                    if (glm::length(localTangent) < 1e-5f) {
+                        localTangent = c - a;
+                        localTangent -= localNormal * glm::dot(localTangent, localNormal);
+                    }
+                    if (glm::length(localTangent) > 1e-5f) {
+                        localTangent = glm::normalize(localTangent);
+                        const glm::vec3 localBitangent = glm::normalize(glm::cross(localNormal, localTangent));
+                        const glm::vec3 anchor = a * p.skinBarycentric.x +
+                                                 b * p.skinBarycentric.y +
+                                                 c * p.skinBarycentric.z;
+                        localPosition = anchor + localTangent * p.skinOffset.x +
+                                        localNormal * p.skinOffset.y + localBitangent * p.skinOffset.z;
+                        p.normal = glm::normalize(N * localNormal);
+                        glm::vec3 worldTangent = R * localTangent;
+                        worldTangent -= p.normal * glm::dot(worldTangent, p.normal);
+                        if (glm::length(worldTangent) > 1e-5f) p.tangent = glm::normalize(worldTangent);
+                    }
+                }
+            }
+        }
+        p.pos = glm::vec3(M * glm::vec4(localPosition, 1.0f)) + p.normal * 0.012f;
     }
 }
 
@@ -606,6 +826,13 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
         if (p.kind == Particle::Spray) { if (physics.solidAt(p.pos)) p.life = 0.0f; continue; }   // lands: gone
         if (p.kind == Particle::Fire || p.kind == Particle::Smoke || p.kind == Particle::Spark) continue;
         if (p.kind == Particle::Chunk || p.kind == Particle::Bolt) { stepGib(p, dt, gravity, physics, born); if (p.pos.y < -200.0f) p.life = 0.0f; continue; }
+
+        // Blood (or oil) in water doesn't land anywhere: it becomes a cloud in the water.
+        if (p.kind == Particle::Drop && p.wet && m_waterSink && m_waterSink(p.pos, p.color, dyeAmount(p.size.x))) {
+            p.life = 0.0f;
+            ++m_waterSent;
+            continue;
+        }
 
         // Hitting something solid.
         glm::vec3 h = p.size * 0.5f;

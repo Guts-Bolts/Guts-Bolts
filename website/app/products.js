@@ -46,6 +46,39 @@ export const PRODUCTS = [
     ],
   },
   {
+    id: 'art', name: 'Art', status: 'open', href: '#/art',
+    blurb: 'Post drawings, pixel art, comics and renders. Fave the best.',
+    pages: ['art', 'artpiece', 'artpost'],
+    links: [
+      ['Gallery', '#/art', 'art'],
+      ['Best this week', '#/art?sort=week', 'art-week'],
+      ['Most faved', '#/art?sort=top', 'art-top'],
+      ['My art', '#/art?by=me', 'art-mine'],
+      ['Post art', '#/artpost', 'artpost'],
+    ],
+  },
+  {
+    id: 'paste', name: 'Paste', status: 'open', href: '#/paste',
+    blurb: 'Share code, crash logs and settings with one link.',
+    pages: ['paste', 'pasteview', 'pastenew'],
+    links: [
+      ['Recent', '#/paste', 'paste'],
+      ['My pastes', '#/paste?by=me', 'paste-mine'],
+      ['New paste', '#/pastenew', 'pastenew'],
+    ],
+  },
+  {
+    id: 'academy', name: 'Academy', status: 'open', href: '#/academy',
+    blurb: 'Free courses about scripting, building, modeling and making games.',
+    pages: ['academy', 'course', 'lesson', 'coursewrite'],
+    links: [
+      ['Courses', '#/academy', 'academy'],
+      ['Studio Learn', '#/create/learn', 'studio-learn'],
+      ['My courses', '#/academy?mine=1', 'academy-mine'],
+      ['Write a course', '#/coursewrite', 'coursewrite'],
+    ],
+  },
+  {
     id: 'live', name: 'Live', status: 'soon', href: '#/soon/live',
     blurb: 'Go live and hang out in chat: games, art, talk shows, anything allowed.',
     pages: [],
@@ -89,6 +122,21 @@ export const PRODUCTS = [
   },
 ];
 
+// The groups the Home page shows products in. Guts&Bolts is the parent brand: games are
+// one group of many. `later` names ideas that aren't built yet (shown small, as "on the
+// way"), so adding a product to a group later means adding its id to `products`.
+export const GROUPS = [
+  { id: 'games', name: 'Games', products: ['games'], later: [] },
+  { id: 'media', name: 'Media', products: ['videos', 'live'], later: ['Audio'] },
+  { id: 'creation', name: 'Creation', products: ['art'], later: ['Modeler', 'Image', 'Capture'] },
+  { id: 'community', name: 'Community', products: ['communities', 'chat'], later: ['Press'] },
+  { id: 'ai', name: 'AI', products: ['fyxa'], later: ['Fyxa Desktop', 'AI Lab'] },
+  { id: 'learning', name: 'Learning', products: ['academy'], later: [] },
+  { id: 'development', name: 'Development', products: ['paste'], later: ['Code'] },
+  { id: 'commerce', name: 'Commerce', products: [], later: ['Services', 'Storefronts'] },
+  { id: 'productivity', name: 'Productivity', products: [], later: ['Drive', 'Projects', 'Boards'] },
+];
+
 // Which product a page belongs to (or null for pages that belong to the whole
 // site, like Home, Settings, a profile or Updates).
 export function productOf(page) {
@@ -104,6 +152,15 @@ export function productById(id) {
 export function activeLink(page, hash) {
   if (page === 'games') return String(hash || '').includes('?') ? 'games-list' : 'games';
   if (page === 'game') return 'games';
+  if (page === 'art') {   // the gallery's tabs are told apart by what's after the '?'
+    const h = String(hash || '');
+    return /[?&]sort=week/.test(h) ? 'art-week' : /[?&]sort=top/.test(h) ? 'art-top' : /[?&]by=me/.test(h) ? 'art-mine' : 'art';
+  }
+  if (page === 'artpiece') return 'art';
+  if (page === 'paste') return /[?&]by=me/.test(String(hash || '')) ? 'paste-mine' : 'paste';
+  if (page === 'pasteview') return 'paste';
+  if (page === 'academy') return /[?&]mine=/.test(String(hash || '')) ? 'academy-mine' : 'academy';
+  if (page === 'course' || page === 'lesson') return 'academy';
   if (page === 'item') return 'catalog';
   if (page === 'trade') return 'trades';
   if (page === 'forumsearch') return 'forum';

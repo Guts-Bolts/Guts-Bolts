@@ -38,7 +38,8 @@ async function start() {
     if (!r.ok || !j.client_secret) throw new Error(j.error || 'Couldn\'t start the payment.');
     return j.client_secret;
   });
-  clientSecret.catch((e) => say(e.message, true));
+  let serverError = '';
+  clientSecret.catch((e) => { serverError = e.message; say(serverError, true); });
 
   const checkout = stripe.initCheckoutFormSdk({ clientSecret, appearance });
   const form = checkout.createForm({ layout: 'expanded' });
@@ -56,7 +57,9 @@ async function start() {
       }
     });
   } else {
-    say('Couldn\'t load the payment form. Try again in a bit.', true);
+    // Show what the server said (like which setting is missing), not just "it failed".
+    document.getElementById('checkout-form').hidden = true;
+    say(serverError || 'Couldn\'t load the payment form. Try again in a bit.', true);
   }
 }
 
