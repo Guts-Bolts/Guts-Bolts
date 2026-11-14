@@ -1,5 +1,5 @@
 export default {
-  id: 'light-that-bounces', name: 'Light That Bounces', time: 1794358700, tag: 'Engine',
+  id: 'light-that-bounces', name: 'Light That Bounces', version: '0.8.0', time: 1794358700, tag: 'Engine',
   summary: 'The first step toward Unreal-style graphics: bounced light, a temporal upscaler, and Low to Epic quality that picks itself.',
   items: [
     'Light now bounces: sunlit floors brighten the walls next to them, and corners get darker, traced across the screen every frame (like Unreal\'s Lumen screen traces)',

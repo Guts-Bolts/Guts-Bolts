@@ -1,5 +1,5 @@
 export default {
-  id: 'say-it-move-it', name: 'Say It, Move It', time: 1794366863, tag: 'Studio',
+  id: 'say-it-move-it', name: 'Say It, Move It', version: '0.8.0', time: 1794366863, tag: 'Studio',
   summary: 'Type what your character should do, like "wave twice, then bow", and Studio makes the animation.',
   items: [
     'New in the Animation Editor: Make from words...',

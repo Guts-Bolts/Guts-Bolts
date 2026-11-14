@@ -1,5 +1,5 @@
 export default {
-  id: 'far-and-thunder', name: 'Far and Thunder', time: 1794452659, tag: 'Engine',
+  id: 'far-and-thunder', name: 'Far and Thunder', version: '0.8.0', time: 1794452659, tag: 'Engine',
   summary: 'Far-away meshes cost far less to draw, and the weather learned to storm.',
   items: [
     'Detail levels: big meshes and balls get simpler copies made for them, and the engine draws those when the thing is small on your screen. Up close nothing changes',

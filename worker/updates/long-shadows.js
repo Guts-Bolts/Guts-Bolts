@@ -1,5 +1,5 @@
 export default {
-  id: 'long-shadows', name: 'Long Shadows', time: 1794537676, tag: 'Engine',
+  id: 'long-shadows', name: 'Long Shadows', version: '0.8.0', time: 1794537676, tag: 'Engine',
   summary: 'Sun shadows now use up to four shadow maps instead of two, so they stay sharp up close and reach much further into the distance.',
   items: [
     'On High and Epic graphics the sun draws four shadow maps of different sizes: a small sharp one near the camera and wider ones that carry shadows far away',

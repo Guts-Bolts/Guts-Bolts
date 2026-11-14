@@ -1,5 +1,5 @@
 export default {
-  id: 'know-your-limits', name: 'Know Your Limits', time: 1794470989, tag: 'Engine',
+  id: 'know-your-limits', name: 'Know Your Limits', version: '0.8.0', time: 1794470989, tag: 'Engine',
   summary: 'The groundwork for the photoreal graphics upgrade: frames that reuse their memory, and an honest notice when your device has to skip a feature.',
   items: [
     'Lists the renderer only needs for one frame now come out of one block of memory that is reused every frame, instead of asking the system again each time',

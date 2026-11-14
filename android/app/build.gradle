@@ -5,8 +5,8 @@ plugins {
     id 'com.android.application'
 }
 
-def gbVersionName = project.findProperty('gbVersion') ?: '0.7.9'
-def gbVersionCode = (project.findProperty('gbVersionCode') ?: '20') as int
+def gbVersionName = project.findProperty('gbVersion') ?: '0.8.0'
+def gbVersionCode = (project.findProperty('gbVersionCode') ?: '21') as int
 
 android {
     namespace 'com.gutsandbolts.player'

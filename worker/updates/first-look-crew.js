@@ -1,5 +1,5 @@
 export default {
-  id: 'first-look-crew', name: 'First Look Crew', time: 1794360341, tag: 'Website',
+  id: 'first-look-crew', name: 'First Look Crew', version: '0.8.0', time: 1794360341, tag: 'Website',
   summary: 'Pick a few people to play your game before everyone else, and read what they think.',
   items: [
     'Games have a new "Who can play" choice: Testers only',

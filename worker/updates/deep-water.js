@@ -1,5 +1,5 @@
 export default {
-  id: 'deep-water', name: 'Deep Water', time: 1794556858, tag: 'Engine',
+  id: 'deep-water', name: 'Deep Water', version: '0.8.0', time: 1794556858, tag: 'Engine',
   summary: 'Water with a swell is now a real ocean: thousands of waves added up with an FFT, like in films, with breaking foam and glowing crests.',
   items: [
     'Water parts with the Waves attribute now get waves from a wave spectrum and an FFT instead of four rolling waves, so the sea looks different everywhere you look',
