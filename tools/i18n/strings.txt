@@ -3387,6 +3387,7 @@
 "Persian"
 "Phone limit"
 "Phone or tablet"
+"Phones don't have one graphics feature these need yet, so they use the older way."
 "Phones only draw a few lights. Keep the ones that matter, switch off the rest."
 "Photo %Y-%m-%d %H-%M-%S"
 "Photo mode: hide everything, fly the camera (WASD, Q/E) and press Enter for a picture"

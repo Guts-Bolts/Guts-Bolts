@@ -40,6 +40,10 @@ public:
     // Replace the whole mesh (for shapes that change every frame, like waves).
     void update(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices);
     int  indexCount() const { return m_indexCount; }
+    // Draws copies the graphics card listed itself (GpuCulling.h): how many and where they
+    // start come from the record at `offset` in the bound GL_DRAW_INDIRECT_BUFFER, the
+    // copies' settings from `perCopy`. Computers only.
+    void drawIndirect(GLuint perCopy, size_t offset) const;
     // Goes up each time update() changes it (a cache that remembers a mesh by its
     // pointer can tell it was refilled in place).
     unsigned version() const { return m_version; }

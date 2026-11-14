@@ -104,7 +104,9 @@ int main() {
     check(missing(mac, miss) == shipped && shipped >= 1, "a Mac's notice lists every shipped feature it can't run");
     check(miss[0] == GpuLiquid, "...starting with the liquid on the graphics card");
     check(missing(web, miss) == shipped && missing(iphone, miss) == shipped, "the same for the web Player and an iPhone");
-    check(missing(android, miss) == 0, "a newer Android phone gets no notice");
+    // (Its only one: the graphics card picking what to draw needs desktop OpenGL.)
+    check(missing(android, miss) == 1 && miss[0] == GpuCulling, "a newer Android phone's notice lists only the graphics card picking what to draw");
+    check(std::string(reason(android)).find("too old") == std::string::npos, "and doesn't call the phone too old");
     check(std::string(kNotice).find("can't run some") != std::string::npos, "the notice says it in plain words");
     check(std::string(reason(safe)).find("Safe mode") != std::string::npos, "in Safe mode it says how to turn them back on");
     check(reason(mac)[0] != 0, "there is always a reason to show");
