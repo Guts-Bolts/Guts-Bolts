@@ -29,6 +29,7 @@
 
 #include "GL.h"
 #include "Frustum.h"
+#include "../core/Jobs.h"
 #include "Instancing.h"
 #include <cstddef>
 #include <functional>
@@ -1660,20 +1661,25 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         m_dyeTex.clear();
     }
     struct Item { SceneNode* node; glm::mat4 model; float dist; };
-    std::vector<Item> opaque, transparent, shielded, decals;
-    std::vector<WaterItem> waters;
+    // (The lists are kept from frame to frame and only emptied, so after the first few
+    // frames gathering what to draw asks for no memory.)
+    static std::vector<Item> opaque, transparent, shielded, decals;
+    static std::vector<WaterItem> waters;
+    opaque.clear(); transparent.clear(); shielded.clear(); decals.clear(); waters.clear();
     glm::vec3 camPos = camera.position();
     // Parts off to the side of or behind the camera aren't drawn. The ball is a bit
     // bigger than the part, for meshes that poke out of their box.
     const Frustum view(camera.projection() * camera.view());
-    auto offScreen = [&](const SceneNode* n) {
-        const glm::mat4& m = n->worldMatrix();
-        return !view.sees(glm::vec3(m[3]), partRadius(m) * 1.5f + 1.0f);
-    };
 
-    // Walk manually so hidden models hide everything inside them, and so
-    // everything inside a character with a ForceField gets the glowing shell.
-    std::vector<std::pair<SceneNode*, bool>> stack{{scene.root(), false}};
+    // 1. Walk the tree once (so hidden models hide everything inside them, and
+    //    everything inside a character with a ForceField gets the glowing shell),
+    //    writing down every part and decal that might be drawn.
+    struct Seen { SceneNode* node; glm::mat4 model; float dist; uint8_t ff, kind, keep; };   // kind 0 part, 1 decal
+    static std::vector<Seen> seen;
+    static std::vector<std::pair<SceneNode*, bool>> stack;
+    seen.clear();
+    stack.clear();
+    stack.push_back({scene.root(), false});
     while (!stack.empty()) {
         auto [node, ff] = stack.back();
         stack.pop_back();
@@ -1683,20 +1689,42 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
             for (auto& c : node->children) stack.push_back({c.get(), ff});
         if (node->isDecal() && !node->texture.empty() && node->shownTransparency() < 0.99f &&
             node->parent && node->parent->kind == NodeKind::Part)
-            if (!tooFar(glm::vec3(node->parent->worldMatrix()[3]), partRadius(node->parent->worldMatrix())) &&
-                !offScreen(node->parent))
-                decals.push_back({node, decalMatrix(*node), 0.0f});
-        if (!node->mesh || node->kind != NodeKind::Part) continue;
-        if (tooFar(glm::vec3(node->worldMatrix()[3]), partRadius(node->worldMatrix()))) continue;   // past the render distance
-        if (offScreen(node) && !bentByBones(node)) continue;   // not on screen
-        if (ff && !node->internal && node->shownTransparency() < 0.99f) shielded.push_back({node, node->worldMatrix(), 0.0f});
+            seen.push_back({node, glm::mat4(1.0f), 0.0f, (uint8_t)ff, 1, 0});
+        if (node->mesh && node->kind == NodeKind::Part) seen.push_back({node, glm::mat4(1.0f), 0.0f, (uint8_t)ff, 0, 0});
+    }
+    // 2. Where each one is and whether the camera can see it: the slow part (every
+    //    matrix walks up through its parents), so it's shared over every core (Jobs.h).
+    //    Each entry only reads the scene and writes itself.
+    Jobs::forEach(seen.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            Seen& e = seen[i];
+            if (e.kind == 1) {
+                const glm::mat4 pm = e.node->parent->worldMatrix();
+                const float r = partRadius(pm);
+                e.keep = !tooFar(glm::vec3(pm[3]), r) && view.sees(glm::vec3(pm[3]), r * 1.5f + 1.0f);
+                if (e.keep) e.model = decalMatrix(*e.node);
+                continue;
+            }
+            e.model = e.node->worldMatrix();
+            const float r = partRadius(e.model);
+            const glm::vec3 at(e.model[3]);
+            if (tooFar(at, r)) continue;   // past the render distance
+            if (!view.sees(at, r * 1.5f + 1.0f) && !bentByBones(e.node)) continue;   // not on screen
+            e.dist = glm::length(at - camPos);
+            e.keep = 1;
+        }
+    }, 256);
+    // 3. Into the lists, in the same order as before (so drawing doesn't change).
+    for (const Seen& e : seen) {
+        if (!e.keep) continue;
+        SceneNode* node = e.node;
+        if (e.kind == 1) { decals.push_back({node, e.model, 0.0f}); continue; }
+        if (e.ff && !node->internal && node->shownTransparency() < 0.99f) shielded.push_back({node, e.model, 0.0f});
         float alpha = 1.0f - node->shownTransparency();
         if (alpha <= 0.001f) continue;   // fully transparent — nothing to draw
-        glm::mat4 model = node->worldMatrix();
-        float dist = glm::length(glm::vec3(model[3]) - camPos);
-        if (Player::isWater(node)) { waters.push_back({node, model}); continue; }   // drawn on their own (drawWater)
+        if (Player::isWater(node)) { waters.push_back({node, e.model}); continue; }   // drawn on their own (drawWater)
         bool see = alpha < 0.999f || node->material == Material::Glass;
-        (see ? transparent : opaque).push_back({node, model, dist});
+        (see ? transparent : opaque).push_back({node, e.model, e.dist});
     }
     // X-ray (Studio): everything is drawn see-through, with the see-through things.
     const bool xrayOn = xray || shading == Shading::Wireframe;
@@ -1707,8 +1735,8 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     // Transparent things are drawn last, far to near, so blending looks right.
     std::sort(transparent.begin(), transparent.end(), [](auto& a, auto& b) { return a.dist > b.dist; });
 
-    std::vector<Vertex> waterVerts;
-    std::vector<uint32_t> waterIdx;
+    static std::vector<Vertex> waterVerts;   // (kept between frames: no new memory)
+    static std::vector<uint32_t> waterIdx;
     // A part the liquid just ran over, or your character dripping after a swim.
     const Player* me = scene.player();
     const SceneNode* myRoot = me ? scene.findById(me->rootId()) : nullptr;

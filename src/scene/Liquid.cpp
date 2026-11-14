@@ -5,6 +5,7 @@
 #include "Liquid.h"
 #include "LiquidGpu.h"
 #include "../renderer/GpuCaps.h"
+#include "../core/Jobs.h"
 #include "../core/Settings.h"
 #include "EditMesh.h"
 #include "Scene.h"
@@ -28,81 +29,8 @@
 namespace {
 
 // Every drop's sums are independent within a pass, so they're shared out over
-// the computer's cores (a small pool of helper threads, made once).
-class Workers {
-public:
-    static Workers& get() { static Workers w; return w; }
-
-    // fn(first, last) for chunks of 0..count, on all cores; returns when all are done.
-    void run(size_t count, const std::function<void(size_t, size_t)>& fn) {
-        if (count < 512 || m_threads.empty()) { fn(0, count); return; }
-        {
-            std::lock_guard<std::mutex> l(m_mutex);
-            m_job = &fn;
-            m_count = count;
-            m_chunks = (int)(m_threads.size() + 1) * 4;
-            m_next = 0;
-            ++m_generation;
-        }
-        m_wake.notify_all();
-        work();
-        std::unique_lock<std::mutex> l(m_mutex);
-        m_done.wait(l, [&] { return m_busy == 0 && m_next.load() >= m_chunks; });
-    }
-
-private:
-    Workers() {
-        const unsigned cores = std::thread::hardware_concurrency();
-#ifdef __EMSCRIPTEN__
-        const unsigned helpers = 0;   // (a web page has no threads: it all runs on this one)
-        (void)cores;
-#else
-        const unsigned helpers = cores > 1 ? std::min(cores - 1, 7u) : 0u;
-#endif
-        for (unsigned i = 0; i < helpers; ++i) m_threads.emplace_back([this] { loop(); });
-    }
-    ~Workers() {
-        { std::lock_guard<std::mutex> l(m_mutex); m_quit = true; }
-        m_wake.notify_all();
-        for (std::thread& t : m_threads) t.join();
-    }
-    void work() {
-        int c;
-        while ((c = m_next.fetch_add(1)) < m_chunks) {
-            const size_t a = m_count * (size_t)c / (size_t)m_chunks, b = m_count * (size_t)(c + 1) / (size_t)m_chunks;
-            (*m_job)(a, b);
-        }
-    }
-    void loop() {
-        uint64_t seen = 0;
-        for (;;) {
-            {
-                std::unique_lock<std::mutex> l(m_mutex);
-                m_wake.wait(l, [&] { return m_quit || m_generation != seen; });
-                if (m_quit) return;
-                seen = m_generation;
-                ++m_busy;
-            }
-            work();
-            {
-                std::lock_guard<std::mutex> l(m_mutex);
-                --m_busy;
-            }
-            m_done.notify_all();
-        }
-    }
-    std::vector<std::thread> m_threads;
-    std::mutex m_mutex;
-    std::condition_variable m_wake, m_done;
-    const std::function<void(size_t, size_t)>* m_job = nullptr;
-    size_t m_count = 0;
-    int m_chunks = 0, m_busy = 0;
-    std::atomic<int> m_next{0};
-    uint64_t m_generation = 0;
-    bool m_quit = false;
-};
-
-void parallel(size_t count, const std::function<void(size_t, size_t)>& fn) { Workers::get().run(count, fn); }
+// the computer's cores (Jobs.h).
+void parallel(size_t count, const std::function<void(size_t, size_t)>& fn) { Jobs::forEach(count, fn, 512); }
 
 constexpr float kH = 2.0f * Liquid::kSpacing;              // how far a drop feels its neighbours
 constexpr float kPi = 3.14159265358979f;
