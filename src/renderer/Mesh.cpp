@@ -15,7 +15,7 @@ Mesh::~Mesh() { release(); }
 
 Mesh::Mesh(Mesh&& o) noexcept
     : m_vao(o.m_vao), m_vbo(o.m_vbo), m_ebo(o.m_ebo), m_extra(o.m_extra), m_indexCount(o.m_indexCount),
-      m_lods(std::move(o.m_lods)), m_lodPixels(std::move(o.m_lodPixels)) {
+      m_vboBytes(o.m_vboBytes), m_eboBytes(o.m_eboBytes), m_lods(std::move(o.m_lods)), m_lodPixels(std::move(o.m_lodPixels)) {
     o.m_vao = o.m_vbo = o.m_ebo = o.m_extra = 0;
 }
 
@@ -24,6 +24,7 @@ Mesh& Mesh::operator=(Mesh&& o) noexcept {
         release();
         m_vao = o.m_vao; m_vbo = o.m_vbo; m_ebo = o.m_ebo; m_extra = o.m_extra;
         m_indexCount = o.m_indexCount;
+        m_vboBytes = o.m_vboBytes; m_eboBytes = o.m_eboBytes;
         m_lods = std::move(o.m_lods); m_lodPixels = std::move(o.m_lodPixels);
         o.m_vao = o.m_vbo = o.m_ebo = o.m_extra = 0;
     }
@@ -36,6 +37,7 @@ void Mesh::release() {
     if (m_ebo) glDeleteBuffers(1, &m_ebo);
     if (m_extra) glDeleteBuffers(1, &m_extra);
     m_vao = m_vbo = m_ebo = m_extra = 0;
+    m_vboBytes = m_eboBytes = 0;
 }
 
 void Mesh::upload(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices) {
@@ -50,9 +52,11 @@ void Mesh::upload(const std::vector<Vertex>& verts, const std::vector<uint32_t>&
 
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(Vertex)), verts.data(), GL_STATIC_DRAW);
+    m_vboBytes = verts.size() * sizeof(Vertex);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(indices.size() * sizeof(uint32_t)), indices.data(), GL_STATIC_DRAW);
+    m_eboBytes = indices.size() * sizeof(uint32_t);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
@@ -73,14 +77,22 @@ void Mesh::upload(const std::vector<Vertex>& verts, const std::vector<uint32_t>&
 }
 
 void Mesh::update(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices) {
+    ++m_version;
     m_lods.clear(); m_lodPixels.clear();   // (the copies were of the old shape)
     if (!m_vao) { upload(verts, indices); return; }   // (headless: upload just counts)
     m_indexCount = (int)indices.size();
     glBindVertexArray(m_vao);
+    // The same size as before (a mesh that bends or ripples every frame): refill the
+    // buffers in place, so the driver doesn't have to find new room for them each time.
+    const size_t vb = verts.size() * sizeof(Vertex), eb = indices.size() * sizeof(uint32_t);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(Vertex)), verts.data(), GL_DYNAMIC_DRAW);
+    if (vb == m_vboBytes) glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)vb, verts.data());
+    else glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)vb, verts.data(), GL_DYNAMIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(indices.size() * sizeof(uint32_t)), indices.data(), GL_DYNAMIC_DRAW);
+    if (eb == m_eboBytes) glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, (GLsizeiptr)eb, indices.data());
+    else glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)eb, indices.data(), GL_DYNAMIC_DRAW);
+    m_vboBytes = vb;
+    m_eboBytes = eb;
     glBindVertexArray(0);
 }
 

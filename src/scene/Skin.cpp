@@ -1,4 +1,5 @@
 #include "Skin.h"
+#include "../core/Scratch.h"
 #include "EditMesh.h"
 #include "SceneNode.h"
 
@@ -272,7 +273,8 @@ bool moves(const SceneNode& part, std::vector<glm::mat4>& out) {
 
 bool deform(const SceneNode& part, std::vector<glm::vec3>& out) {
     if (!part.editMesh || !part.editMesh->skinned()) return false;
-    std::vector<glm::mat4> mv;
+    Scratch<glm::mat4> moved;   // (kept for reuse)
+    std::vector<glm::mat4>& mv = *moved;
     moves(part, mv);
     const EditMesh& m = *part.editMesh;
     glm::vec3 S = glm::max(glm::abs(part.transform.scale), glm::vec3(1e-6f));
@@ -477,7 +479,13 @@ void update(SceneNode* root) {
     last = now;
     struct Seen { const EditMesh* mesh = nullptr; const void* gpu = nullptr; std::vector<float> sig; bool bent = false; };
     static std::unordered_map<uint64_t, Seen> seen;
-    std::vector<SceneNode*> stack{root};
+    // (Lists kept for reuse: this runs for every character, every frame.)
+    Scratch<SceneNode*> todo;
+    Scratch<glm::mat4> moved;
+    Scratch<float> signature;
+    Scratch<glm::vec3> bentCorners;
+    std::vector<SceneNode*>& stack = *todo;
+    stack.push_back(root);
     while (!stack.empty()) {
         SceneNode* n = stack.back();
         stack.pop_back();
@@ -486,10 +494,11 @@ void update(SceneNode* root) {
         if (g_live) solve(*n, dt);
         else if (!n->children.empty()) for (SceneNode* b : bones(n)) b->rig.live = kNoTurn;
         if (!n->editMesh || !n->editMesh->skinned()) continue;
-        std::vector<glm::mat4> mv;
+        std::vector<glm::mat4>& mv = *moved;
+        mv.clear();
         bool bent = moves(*n, mv);
-        std::vector<float> sig;
-        sig.reserve(mv.size() * 16 + 3);
+        std::vector<float>& sig = *signature;
+        sig.clear();
         for (auto& mat : mv) for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r) sig.push_back(mat[c][r]);
         for (int i = 0; i < 3; ++i) sig.push_back(n->transform.scale[i]);
         Seen& s = seen[n->id];
@@ -497,7 +506,8 @@ void update(SceneNode* root) {
         for (size_t i = 0; same && i < sig.size(); ++i) same = std::abs(s.sig[i] - sig[i]) < 1e-6f;
         if (same) continue;
         if (bent) {
-            std::vector<glm::vec3> posed;
+            std::vector<glm::vec3>& posed = *bentCorners;
+            posed.clear();
             deform(*n, posed);
             MeshEdit::refresh(*n, &posed);
         } else if (s.bent) {
@@ -505,7 +515,7 @@ void update(SceneNode* root) {
         }
         s.mesh = n->editMesh.get();
         s.gpu = n->mesh.get();
-        s.sig = std::move(sig);
+        s.sig.assign(sig.begin(), sig.end());   // (a copy into the room it already has)
         s.bent = bent;
     }
 }

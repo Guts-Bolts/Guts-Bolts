@@ -2,6 +2,7 @@
 #include "GL.h"
 #include <glm/glm.hpp>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 class Shader {
@@ -33,6 +34,12 @@ private:
     GLint loc(const char* name) const;   // cached glGetUniformLocation
 
     GLuint m_id = 0;
-    mutable std::unordered_map<std::string, GLint> m_locs;
+    // (Looked up by the name as given, without making a std::string of it each time:
+    // a long uniform name would otherwise ask for memory on every set call.)
+    struct NameHash {
+        using is_transparent = void;
+        size_t operator()(std::string_view s) const { return std::hash<std::string_view>{}(s); }
+    };
+    mutable std::unordered_map<std::string, GLint, NameHash, std::equal_to<>> m_locs;
     static GLuint compile(GLenum type, const char* src);
 };

@@ -147,6 +147,7 @@ unsigned render(Scene& scene, const SceneNode& frame, int w, int h) {
     for (const Item& it : items) {
         hs.add(it.node); hs.add(it.model); hs.add(it.node->color); hs.add(it.node->shownTransparency());
         hs.add(it.node->material); hs.add(it.node->mesh.get());
+        hs.add(it.node->mesh ? it.node->mesh->version() : 0u);   // (a bending mesh is refilled in place)
     }
     Picture& pic = g_pictures[frame.id];
     pic.usedFrame = ImGui::GetFrameCount();

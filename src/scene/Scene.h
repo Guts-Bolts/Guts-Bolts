@@ -1,4 +1,5 @@
 #pragma once
+#include "../core/IdMap.h"
 #include "SceneNode.h"
 #include "Environment.h"
 #include "Storms.h"
@@ -352,6 +353,6 @@ private:
     CoreGuiState               m_coreGui;
     std::unique_ptr<Player>    m_player;
 
-    std::unordered_map<uint64_t, SceneNode*> m_index;
+    IdMap<SceneNode*>                        m_index;   // (an IdMap: rebuilt often, so it mustn't ask for memory each time)
     bool                                     m_indexDirty = true;
 };

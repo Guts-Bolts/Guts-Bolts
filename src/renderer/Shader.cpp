@@ -35,7 +35,7 @@ Shader& Shader::operator=(Shader&& o) noexcept {
 }
 
 GLint Shader::loc(const char* name) const {
-    auto it = m_locs.find(name);
+    auto it = m_locs.find(std::string_view(name));
     if (it != m_locs.end()) return it->second;
     GLint l = glGetUniformLocation(m_id, name);
     m_locs.emplace(name, l);

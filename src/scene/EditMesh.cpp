@@ -18,17 +18,18 @@ uint64_t edgeKey(uint32_t a, uint32_t b) {
 }
 
 // Newell's method: works for any polygon, and its length is twice the area.
-glm::vec3 newell(const EditMesh& m, const std::vector<uint32_t>& f) {
+glm::vec3 newellOf(const std::vector<glm::vec3>& verts, const std::vector<uint32_t>& f) {
     glm::vec3 n(0.0f);
     for (size_t i = 0; i < f.size(); ++i) {
-        const glm::vec3& a = m.verts[f[i]];
-        const glm::vec3& b = m.verts[f[(i + 1) % f.size()]];
+        const glm::vec3& a = verts[f[i]];
+        const glm::vec3& b = verts[f[(i + 1) % f.size()]];
         n.x += (a.y - b.y) * (a.z + b.z);
         n.y += (a.z - b.z) * (a.x + b.x);
         n.z += (a.x - b.x) * (a.y + b.y);
     }
     return n;
 }
+glm::vec3 newell(const EditMesh& m, const std::vector<uint32_t>& f) { return newellOf(m.verts, f); }
 
 // Faces must keep at least three different corners; drop repeats next to each other.
 void cleanFaces(EditMesh& m) {
@@ -123,41 +124,41 @@ EditMesh& own(SceneNode& node) {
 
 void refresh(SceneNode& node, const std::vector<glm::vec3>* posed) {
     if (!node.editMesh) return;
-    // Posed by its bones: the same faces, the corners where the bones put them.
-    EditMesh bent;
-    if (posed && posed->size() == node.editMesh->verts.size()) {
-        bent.verts = *posed;
-        bent.faces = node.editMesh->faces;
-        bent.smooth = node.editMesh->smooth;
-        bent.uvs = node.editMesh->uvs;
-        bent.colors = node.editMesh->colors;
-        bent.tangents = node.editMesh->tangents;
-    }
-    const EditMesh& m = bent.verts.empty() ? *node.editMesh : bent;
-    std::vector<Vertex> verts;
-    std::vector<uint32_t> idx;
+    const EditMesh& m = *node.editMesh;
+    // Posed by its bones (or squashed, see SoftBody / Cloth): the same faces, the
+    // corners where the bones put them. (Read straight from `posed`: no copy of the mesh.)
+    const bool bent = posed && posed->size() == m.verts.size();
+    const std::vector<glm::vec3>& P = bent ? *posed : m.verts;
+    auto unit = [](const glm::vec3& n) { const float len = glm::length(n); return len > 1e-12f ? n / len : glm::vec3(0, 1, 0); };
+    // (Kept from call to call: a bending mesh is refreshed every frame, and these
+    // would otherwise be made and thrown away each time.)
+    static thread_local std::vector<Vertex> verts;
+    static thread_local std::vector<uint32_t> idx;
+    static thread_local std::vector<glm::vec3> smoothN;
+    verts.clear();
+    idx.clear();
+    smoothN.clear();
 
-    std::vector<glm::vec3> smoothN;
     if (m.smooth) {
         smoothN.assign(m.verts.size(), glm::vec3(0.0f));
         for (auto& f : m.faces) {
-            glm::vec3 n = newell(m, f);          // bigger faces count more
+            glm::vec3 n = newellOf(P, f);        // bigger faces count more
             for (uint32_t v : f) smoothN[v] += n;
         }
         for (auto& n : smoothN) n = glm::length(n) > 1e-12f ? glm::normalize(n) : glm::vec3(0, 1, 0);
     }
     const bool ownUVs = m.uvs.size() == m.faces.size();
-    const bool ownNormals = m.normals.size() == m.verts.size();
+    const bool ownNormals = !bent && m.normals.size() == m.verts.size();   // (imported normals don't bend)
     for (size_t fi = 0; fi < m.faces.size(); ++fi) {
         const auto& f = m.faces[fi];
         if (f.size() < 3) continue;
-        glm::vec3 n = faceNormal(m, f);
+        glm::vec3 n = unit(newellOf(P, f));
         if (ownUVs && m.uvs[fi].size() == f.size()) {   // laid out by hand (clothing templates)
             uint32_t base = (uint32_t)verts.size();
             for (size_t c = 0; c < f.size(); ++c) {
                 const glm::vec3 normal = ownNormals && glm::length(m.normals[f[c]]) > 1e-6f
                     ? glm::normalize(m.normals[f[c]]) : (m.smooth ? smoothN[f[c]] : n);
-                verts.push_back({m.verts[f[c]], normal, m.uvs[fi][c],
+                verts.push_back({P[f[c]], normal, m.uvs[fi][c],
                                  f[c] < m.colors.size() ? m.colors[f[c]] : glm::vec4(1.0f),
                                  f[c] < m.tangents.size() ? m.tangents[f[c]] : glm::vec4(1, 0, 0, 1)});
             }
@@ -167,23 +168,29 @@ void refresh(SceneNode& node, const std::vector<glm::vec3>* posed) {
         }
         // Box-style texture coordinates: project along the face's main direction.
         // (From the unbent shape, so a picture doesn't slide over a bending mesh.)
-        const EditMesh& rest = *node.editMesh;
-        glm::vec3 an = glm::abs(&m == &rest ? n : faceNormal(rest, f));
+        glm::vec3 an = glm::abs(bent ? faceNormal(m, f) : n);
         int ax = an.x > an.y && an.x > an.z ? 0 : (an.y > an.z ? 1 : 2);
         int u = ax == 0 ? 2 : 0, v = ax == 1 ? 2 : 1;
         uint32_t base = (uint32_t)verts.size();
         for (uint32_t i : f) {
-            const glm::vec3& p = rest.verts[i];
+            const glm::vec3& p = m.verts[i];
             const glm::vec3 normal = ownNormals && glm::length(m.normals[i]) > 1e-6f
                 ? glm::normalize(m.normals[i]) : (m.smooth ? smoothN[i] : n);
-            verts.push_back({m.verts[i], normal, {p[u] + 0.5f, p[v] + 0.5f},
+            verts.push_back({P[i], normal, {p[u] + 0.5f, p[v] + 0.5f},
                                i < m.colors.size() ? m.colors[i] : glm::vec4(1.0f),
                                i < m.tangents.size() ? m.tangents[i] : glm::vec4(1, 0, 0, 1)});
         }
         for (uint32_t k = 1; k + 1 < (uint32_t)f.size(); ++k)
             idx.insert(idx.end(), {base, base + k, base + k + 1});
     }
-    node.mesh = verts.empty() ? MeshLibrary::get(PrimitiveType::Cube) : std::make_shared<Mesh>(verts, idx, /*lods*/ bent.verts.empty());
+    if (verts.empty()) { node.mesh = MeshLibrary::get(PrimitiveType::Cube); return; }
+    // A bending mesh: refill the one it already has (only this part uses it) instead of
+    // making a new one on the graphics card every frame.
+    if (bent && node.mesh && node.mesh.use_count() == 1 && node.mesh->lodCount() == 0) {
+        node.mesh->update(verts, idx);
+        return;
+    }
+    node.mesh = std::make_shared<Mesh>(verts, idx, /*lods*/ !bent);
 }
 
 void fit(SceneNode& node) {
