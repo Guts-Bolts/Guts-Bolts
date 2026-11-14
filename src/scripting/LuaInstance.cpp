@@ -7,6 +7,7 @@
 #include "../scene/IkControls.h"
 #include "../scene/Gore.h"
 #include "../scene/Shatter.h"
+#include "../scene/Slice.h"
 #include "../scene/Animation.h"
 #include "../scene/Physics.h"
 #include "../scene/Player.h"
@@ -551,6 +552,25 @@ int m_Shatter(lua_State* L) {
     }
     return 1;
 }
+// part:Slice(point, normal, [push]): cut it in two along the flat surface through
+// `point` facing `normal` (a sword's swing, a saw). Returns the two halves, the one on
+// the normal's side first (it comes loose and is pushed away at `push` studs / second),
+// or an empty table if it can't be cut there. The halves keep the part's real shape.
+// Only the host / a server script cuts things (the halves are ordinary parts).
+int m_Slice(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    Scene& scene = *E(L)->scene();
+    const glm::vec3 at = LuaApi::checkVector3(L, 2);
+    const glm::vec3 normal = LuaApi::checkVector3(L, 3);
+    const float push = lua_isnumber(L, 4) ? std::clamp((float)lua_tonumber(L, 4), 0.0f, 200.0f) : 2.0f;
+    const std::vector<SceneNode*> made = Slice::part(scene, n, at, normal, push);
+    lua_createtable(L, (int)made.size(), 0);
+    for (size_t i = 0; i < made.size(); ++i) {
+        LuaApi::pushInstance(L, made[i]->id);
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    return 1;
+}
 int m_ApplyAngularImpulse(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
     if (!n->isPart()) return 0;
@@ -928,7 +948,7 @@ const luaL_Reg kMethods[] = {
     {"GetPivot", m_GetPivot}, {"PivotTo", m_PivotTo}, {"BreakJoints", m_BreakJoints},
     {"SetPrimaryPartCFrame", m_SetPrimaryPartCFrame}, {"GetPrimaryPartCFrame", m_GetPrimaryPartCFrame},
     {"Play", m_Play}, {"Stop", m_Stop},
-    {"ApplyImpulse", m_ApplyImpulse}, {"ApplyAngularImpulse", m_ApplyAngularImpulse}, {"Shatter", m_Shatter},
+    {"ApplyImpulse", m_ApplyImpulse}, {"ApplyAngularImpulse", m_ApplyAngularImpulse}, {"Shatter", m_Shatter}, {"Slice", m_Slice},
     {"GetAttribute", m_GetAttribute}, {"SetAttribute", m_SetAttribute}, {"GetAttributes", m_GetAttributes},
     {"GetAttributeChangedSignal", m_GetAttributeChangedSignal},
     {"HasTag", m_HasTag}, {"AddTag", m_AddTag}, {"RemoveTag", m_RemoveTag}, {"GetTags", m_GetTags},
