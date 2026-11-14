@@ -86,6 +86,11 @@ bool half(const EditMesh& in, const glm::vec3& point, const glm::vec3& n, float 
         const uint64_t key = ((uint64_t)std::min(a, b) << 32) | std::max(a, b);
         auto it = crossed.find(key);
         if (it != crossed.end()) return it->second;
+        // (Always worked out from the far side to the near side, so two edges in the same
+        // place, like a cut end's own edge and the outline it closes, cross in exactly
+        // the same spot whichever way round they run.)
+        if (dist[a] > dist[b]) { std::swap(a, b); t = 1.0f - t; }
+        t = dist[a] / (dist[a] - dist[b]);
         const glm::vec4 ca = colors ? in.colors[a] : glm::vec4(1.0f), cb = colors ? in.colors[b] : glm::vec4(1.0f);
         const uint32_t v = addVert(glm::mix(in.verts[a], in.verts[b], t), glm::mix(ca, cb, t));
         crossed[key] = v;
@@ -93,6 +98,13 @@ bool half(const EditMesh& in, const glm::vec3& point, const glm::vec3& n, float 
     };
 
     // The edges of the hole: from -> to, running the way the faces beside them run.
+    // Corners in the same place count as one (an earlier cut end has corners of its own
+    // on top of the outline it closes; a new cut through both must still join up).
+    std::map<std::array<float, 3>, uint32_t> place;
+    auto weld = [&](uint32_t v) {
+        const glm::vec3 p = out.verts[v] + 0.0f;   // (+ 0 so -0 and 0 are the same place)
+        return place.try_emplace({p.x, p.y, p.z}, v).first->second;
+    };
     std::map<std::pair<uint32_t, uint32_t>, int> rim;
     std::vector<Corner> poly;
     for (size_t fi = 0; fi < in.faces.size(); ++fi) {
@@ -128,7 +140,9 @@ bool half(const EditMesh& in, const glm::vec3& point, const glm::vec3& n, float 
         for (size_t c = 0; c < poly.size(); ++c) {
             const Corner& a = poly[c];
             const Corner& b = poly[(c + 1) % poly.size()];
-            if (a.onCut && b.onCut && a.v != b.v) ++rim[{a.v, b.v}];
+            if (!a.onCut || !b.onCut) continue;
+            const uint32_t wa = weld(a.v), wb = weld(b.v);
+            if (wa != wb) ++rim[{wa, wb}];
         }
         out.faces.push_back(std::move(face));
         if (uvs) out.uvs.push_back(std::move(faceUV));

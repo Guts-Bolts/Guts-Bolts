@@ -9,6 +9,7 @@
 #include "scene/SceneNode.h"
 #include "scene/Slice.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <string>
@@ -53,6 +54,7 @@ EditMesh beam() {
     // (the two ends as triangles, so the dent is filled the right way)
     m.faces.push_back({0, 5, 3});  m.faces.push_back({0, 3, 1});  m.faces.push_back({1, 3, 2});  m.faces.push_back({3, 5, 4});
     m.faces.push_back({6, 9, 11}); m.faces.push_back({6, 7, 9});  m.faces.push_back({7, 8, 9});  m.faces.push_back({9, 10, 11});
+    for (auto& f : m.faces) std::reverse(f.begin(), f.end());   // (outside out)
     return m;
 }
 } // namespace
@@ -213,6 +215,7 @@ int main() {
         inside.v = {0.9f, 0.8f, 0.6f};
         crate->attributes.push_back(inside);
         crate->color = {0.3f, 0.2f, 0.1f};
+        crate->anchored = false;
         const std::vector<SceneNode*> planks = part(scene, crate, {30, 5, 0}, {0, 1, 0});
         check(planks.size() == 2, "a crate cuts in two");
         if (planks.size() == 2) {
