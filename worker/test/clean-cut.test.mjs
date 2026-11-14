@@ -15,7 +15,8 @@ test('the update is on the Updates page', () => {
 });
 
 test('the step is on the roadmap', () => {
-  assert.ok(['working', 'done'].includes(item.status));
+  assert.equal(item.status, 'done');
+  assert.ok(item.pr > 0);
   assert.ok(item.title.length < 80 && item.text.length < 600);
   assert.equal(rest.status, 'planned');
 });
