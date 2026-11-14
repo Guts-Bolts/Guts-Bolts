@@ -205,7 +205,7 @@ void tycoon(Scene& scene) {
     push->tags.push_back("ForceZone");
     attr(push, "Mode", "Wind");
     push->attributes.push_back([] { Attribute a; a.name = "Direction"; a.type = Attribute::Vector3; a.v = {1, 0, 0}; return a; }());
-    attr(push, "Strength", 130.0);   // (strong enough to beat the belt's friction under Roblox-strength gravity)
+    attr(push, "Strength", 80.0);    // (strong enough to beat the belt's friction: friction grows with gravity)
     part(scene, t, "BeltRailBack", Cube, o + glm::vec3(0, 1.1f, -3.6f), {16, 0.6f, 0.2f}, {0.85f, 0.7f, 0.1f}, Material::Metal);
     part(scene, t, "BeltRailFront", Cube, o + glm::vec3(0, 1.1f, -0.4f), {16, 0.6f, 0.2f}, {0.85f, 0.7f, 0.1f}, Material::Metal);
     SceneNode* collector = part(scene, t, "Collector", Cube, o + glm::vec3(9.0f, 0.9f, -2.0f), {2, 1.2f, 3.4f}, {0.1f, 0.6f, 1.0f}, Material::Neon);

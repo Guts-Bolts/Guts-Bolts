@@ -180,10 +180,10 @@ int main(int argc, char** argv) {
         check(r.hits.size() == 1 && r.hits[0].what == Hit::Stopped, "a thick wooden beam stops it");
         r = shoot({{20, 20.3f, Material::Glass}, {30, 30.3f, Material::Glass}}, glm::vec3(0, 5, 0), glm::vec3(900, 0, 0));
         check(r.hits.size() >= 2 && r.hits[0].what == Hit::Pierced && r.hits[1].what == Hit::Pierced, "it goes through two windows");
-        // Drop: 300 studs at 600 a second is half a second: about 12 studs down.
+        // Drop: 300 studs at 600 a second is half a second: about 7.5 studs down.
         r = shoot({{300, 301, Material::Metal}}, glm::vec3(0, 50, 0), glm::vec3(600, 0, 0));
         const float drop = r.hits.empty() ? 0.0f : 50.0f - r.hits[0].point.y;
-        check(drop > 8.0f && drop < 14.0f, "bullets drop over a long shot (" + std::to_string(drop) + " studs)");
+        check(drop > 5.0f && drop < 10.0f, "bullets drop over a long shot (" + std::to_string(drop) + " studs)");
         // Wind pushes it sideways.
         Ballistics::Result calm = shoot({{300, 301, Material::Metal}}, glm::vec3(0, 50, 0), glm::vec3(600, 0, 0));
         Ballistics::Result windy = shoot({{300, 301, Material::Metal}}, glm::vec3(0, 50, 0), glm::vec3(600, 0, 0), glm::vec3(0, 0, 40));

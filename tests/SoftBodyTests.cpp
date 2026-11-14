@@ -234,7 +234,7 @@ int main() {
         b = bodyOf(*blob);
         glm::vec3 lo, hi;
         bounds(*b, lo, hi);
-        check(lo.y > -1e-3f && hi.y < 3.0f - 0.1f, "it sags on the floor it stands on, and not through it");
+        check(lo.y > -1e-3f && hi.y < 3.0f - 0.05f, "it sags on the floor it stands on, and not through it");
         check(b->asleep, "and settles");
 
         // A script's poke.

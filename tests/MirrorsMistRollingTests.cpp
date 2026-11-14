@@ -195,8 +195,9 @@ int main(int argc, char** argv) {
         // A slope going down towards +X, tilted 15 degrees.
         SceneNode* slope = addPart(scene, "Slope", PrimitiveType::Cube, {1000, 0, 0}, {80, 1, 30}, {0, 0, -15}, true);
         // A barrel lying on its side (its middle line along Z), and a box the same size beside it.
-        SceneNode* barrel = addPart(scene, "Barrel", PrimitiveType::Cylinder, {990, 4.2f, -6}, {2, 4, 2}, {90, 0, 0});
-        SceneNode* crate = addPart(scene, "Crate", PrimitiveType::Cube, {990, 4.2f, 6}, {2, 4, 2}, {90, 0, 0});
+        // (dropped from just above it: starting inside the slope pops them out with a kick)
+        SceneNode* barrel = addPart(scene, "Barrel", PrimitiveType::Cylinder, {990, 4.8f, -6}, {2, 4, 2}, {90, 0, 0});
+        SceneNode* crate = addPart(scene, "Crate", PrimitiveType::Cube, {990, 4.8f, 6}, {2, 4, 2}, {90, 0, 0});
         slope->material = Material::Concrete;   // (grippy, so a box can't slide down it)
         crate->material = Material::Concrete;
         simulate(scene, 0.25f);   // (both settle onto the slope first)
@@ -249,7 +250,7 @@ int main(int argc, char** argv) {
         drop(0.0f, glm::vec3(0.0f), sheetNoAir, brickNoAir);
         check(std::abs(sheetNoAir.y - brickNoAir.y) < 0.2f, "with no air, a foam sheet and a brick fall together");
         drop(0.0012f, glm::vec3(0.0f), sheetAir, brickAir);
-        check(sheetAir.y > brickAir.y + 20.0f, "with real air, the light sheet floats down slowly (" + std::to_string(sheetAir.y) +
+        check(120.0f - sheetAir.y < 0.5f * (120.0f - brickAir.y), "with real air, the light sheet floats down slowly (" + std::to_string(sheetAir.y) +
                                                    " vs " + std::to_string(brickAir.y) + ")");
         check(std::abs(brickAir.y - brickNoAir.y) < 2.0f, "but a brick hardly notices the air");
         drop(0.0012f, glm::vec3(30, 0, 0), sheetWind, brickWind);
