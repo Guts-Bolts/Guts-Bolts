@@ -14,6 +14,6 @@ test('the update is on the Updates page', () => {
 });
 
 test('the speed step on the roadmap counts it as done so far', () => {
-  assert.ok(item.text.includes('choosing what to draw by itself)'));
+  assert.ok(item.text.includes('choosing what to draw by itself'));
   assert.ok(item.title.length < 80 && item.text.length < 600);
 });

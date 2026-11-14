@@ -39,6 +39,10 @@ const GpuCaps& get() {
     }
     s_caps = GpuCaps::from(version, es, ext, blocks,
                            GraphicsSettings::get().graphicsApi == GraphicsSettings::ApiSafe);
+#if defined(__EMSCRIPTEN__)
+    // (A browser only reads ETC2 pictures when it says so: most computer browsers don't.)
+    s_caps.etc2 = ext.find("compressed_texture_etc") != std::string::npos;
+#endif
     s_asked = true;
     return s_caps;
 }

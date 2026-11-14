@@ -461,6 +461,7 @@ add_library(gb_engine STATIC
     src/core/Settings.cpp
     src/core/Scalability.cpp
     src/core/DeviceFeatures.cpp
+    src/core/TexturePack.cpp
     src/core/KeyBinds.cpp
     src/core/I18n.cpp
     src/core/Pad.cpp
@@ -950,6 +951,11 @@ if(WIN32)
     list(APPEND EDITOR_SOURCES resources/app.rc)
 endif()
 add_executable(GutsAndBolts ${EDITOR_SOURCES})
+# gbpack: packs a game's pictures ahead of time (src/core/TexturePack.h). Computers only.
+if(NOT EMSCRIPTEN AND NOT GB_MOBILE)
+    add_executable(gbpack tools/gbpack/main.cpp)
+    target_link_libraries(gbpack PRIVATE gb_engine)
+endif()
 add_library(gb_imnodes STATIC ${imnodes_SOURCE_DIR}/imnodes.cpp)
 target_include_directories(gb_imnodes PUBLIC ${imnodes_SOURCE_DIR})
 target_link_libraries(gb_imnodes PUBLIC gb_imgui)
@@ -1387,6 +1393,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(GpuCullingTests tests/GpuCullingTests.cpp)
     target_link_libraries(GpuCullingTests PRIVATE gb_engine)
     add_test(NAME GpuCullingTests COMMAND GpuCullingTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    # Pictures packed ahead of time: each squeezed format, the .gbtex file, which device gets which.
+    add_executable(TexturePackTests tests/TexturePackTests.cpp)
+    target_link_libraries(TexturePackTests PRIVATE gb_engine)
+    add_test(NAME TexturePackTests COMMAND TexturePackTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)
