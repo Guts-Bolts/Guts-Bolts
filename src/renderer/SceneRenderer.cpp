@@ -1890,18 +1890,24 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         struct MeshLevelHash {
             size_t operator()(const MeshLevel& k) const { return std::hash<const Mesh*>()(k.mesh) * 31u + (size_t)k.level; }
         };
-        std::unordered_map<MeshLevel, std::vector<const Item*>, MeshLevelHash> groups;
-        std::vector<const Item*> single;
+        // (Kept between frames and only emptied: no new memory once they've grown. A
+        // mesh that's gone keeps an empty list until there are too many.)
+        static std::unordered_map<MeshLevel, std::vector<const Item*>, MeshLevelHash> groups;
+        static std::vector<const Item*> single;
+        if (groups.size() > 4096) groups.clear();
+        for (auto& [key, list] : groups) list.clear();
+        single.clear();
         static const bool off = std::getenv("GB_NO_INSTANCING") != nullptr;   // (to compare, or if a graphics card mis-draws it)
         for (const Item& it : items) {
             if (!off && Instancing::canCopy(*it.node, it.model, Player::isWater(it.node))) groups[{it.node->mesh.get(), lodFor(it.node->mesh.get(), it.model)}].push_back(&it);
             else single.push_back(&it);
         }
         if (!Mesh::headless && !m_instanceVbo) glGenBuffers(1, &m_instanceVbo);
-        std::vector<InstanceData> data;
+        static std::vector<InstanceData> data;
         int batches = 0;
         for (auto& [key, list] : groups) {
             const Mesh* mesh = key.mesh;
+            if (list.empty()) continue;
             if ((int)list.size() < Instancing::kMinCopies || !m_instanceVbo) {
                 single.insert(single.end(), list.begin(), list.end());
                 continue;
@@ -1956,14 +1962,20 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     }
 
     // --- Particles (blood, oil, gibs, bolts, sparks, fire, smoke) ---
+    // A battle leaves thousands of stains and bits about. Each one's settings go in a
+    // list, and the lists are drawn many at once (one draw for every block-shaped one,
+    // one for every round one), instead of telling the graphics card about each.
     const auto& parts = scene.particles().items();
-    std::vector<const Particle*> fading;
+    static std::vector<const Particle*> fading;
+    static std::vector<InstanceData> copies[2];   // [0] blocks, [1] cylinders (kept between frames)
+    fading.clear();
     if (!parts.empty()) {
         auto cube = MeshLibrary::get(PrimitiveType::Cube);
         auto cyl  = MeshLibrary::get(PrimitiveType::Cylinder);
         m_lit->setBool("uSelected", false);
         const float dryTime = scene.particles().dryTime();
-        auto drawParticle = [&](const Particle& p, float alpha) {
+        // Where it is, how it looks, and which shape it is (true: a cylinder).
+        auto describe = [&](const Particle& p, float alpha, InstanceData& d) {
             glm::mat4 m = glm::translate(glm::mat4(1.0f), p.pos);
             const float speed = glm::length(p.vel);
             if (p.kind == Particle::Drop && speed > 0.5f) {
@@ -1989,45 +2001,89 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 m = glm::rotate(m, glm::radians(p.rot.x), {1, 0, 0});
                 m = glm::scale(m, p.size);
             }
-            m_lit->setMat4("uModel", m);
-            m_lit->setMat3("uNormalMat", glm::transpose(glm::inverse(glm::mat3(m))));
-            m_lit->setVec3("uColor", p.color);
             int mat = (p.kind == Particle::Fire || p.kind == Particle::Spark) ? (int)Material::Neon
                     : p.wet ? 8   // wet liquid (see the shader)
                     : p.glossy ? (int)Material::Metal : (int)Material::Plastic;
+            float seed = 0.0f;
+            glm::vec4 extra(0.0f);
             if (p.kind == Particle::Chunk && (p.gib == 0 || p.gib == 2 || p.gib == 3)) {   // flesh / organ / intestine-like pieces
                 mat = 31;
-                m_lit->setBool("uGibSkinOn", p.gib == 0 && p.skin.x >= 0.0f);
-                m_lit->setVec3("uGibSkin", glm::max(p.skin, glm::vec3(0.0f)));
-                m_lit->setFloat("uGibSeed", p.gibSeed);
+                seed = p.gibSeed;
+                extra = glm::vec4(glm::max(p.skin, glm::vec3(0.0f)), p.gib == 0 && p.skin.x >= 0.0f ? 1.0f : 0.0f);
             } else if (p.kind == Particle::Splat) {
                 // Pools, smears, footprints and stains: wobbly-edged, and drying as they age.
                 mat = 30;
-                m_lit->setInt("uSplatLook", p.look);
-                m_lit->setFloat("uSplatSeed", p.seed);
-                m_lit->setFloat("uSplatDry", std::clamp(p.age / dryTime, 0.0f, 1.0f));
-                m_lit->setInt("uSplatMark", p.mark);
+                seed = p.seed;
+                extra = glm::vec4((float)p.look, std::clamp(p.age / dryTime, 0.0f, 1.0f), (float)p.mark, 0.0f);
+            }
+            d.model = m;
+            d.color = glm::vec4(p.color, alpha);
+            d.info = glm::vec4((float)mat, 0.0f, 0.0f, seed);
+            d.extra = extra;
+            return p.kind != Particle::Splat &&
+                   (p.kind == Particle::Bolt || (p.kind == Particle::Drop && p.wet) || (p.kind == Particle::Chunk && (p.gib == 2 || p.gib == 3)));
+        };
+        // One on its own, the old way (too few to be worth a list, or no copies here).
+        auto drawOne = [&](const InstanceData& d, bool round) {
+            const int mat = (int)(d.info.x + 0.5f);
+            m_lit->setMat4("uModel", d.model);
+            m_lit->setMat3("uNormalMat", glm::transpose(glm::inverse(glm::mat3(d.model))));
+            m_lit->setVec3("uColor", glm::vec3(d.color));
+            if (mat == 31) {
+                m_lit->setBool("uGibSkinOn", d.extra.w > 0.5f);
+                m_lit->setVec3("uGibSkin", glm::vec3(d.extra));
+                m_lit->setFloat("uGibSeed", d.info.w);
+            } else if (mat == 30) {
+                m_lit->setInt("uSplatLook", (int)(d.extra.x + 0.5f));
+                m_lit->setFloat("uSplatSeed", d.info.w);
+                m_lit->setFloat("uSplatDry", d.extra.y);
+                m_lit->setInt("uSplatMark", (int)(d.extra.z + 0.5f));
             }
             m_lit->setInt("uMaterial", mat);
-            m_lit->setFloat("uAlpha", alpha);
-            (p.kind == Particle::Splat ? cube
-             : p.kind == Particle::Bolt || (p.kind == Particle::Drop && p.wet) ||
-               (p.kind == Particle::Chunk && (p.gib == 2 || p.gib == 3)) ? cyl : cube)->draw();
+            m_lit->setFloat("uAlpha", d.color.a);
+            (round ? cyl : cube)->draw();
         };
+        static const bool noCopies = std::getenv("GB_NO_INSTANCING") != nullptr;
+        if (!Mesh::headless && !m_instanceVbo) glGenBuffers(1, &m_instanceVbo);
+        auto flush = [&]() {
+            for (int k = 0; k < 2; ++k) {
+                std::vector<InstanceData>& list = copies[k];
+                if (list.empty()) continue;
+                if ((int)list.size() < Instancing::kMinCopies || noCopies || !m_instanceVbo) {
+                    for (const InstanceData& d : list) drawOne(d, k == 1);
+                } else {
+                    glBindBuffer(GL_ARRAY_BUFFER, m_instanceVbo);
+                    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(list.size() * sizeof(InstanceData)), list.data(), GL_STREAM_DRAW);
+                    glBindBuffer(GL_ARRAY_BUFFER, 0);
+                    m_lit->setBool("uInstanced", true);
+                    (k == 1 ? cyl : cube)->drawInstanced(m_instanceVbo, (int)list.size());
+                    m_lit->setBool("uInstanced", false);
+                    ++m_particleBatches;
+                }
+                list.clear();
+            }
+        };
+        m_particleBatches = 0;
+        copies[0].clear(); copies[1].clear();
+        InstanceData d;
         for (const Particle& p : parts) {
             if (tooFar(p.pos, 1.0f)) continue;
             bool fade = p.kind == Particle::Smoke || p.kind == Particle::Spray || (p.kind == Particle::Splat && (p.life < 1.0f || p.alpha < 0.99f));
-            if (fade) fading.push_back(&p);
-            else      drawParticle(p, 1.0f);
+            if (fade) { fading.push_back(&p); continue; }
+            const bool round = describe(p, 1.0f, d);
+            copies[round ? 1 : 0].push_back(d);
         }
+        flush();
         glEnable(GL_BLEND);
         glDepthMask(GL_FALSE);
         for (const Particle* p : fading) {
             float a = p->kind == Particle::Smoke ? 0.55f * std::min(1.0f, p->life / p->maxLife * 2.0f)
                     : p->kind == Particle::Spray ? 0.8f * std::min(1.0f, p->life / p->maxLife * 3.0f)
                                                  : std::max(0.0f, std::min(p->life, p->alpha));
-            drawParticle(*p, a);
+            const bool round = describe(*p, a, d);
+            copies[round ? 1 : 0].push_back(d);
         }
+        flush();
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
     }

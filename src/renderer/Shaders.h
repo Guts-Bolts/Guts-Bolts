@@ -44,10 +44,12 @@ layout(location=5) in vec4 aTangent;
 // Many copies of one mesh drawn at once (Mesh::drawInstanced): each copy's own settings.
 layout(location=8)  in mat4 aIModel;   // (8-11)
 layout(location=12) in vec4 aIColor;   // rgb, alpha
-layout(location=13) in vec4 aIInfo;    // material, selected, wet
+layout(location=13) in vec4 aIInfo;    // material, selected, wet, seed (a gib's or a splat's)
+layout(location=14) in vec4 aIExtra;   // a splat: look, dry, mark; a gib: skin colour, skin on
 uniform bool uInstanced;
 flat out vec4 vIColor;
 flat out vec4 vIInfo;
+flat out vec4 vIExtra;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -69,6 +71,7 @@ void main() {
     mat3 normalMat = uNormalMat;
     vIColor = aIColor;
     vIInfo = aIInfo;
+    vIExtra = aIExtra;
     if (uInstanced) {
         model = aIModel;
         // (copies are only ever moved, turned and stretched along their own sides, so
@@ -166,11 +169,20 @@ uniform float uFogSunGlow;
 uniform bool uInstanced;
 flat in vec4 vIColor;
 flat in vec4 vIInfo;
+flat in vec4 vIExtra;
 #define gColor    (uInstanced ? vIColor.rgb : uColor)
 #define gAlpha    (uInstanced ? vIColor.a : uAlpha)
 #define gMaterial (uInstanced ? int(vIInfo.x + 0.5) : uMaterial)
 #define gSelected (uInstanced ? (vIInfo.y > 0.5) : uSelected)
 #define gWetPart  (uInstanced ? vIInfo.z : uWetPart)
+// Blood stains and gibs drawn many at once: their own settings ride along with each copy.
+#define gSplatSeed (uInstanced ? vIInfo.w : uSplatSeed)
+#define gGibSeed   (uInstanced ? vIInfo.w : uGibSeed)
+#define gSplatLook (uInstanced ? int(vIExtra.x + 0.5) : uSplatLook)
+#define gSplatDry  (uInstanced ? vIExtra.y : uSplatDry)
+#define gSplatMark (uInstanced ? int(vIExtra.z + 0.5) : uSplatMark)
+#define gGibSkin   (uInstanced ? vIExtra.xyz : uGibSkin)
+#define gGibSkinOn (uInstanced ? (vIExtra.w > 0.5) : uGibSkinOn)
 
 uniform bool      uShadowsEnabled;
 uniform int       uShadowQuality;     // 0 hard, 1 soft, 2 PCSS
@@ -706,42 +718,42 @@ void main() {
         albedo *= 0.7;
     }
     else if (gMaterial == 31) {                                   // a gib: lumpy wet meat (skin on one side if cut from a body part)
-        vec3 lp = vLocalPos + uGibSeed * 7.0;
+        vec3 lp = vLocalPos + gGibSeed * 7.0;
         float lumps = fbm(lp.xz * 4.0 + lp.y * 3.0);
         vec2 cid;
-        vec3 cell = voronoi(vLocalPos.xy * 5.0 + vLocalPos.zx * 3.0 + uGibSeed * 11.0, cid);
+        vec3 cell = voronoi(vLocalPos.xy * 5.0 + vLocalPos.zx * 3.0 + gGibSeed * 11.0, cid);
         albedo *= 0.6 + 0.6 * lumps;
         albedo = mix(albedo, lin(vec3(0.85, 0.7, 0.62)), smoothstep(0.72, 0.9, vnoise(lp.xy * 7.0 + lp.z * 4.0)) * 0.55);   // fat and sinew
         albedo *= 1.0 - (1.0 - smoothstep(0.0, 0.06, cell.y)) * 0.5;   // dark torn gaps
         rough = 0.22;
         N = bump(N, lumps * 0.03 * detail);
-        if (uGibSkinOn && vLocalNormal.y > 0.5) {
+        if (gGibSkinOn && vLocalNormal.y > 0.5) {
             // The outside of the body part, with a ragged, bloody edge where it tore.
             float edge = max(abs(vLocalPos.x), abs(vLocalPos.z)) * 2.0;
-            float torn = smoothstep(0.62, 0.8, edge + 0.25 * (vnoise(vLocalPos.xz * 10.0 + uGibSeed * 5.0) - 0.5));
-            albedo = mix(lin(uGibSkin) * (0.9 + 0.1 * lumps), albedo, torn);
+            float torn = smoothstep(0.62, 0.8, edge + 0.25 * (vnoise(vLocalPos.xz * 10.0 + gGibSeed * 5.0) - 0.5));
+            albedo = mix(lin(gGibSkin) * (0.9 + 0.1 * lumps), albedo, torn);
             rough = mix(0.55, 0.22, torn);
         }
     }
     else if (gMaterial == 30) {                                   // blood that has landed: pools, smears, footprints, stains
         if (vLocalNormal.y < 0.5) discard;                        // just a film on top of the surface
         vec2 q = vLocalPos.xz * 2.0;                              // -1..1 across
-        float sd = uSplatSeed * 37.0;
+        float sd = gSplatSeed * 37.0;
         float inside;                                             // 0 at the edge of the shape, up to 1 in the middle
-        if (uSplatLook == 2) {                                    // footprint: sole and heel (toe along +z), patchy tread
+        if (gSplatLook == 2) {                                    // footprint: sole and heel (toe along +z), patchy tread
             float sole = length((q - vec2(0.0, 0.28)) / vec2(0.92, 0.66));
             float heel = length((q - vec2(0.0, -0.55)) / vec2(0.72, 0.42));
             float d = min(sole, heel);
             float tread = vnoise(q * vec2(9.0, 5.0) + sd) * 0.55 + vnoise(q * 22.0 + sd) * 0.45;
             if (d > 1.0 || tread < 0.3 + 0.25 * (1.0 - gAlpha)) discard;   // fainter prints are patchier
             inside = 1.0 - d;
-        } else if (uSplatLook == 1) {                             // smear: streaks along the way it was dragged (z)
+        } else if (gSplatLook == 1) {                             // smear: streaks along the way it was dragged (z)
             float streak = vnoise(vec2(q.x * 7.0 + sd, q.y * 0.6)) * 0.7 + vnoise(vec2(q.x * 19.0 - sd, q.y * 1.3)) * 0.3;
             float ends  = abs(q.y) + (vnoise(vec2(q.x * 4.0, sd)) - 0.5) * 0.5;
             float sides = abs(q.x) + (vnoise(vec2(q.y * 3.0, sd + 5.0)) - 0.5) * 0.3;
             if (ends > 1.0 || sides > 0.95 || streak < 0.28 + 0.35 * smoothstep(0.3, 1.0, ends)) discard;
             inside = clamp(min(1.0 - ends, 0.95 - sides) * 2.0, 0.0, 1.0);
-        } else if (uSplatLook == 3) {                          // high-energy impact with irregular spines
+        } else if (gSplatLook == 3) {                          // high-energy impact with irregular spines
             float r = length(q);
             float a = atan(q.y, q.x);
             float spokes = pow(max(0.0, 0.5 + 0.5 * sin(a * 11.0 + sd + vnoise(q * 7.0 + sd) * 2.2)), 5.0);
@@ -757,12 +769,12 @@ void main() {
             inside = (edge - r) / edge;
         }
         float rim = 1.0 - smoothstep(0.0, 0.2, inside);           // the edge, where it's thickest and clots first
-        if (uSplatMark > 0) {                                     // a mark: soft-edged, no drying or cracking
+        if (gSplatMark > 0) {                                     // a mark: soft-edged, no drying or cracking
             albedo *= 0.88 + 0.12 * vnoise(vLocalPos.xz * 24.0 + sd);
-            rough = uSplatMark == 2 ? 0.12 : 0.95;
-            splatWet = uSplatMark == 2 ? 0.6 : 0.0;
+            rough = gSplatMark == 2 ? 0.12 : 0.95;
+            splatWet = gSplatMark == 2 ? 0.6 : 0.0;
         } else {
-        float dry = clamp(uSplatDry * 1.5 - inside * 0.6, 0.0, 1.0);   // dries from the edge in
+        float dry = clamp(gSplatDry * 1.5 - inside * 0.6, 0.0, 1.0);   // dries from the edge in
         albedo *= mix(1.0, 0.7, rim) * (0.85 + 0.15 * vnoise(vLocalPos.xz * 30.0 + sd));
         albedo = mix(albedo, albedo * vec3(0.32, 0.2, 0.17), dry);      // dried: dark brown
         // Dried blood cracks into little flakes.
