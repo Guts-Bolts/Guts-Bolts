@@ -8,6 +8,7 @@
 #include "../scene/Gore.h"
 #include "../scene/Shatter.h"
 #include "../scene/Slice.h"
+#include "../scene/SoftBody.h"
 #include "../scene/Animation.h"
 #include "../scene/Physics.h"
 #include "../scene/Player.h"
@@ -571,6 +572,21 @@ int m_Slice(lua_State* L) {
     }
     return 1;
 }
+// part:Poke(point, velocity, [radius]): hit or tug a Soft part there (SoftBody.h): the
+// surface within `radius` studs of the point is shoved at `velocity` studs a second, and
+// the part wobbles. Returns false if the part isn't soft.
+int m_Poke(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    Scene& scene = *E(L)->scene();
+    const glm::vec3 at = LuaApi::checkVector3(L, 2);
+    glm::vec3 velocity = LuaApi::checkVector3(L, 3);
+    const float speed = glm::length(velocity);
+    if (speed > 400.0f) velocity *= 400.0f / speed;
+    const float radius = lua_isnumber(L, 4) ? std::clamp((float)lua_tonumber(L, 4), 0.05f, 100.0f)
+                                            : std::max(0.5f, glm::length(n->transform.scale) * 0.3f);
+    lua_pushboolean(L, SoftBody::poke(scene, *n, at, velocity, radius));
+    return 1;
+}
 int m_ApplyAngularImpulse(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
     if (!n->isPart()) return 0;
@@ -948,7 +964,7 @@ const luaL_Reg kMethods[] = {
     {"GetPivot", m_GetPivot}, {"PivotTo", m_PivotTo}, {"BreakJoints", m_BreakJoints},
     {"SetPrimaryPartCFrame", m_SetPrimaryPartCFrame}, {"GetPrimaryPartCFrame", m_GetPrimaryPartCFrame},
     {"Play", m_Play}, {"Stop", m_Stop},
-    {"ApplyImpulse", m_ApplyImpulse}, {"ApplyAngularImpulse", m_ApplyAngularImpulse}, {"Shatter", m_Shatter}, {"Slice", m_Slice},
+    {"ApplyImpulse", m_ApplyImpulse}, {"ApplyAngularImpulse", m_ApplyAngularImpulse}, {"Shatter", m_Shatter}, {"Slice", m_Slice}, {"Poke", m_Poke},
     {"GetAttribute", m_GetAttribute}, {"SetAttribute", m_SetAttribute}, {"GetAttributes", m_GetAttributes},
     {"GetAttributeChangedSignal", m_GetAttributeChangedSignal},
     {"HasTag", m_HasTag}, {"AddTag", m_AddTag}, {"RemoveTag", m_RemoveTag}, {"GetTags", m_GetTags},

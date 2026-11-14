@@ -5,6 +5,7 @@
 #include "../scene/SoftTissue.h"
 #include "../scene/Cloth.h"
 #include "../scene/Shatter.h"
+#include "../scene/SoftBody.h"
 #include "../scene/Impacts.h"
 #include "../scene/LipSync.h"
 #include "../core/Voice.h"
@@ -64,6 +65,7 @@ void GameSession::start() {
     m_scene->blasts().clear();
     SoftTissue::clear();   // (dents, cloth and broken pieces only live while playing)
     Cloth::clearAll();
+    SoftBody::clearAll();
     Shatter::clear();
     LipSync::clear();
     m_scene->vehicles().clear();
@@ -349,6 +351,7 @@ void GameSession::stop() {
     m_scene->blasts().clear();
     SoftTissue::clear();   // (dents, cloth and broken pieces only live while playing)
     Cloth::clearAll();
+    SoftBody::clearAll();
     Shatter::clear();
     LipSync::clear();
     m_scene->camera() = ScriptCamera{};
@@ -637,6 +640,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     { FrameProfile::Scope prof("game: particles"); m_scene->particles().update(dt, m_scene->world().fluidGravity(), m_physics); }
     m_scene->particles().follow(*m_scene);   // blood stains move with the bodies they're on
     SoftTissue::update(*m_scene, dt);         // dents spring back out
+    SoftBody::update(*m_scene, dt, m_physics.knocks, !client);   // Soft parts squash, wobble and tear (SoftBody.h)
     Shatter::update(*m_scene, dt);            // broken pieces fade away after a while
     // Mouths move with what characters say (sounds in them, voice chat, or MouthOpen).
     if (!Mesh::headless) LipSync::update(*m_scene, dt, [](const std::string& name) { return Voice::level(name); });

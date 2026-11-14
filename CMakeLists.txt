@@ -535,6 +535,7 @@ add_library(gb_engine STATIC
     src/scene/SoftTissue.cpp
     src/scene/Shatter.cpp
     src/scene/Slice.cpp
+    src/scene/SoftBody.cpp
     src/scene/Realism.cpp
     src/scene/Ballistics.cpp
     src/scene/Acoustics.cpp
@@ -1369,6 +1370,9 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(SliceTests tests/SliceTests.cpp)
     target_link_libraries(SliceTests PRIVATE gb_engine)
     add_test(NAME SliceTests COMMAND SliceTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    add_executable(SoftBodyTests tests/SoftBodyTests.cpp)
+    target_link_libraries(SoftBodyTests PRIVATE gb_engine)
+    add_test(NAME SoftBodyTests COMMAND SoftBodyTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)
