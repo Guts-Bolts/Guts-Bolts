@@ -31,11 +31,26 @@ jobs:
         with:
           node-version: '24'
       - name: Check every website and server script for mistakes
-        run: for f in worker/*.js website/*.js website/*.mjs website/app/*.js; do node --check "$f" || exit 1; done
+        run: for f in worker/*.js website/*.js website/*.mjs website/app/*.js website/server/*.js tools/generate-remote-push-keys.mjs; do node --check "$f" || exit 1; done
       - name: Gather the update log and the built-in roadmap
         run: node worker/gather-updates.mjs
       - name: Run the tests
         run: node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.test.mjs'
+
+  remote-agent-syntax:
+    name: Windows remote agent PowerShell syntax
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Parse server scripts without executing them
+        shell: pwsh
+        run: |
+          foreach ($path in @("tools/Remote Server Agent.ps1", "tools/Install-GutsAndBoltsServer.ps1")) {
+            $source = Get-Content -LiteralPath $path -Raw
+            [void][scriptblock]::Create($source)
+          }
 
   android:
     # Expensive mobile packaging is validated on main and for releases, not on every PR.
@@ -234,7 +249,7 @@ jobs:
           msystem: MINGW64
           install: >-
             mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-glfw mingw-w64-x86_64-glew mingw-w64-x86_64-glm git
+            mingw-w64-x86_64-glfw mingw-w64-x86_64-glew mingw-w64-x86_64-glm git zip
       - name: Cache CMake FetchContent dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
@@ -272,11 +287,28 @@ jobs:
           ./GutsAndBolts-Windows/GutsAndBoltsGameServer.exe --help
           ./GutsAndBolts-Windows/GutsAndBoltsServer.exe --help
           echo "Windows installer entry point and complete Studio/Player/server bundle validated."
+          mkdir -p GutsAndBolts-DedicatedServer-Windows
+          cp build/GutsAndBoltsGameServer.exe GutsAndBolts-DedicatedServer-Windows/
+          cp build/*.dll GutsAndBolts-DedicatedServer-Windows/ 2>/dev/null || true
+          cp -r games catalog GutsAndBolts-DedicatedServer-Windows/
+          cp "tools/Remote Server Agent.ps1" GutsAndBolts-DedicatedServer-Windows/
+          cd GutsAndBolts-DedicatedServer-Windows
+          zip -qr ../GutsAndBolts-DedicatedServer-Windows.zip .
+          cd ..
+          sha256sum GutsAndBolts-DedicatedServer-Windows.zip > GutsAndBolts-DedicatedServer-Windows.zip.sha256
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: github.event_name != 'pull_request'
         with:
           name: windows
           path: GutsAndBolts-Windows
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: github.event_name != 'pull_request'
+        with:
+          name: dedicated-server-windows
+          path: |
+            GutsAndBolts-DedicatedServer-Windows.zip
+            GutsAndBolts-DedicatedServer-Windows.zip.sha256
+          if-no-files-found: error
 
   macos:
     if: github.event_name != 'pull_request'
@@ -403,9 +435,12 @@ jobs:
           test -n "$(find dist/linux -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
           test -n "$(find dist/macos -maxdepth 1 -type f -name '*.zip' -print -quit)"
           test -d dist/windows
+          test -f dist/dedicated-server-windows/GutsAndBolts-DedicatedServer-Windows.zip
+          test -f dist/dedicated-server-windows/GutsAndBolts-DedicatedServer-Windows.zip.sha256
           cp dist/android/*.apk out/
           cp dist/linux/*.tar.gz out/
           cp dist/macos/*.zip out/
+          cp dist/dedicated-server-windows/GutsAndBolts-DedicatedServer-Windows.zip* out/
           (cd dist && zip -qr ../out/GutsAndBolts-Windows.zip windows)
           test -n "$(find out -maxdepth 1 -type f -print -quit)"
           ls -lah out
@@ -421,6 +456,8 @@ jobs:
           SITE=https://gutsandbolts.net/download/upload
           for f in out/*; do
             name=$(basename "$f")
+            # Dedicated server bundles are GitHub release assets, not public app downloads.
+            case "$name" in GutsAndBolts-DedicatedServer-Windows.zip*) continue ;; esac
             echo "Uploading $name"
             if [ "$(stat -c %s "$f")" -le $((80 * 1024 * 1024)) ]; then
               curl -fsS --retry 3 -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @"$f" \
