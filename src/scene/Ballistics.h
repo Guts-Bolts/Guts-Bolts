@@ -26,7 +26,7 @@ struct Shot {
     bool      pierce = true;                   // can go through thin things
     bool      ricochet = true;                 // can bounce off hard ones
     int       maxBounces = 2;
-    glm::vec3 gravity{0.0f, -98.1f, 0.0f};
+    glm::vec3 gravity{0.0f, -60.0f, 0.0f};
     glm::vec3 wind{0.0f};
     float     drag = 0.15f;                    // how much the air (and wind) tugs at it
     uint32_t  seed = 1u;

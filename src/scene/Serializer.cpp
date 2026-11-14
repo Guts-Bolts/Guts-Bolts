@@ -1433,7 +1433,7 @@ json settingsJson(Scene& scene) {
     j["environment"] = envToJson(scene.environment());
     if (!scene.terrain().empty()) j["terrain"] = scene.terrain().toJson();
     const WorldSettings& ws = scene.world();
-    j["world"] = {{"gravity", ws.gravity}, {"gravityVersion", 2}, {"fallenPartsHeight", ws.fallenPartsHeight},
+    j["world"] = {{"gravity", ws.gravity}, {"gravityVersion", 3}, {"fallenPartsHeight", ws.fallenPartsHeight},
                   {"deathStyle", (int)ws.deathStyle}, {"gore", (int)ws.gore},
                   {"dismemberment", ws.dismemberment}, {"knockdowns", ws.knockdowns}, {"fallDamage", ws.fallDamage},
                   {"fallDamageSpeed", ws.fallDamageSpeed}, {"spawnForceField", ws.spawnForceField},
@@ -1521,14 +1521,15 @@ void applySettings(Scene& scene, const json& j) {
             (*gw)[0].is_number() && (*gw)[1].is_number() && (*gw)[2].is_number())
             w.globalWind = glm::clamp(glm::vec3((*gw)[0].get<float>(), (*gw)[1].get<float>(), (*gw)[2].get<float>()),
                                       glm::vec3(-500.0f), glm::vec3(500.0f));
-        // Saved before Roblox-strength gravity (0.7.10): scale its gravity up the
-        // same way (the old default 22 becomes 98.1, a moon game stays as light
-        // compared), and the fall damage speed with it, so the same height of fall
-        // still hurts.
-        if (get<int>(j["world"], "gravityVersion", 1) < 2) {
-            w.gravity = get<float>(j["world"], "gravity", kClassicGravity) * (kDefaultGravity / kClassicGravity);
+        // Saved with an older default gravity (22 before 0.7.10, Roblox's 98.1 until
+        // Softer Landing): scale it to today's the same way (the old default becomes the new
+        // one, a moon game stays as light compared), and the fall damage speed with
+        // it, so the same height of fall still hurts.
+        if (const int version = get<int>(j["world"], "gravityVersion", 1); version < 3) {
+            const float was = version < 2 ? kClassicGravity : kRobloxHalfGravity;
+            w.gravity = get<float>(j["world"], "gravity", was) * (kDefaultGravity / was);
             if (j["world"].contains("fallDamageSpeed"))
-                w.fallDamageSpeed *= std::sqrt(kDefaultGravity / kClassicGravity);
+                w.fallDamageSpeed *= std::sqrt(kDefaultGravity / was);
         }
         if (j["world"].contains("collisionGroups")) w.collisionGroups = Serializer::collisionGroupsFromJson(j["world"]["collisionGroups"]);
         if (j["world"].contains("playerCamera") && j["world"]["playerCamera"].is_object()) {

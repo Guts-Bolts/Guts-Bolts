@@ -62,8 +62,10 @@ constexpr float kRobloxGravity = 196.2f;
 constexpr float kSeatSpeedScale = 6.0f / 16.0f;
 // Movers (BodyVelocity, AlignPosition...) in Roblox numbers -> ours. Our world is half
 // the size with gravity to match (98.1 vs 196.2), so speeds, spins and forces all shrink.
+// (An imported game keeps Roblox's own gravity, not our lighter default: its scripts,
+// jump pads and cars were made for it.)
 // Plastic is 0.7 heavy in Roblox and 1 here.
-constexpr float kAccelScale  = kDefaultGravity / kRobloxGravity;
+constexpr float kAccelScale  = kRobloxHalfGravity / kRobloxGravity;
 const float     kVelScale    = std::sqrt(kImportScale * kAccelScale);   // studs / second
 const float     kSpinScale   = kVelScale / kImportScale;                 // radians / second (and 1 / seconds)
 constexpr float kForceScale  = kImportScale * kImportScale * kImportScale / 0.7f * kAccelScale;
@@ -2735,7 +2737,9 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
 
     // Workspace + Lighting settings.
     double g = ws->num("Gravity", kRobloxGravity);
-    scene.world().gravity = (float)(kDefaultGravity * g / kRobloxGravity);
+    scene.world().gravity = (float)(kRobloxHalfGravity * g / kRobloxGravity);
+    // (and the same height of fall hurts as in a game of ours)
+    scene.world().fallDamageSpeed = WorldSettings{}.fallDamageSpeed * std::sqrt(std::max(0.0f, scene.world().gravity) / kDefaultGravity);
     scene.world().streaming = ws->flag("StreamingEnabled", false);
     scene.world().streamRadius = std::clamp((float)ws->num("StreamingTargetRadius", 1024.0) * kImportScale, 32.0f, 5000.0f);
     if (const Inst* light = findChild(doc.roots, "Lighting")) {
@@ -2797,7 +2801,7 @@ bool exportPlace(Scene& scene, const std::string& path, std::string& error) {
     w.begin();
     w.o << "<Item class=\"Workspace\" referent=\"RBXWORKSPACE\">\n<Properties>\n";
     w.str("Name", "Workspace");
-    w.flt("Gravity", scene.world().gravity / kDefaultGravity * kRobloxGravity);
+    w.flt("Gravity", scene.world().gravity / kRobloxHalfGravity * kRobloxGravity);
     w.boolean("StreamingEnabled", scene.world().streaming);
     w.o << "<int name=\"StreamingTargetRadius\">" << (int)std::lround(scene.world().streamRadius / kImportScale) << "</int>\n";
     if (!scene.world().collisionGroups.isDefault()) w.str("CollisionGroups", writeCollisionGroups(scene.world().collisionGroups));

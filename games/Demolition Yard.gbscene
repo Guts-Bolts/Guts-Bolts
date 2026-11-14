@@ -895,7 +895,7 @@
               1,
               1
             ],
-            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 25 then boom() end\nend)\n",
+            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 20 then boom() end\nend)\n",
             "enabled": true
           }
         ]
@@ -950,7 +950,7 @@
               1,
               1
             ],
-            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 25 then boom() end\nend)\n",
+            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 20 then boom() end\nend)\n",
             "enabled": true
           }
         ]
@@ -1005,7 +1005,7 @@
               1,
               1
             ],
-            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 25 then boom() end\nend)\n",
+            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 20 then boom() end\nend)\n",
             "enabled": true
           }
         ]
@@ -1060,7 +1060,7 @@
               1,
               1
             ],
-            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 25 then boom() end\nend)\n",
+            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 20 then boom() end\nend)\n",
             "enabled": true
           }
         ]
@@ -1115,7 +1115,7 @@
               1,
               1
             ],
-            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 25 then boom() end\nend)\n",
+            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 20 then boom() end\nend)\n",
             "enabled": true
           }
         ]
@@ -1170,7 +1170,7 @@
               1,
               1
             ],
-            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 25 then boom() end\nend)\n",
+            "source": "-- Exploding Barrel: click it, or knock it over, and BOOM.\nlocal barrel = script.Parent\nlocal done = false\n\nlocal function boom()\n    if done then return end\n    done = true\n    Explode(barrel.Position, 10, 1.5)\n    barrel:Destroy()\nend\n\nbarrel.Clicked:Connect(boom)\nbarrel.Touched:Connect(function(hit)\n    -- Blow up if something slams into it fast.\n    if hit.AssemblyLinearVelocity.Magnitude > 20 then boom() end\nend)\n",
             "enabled": true
           }
         ]
@@ -1500,7 +1500,7 @@
               1,
               1
             ],
-            "source": "-- Jump Pad: launches the player high into the air.\nlocal pad = script.Parent\nlocal launchSpeed = 72   -- bigger number = higher jump\n\npad.Touched:Connect(function(hit)\n    local character = hit.Parent\n    local root = character:FindFirstChild(\"HumanoidRootPart\")\n    if root and character:FindFirstChild(\"Humanoid\") then\n        root.AssemblyLinearVelocity = Vector3.new(0, launchSpeed, 0)\n        Sounds.Play(\"boing\", pad.Position)\n    end\nend)\n",
+            "source": "-- Jump Pad: launches the player high into the air.\nlocal pad = script.Parent\nlocal launchSpeed = 56   -- bigger number = higher jump\n\npad.Touched:Connect(function(hit)\n    local character = hit.Parent\n    local root = character:FindFirstChild(\"HumanoidRootPart\")\n    if root and character:FindFirstChild(\"Humanoid\") then\n        root.AssemblyLinearVelocity = Vector3.new(0, launchSpeed, 0)\n        Sounds.Play(\"boing\", pad.Position)\n    end\nend)\n",
             "enabled": true
           }
         ]

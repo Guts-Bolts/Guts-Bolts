@@ -116,5 +116,5 @@ private:
     Gore::Look m_look;                       // this character's blood (its own colour / amount, or the game's)
     std::vector<uint64_t> m_caps;            // cut ends on the body and the loose pieces
     void      removeCaps(Scene& scene);
-    float     m_gravity = 98.1f;   // (set from the world's gravity when it starts)
+    float     m_gravity = 60.0f;   // (set from the world's gravity when it starts)
 };

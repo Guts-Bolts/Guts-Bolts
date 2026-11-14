@@ -24,7 +24,7 @@ struct Humanoid {
     // with useJumpPower on, how FAST you leave the ground (JumpPower) instead.
     // The defaults jump about 1.4 times your own height, like a Roblox character.
     float jumpHeight   = 3.6f;  // units (Roblox's 7.2 studs at our half size)
-    float jumpPower    = 12.6f; // launch velocity, units / second
+    float jumpPower    = 20.8f; // launch velocity, units / second (reaches JumpHeight under the default gravity)
     bool  useJumpPower = false;
     // How fast to leave the ground to reach that height under `gravity`.
     float launchSpeed(float gravity) const {

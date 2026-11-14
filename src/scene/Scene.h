@@ -90,11 +90,17 @@ struct CoreGuiState {
     }
 };
 
-// Gravity, like Roblox: its 196.2 studs/s² at our half size. That's much stronger
-// than real life, which is what makes jumps quick and snappy instead of floaty.
-constexpr float kDefaultGravity = 98.1f;
-// What gravity used to be (before 0.7.10). Games saved back then are scaled up
-// from it when they load, and things thrown "as high as before" use it.
+// Gravity: a bit lighter than Roblox's (98.1 at our half size), which made
+// everything drop like a rock. Jumps are still quick and snappy, but you hang in
+// the air a moment longer and falls feel less heavy. (Earth's is about 17.5 here,
+// as one unit is about 56 cm, but that feels floaty with jumps this high.)
+constexpr float kDefaultGravity = 60.0f;
+// Roblox's 196.2 studs/s² at our half size: the default from 0.7.10 until the Softer Landing update, and
+// what an imported Roblox game keeps (its scripts were made for it).
+constexpr float kRobloxHalfGravity = 98.1f;
+// What gravity was before 0.7.10. Games saved back then (and with Roblox gravity)
+// are scaled to the new default when they load, and things thrown "as high as
+// before" use it.
 constexpr float kClassicGravity = 22.0f;
 
 // Rules and physics for the whole place (like Roblox's Workspace properties).
@@ -107,7 +113,7 @@ struct WorldSettings {
     bool       dismemberment   = true;      // big hits can knock limbs off
     bool       knockdowns      = true;      // Ragdoll style: big hits knock you over as a ragdoll, then you get back up
     bool       fallDamage      = true;
-    float      fallDamageSpeed = 42.0f;     // landing faster than this hurts (a fall of about 9 units)
+    float      fallDamageSpeed = 33.0f;     // landing faster than this hurts (a fall of about 9 units)
     float      fallDamageScale = 1.0f;      // how much it hurts (2 = twice as much)
 
     // How much harder something has to be thrown to fly as high as it did under

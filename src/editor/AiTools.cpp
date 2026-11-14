@@ -1268,7 +1268,7 @@ PREFAB
 Linked models (like Roblox packages): a Model with a String attribute LinkId is linked to every other Model with the same LinkId. When what's inside exactly one copy changes, Studio copies it into all the others after the edit (each keeps its own position, rotation and name). To make one, give a Model the attribute (run_lua: model:SetAttribute("LinkId", "anything")), then copy it (model:Clone()); removing the attribute unlinks a copy. insert_object's ready-made things ("Kill Brick", "Exploding Barrel", "Zombie"...) are independent copies; to change many unlinked copies, find_objects them and change each (run_lua with a loop is quickest).
 
 PHYSICS
-Only runs during a playtest (or a published game). Parts are ANCHORED by default: they stay put. Anchored = false makes a part fall, collide and react to forces and explosions. A visible part with CanCollide off is walked through and lets unanchored parts fall through it. Gravity is workspace.Gravity (98.1 units/s^2 by default, Roblox's 196.2 at our half size). Parts below FallenPartsHeight (-50) are destroyed.
+Only runs during a playtest (or a published game). Parts are ANCHORED by default: they stay put. Anchored = false makes a part fall, collide and react to forces and explosions. A visible part with CanCollide off is walked through and lets unanchored parts fall through it. Gravity is workspace.Gravity (60 units/s^2 by default, a bit lighter than Roblox's; an imported Roblox game keeps Roblox's 196.2, which is 98.1 here). Parts below FallenPartsHeight (-50) are destroyed.
 
 COLLISION
 CanCollide decides whether things bump into a part. A character touching a part fires Touched even when its CanCollide is off (coins, checkpoints). Water parts and FluidVolumes are swum through.
@@ -1309,7 +1309,7 @@ AXES (right-handed, like OpenGL)
 UNITS
 - 1 unit = 2 Roblox studs. Distances, Size and Position are in units.
 - A character is about 2.6 units tall, walks 6 units per second (WalkSpeed 6) and jumps about 3.6 units high (JumpHeight 3.6).
-- Gravity: 98.1 units/s^2 (workspace.Gravity), like Roblox's 196.2 studs/s^2 at our half size: jumps are quick, and a part thrown up at speed v rises v*v/196 units.
+- Gravity: 60 units/s^2 (workspace.Gravity), a bit lighter than Roblox's (196.2 studs/s^2 is 98.1 at our half size): jumps are quick but not heavy, and a part thrown up at speed v rises v*v/120 units.
 - Time: seconds.
 
 POSITION AND SIZE
