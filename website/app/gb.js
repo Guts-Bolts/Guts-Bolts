@@ -298,7 +298,7 @@ function personCheck(sitekey) {
   return checking;
 }
 
-export async function call(op, args = {}, again = true) {
+export async function signedRequest(op, args = {}) {
   await checkClock();
   const key = await loadKey();
   const account = hex(key.slice(32, 64));
@@ -306,10 +306,13 @@ export async function call(op, args = {}, again = true) {
   const nonce = randomHex(8);
   const text = 'gb-req:' + op + '\n' + account + '\n' + time + '\n' + nonce + '\n' + canon(args);
   const sig = hex(await signBytes(key, enc.encode(text)));
-  const body = '{"op":' + JSON.stringify(op) + ',"account":"' + account + '","time":' + time +
-               ',"nonce":"' + nonce + '","args":' + canon(args) + ',"sig":"' + sig + '"}';
+  return { op, account, time, nonce, args, sig };
+}
+
+export async function call(op, args = {}, again = true) {
   try {
-    const res = await fetch('/api', { method: 'POST', body, headers: { 'content-type': 'application/json' } });
+    const request = await signedRequest(op, args);
+    const res = await fetch('/api', { method: 'POST', body: JSON.stringify(request), headers: { 'content-type': 'application/json' } });
     const r = await res.json();
     if (typeof r !== 'object' || r === null) return { ok: false, error: 'The server sent back something odd.' };
     if (!('ok' in r)) r.ok = false;
