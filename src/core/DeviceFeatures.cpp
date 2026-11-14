@@ -31,7 +31,7 @@ const Info& info(Feature f) {
         {"Liquid on the graphics card", "Liquid runs on the processor, with fewer drops.", true},
         {"Ocean waves on the graphics card", "The ocean has the same waves, without the finest ripples.", true},
         {"Thick liquid blood", "Blood stays as stains and splashes.", false},
-        {"Graphics card picks what to draw", "The processor picks what to draw (as before).", false},
+        {"Graphics card picks what to draw", "The processor picks what to draw (as before).", true},
     };
     return kInfo[f >= 0 && f < kFeatures ? f : 0];
 }
@@ -41,7 +41,8 @@ bool can(const GpuCaps& c, Feature f) {
         case GpuLiquid:  return c.compute && c.indirectDraw;
         case FftOcean:   return c.compute && c.floatTargets;
         case GpuBlood:   return c.compute && c.indirectDraw;
-        case GpuCulling: return c.compute && c.multiDrawIndirect;
+        // (Computers only: OpenGL ES can't start an indirect draw part way through a list.)
+        case GpuCulling: return !c.es && c.compute && c.multiDrawIndirect;
         default:         return false;
     }
 }
@@ -62,6 +63,7 @@ const char* reason(const GpuCaps& c) {
 #elif defined(__APPLE__)
     return "Macs don't have the graphics features these need (Apple stopped at OpenGL 4.1).";
 #else
+    if (c.es && c.compute) return "Phones don't have one graphics feature these need yet, so they use the older way.";
     if (c.es) return "This phone's graphics chip is too old for them (they need OpenGL ES 3.1).";
     return "This graphics card or its driver is too old for them (they need OpenGL 4.3). Updating the driver can help.";
 #endif

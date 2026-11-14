@@ -137,3 +137,29 @@ void Mesh::drawInstanced(GLuint perCopy, int count) const {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
+
+void Mesh::drawIndirect(GLuint perCopy, size_t offset) const {
+#if defined(GB_IOS) || defined(GB_GLES) || defined(__EMSCRIPTEN__)
+    (void)perCopy; (void)offset;   // (phones and the web draw the old way)
+#else
+    const Mesh& m = shown();
+    if (!m.m_vao) return;   // (the triangles are counted by GpuCuller, a frame late)
+    glBindVertexArray(m.m_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, perCopy);
+    const GLsizei stride = sizeof(InstanceData);
+    for (int i = 0; i < 7; ++i) {   // 4 for the matrix's columns, then colour, info and extra
+        const size_t at = i < 4 ? offsetof(InstanceData, model) + sizeof(glm::vec4) * i
+                        : i == 4 ? offsetof(InstanceData, color) : i == 5 ? offsetof(InstanceData, info) : offsetof(InstanceData, extra);
+        glEnableVertexAttribArray(8 + i);
+        glVertexAttribPointer(8 + i, 4, GL_FLOAT, GL_FALSE, stride, (void*)at);
+        glVertexAttribDivisor(8 + i, 1);
+    }
+    glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, (const void*)offset);
+    for (int i = 0; i < 7; ++i) {   // (so plain draws of this mesh don't read them)
+        glVertexAttribDivisor(8 + i, 0);
+        glDisableVertexAttribArray(8 + i);
+    }
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+#endif
+}

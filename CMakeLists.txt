@@ -491,6 +491,7 @@ add_library(gb_engine STATIC
     src/renderer/Benchmark.cpp
     src/renderer/GpuCaps.cpp
     src/renderer/OceanGpu.cpp
+    src/renderer/GpuCulling.cpp
     src/renderer/ViewportRender.cpp
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
@@ -1382,6 +1383,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(MemoryReuseTests tests/MemoryReuseTests.cpp)
     target_link_libraries(MemoryReuseTests PRIVATE gb_engine)
     add_test(NAME MemoryReuseTests COMMAND MemoryReuseTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    # The graphics card picks what to draw: its lists, grouping and maths.
+    add_executable(GpuCullingTests tests/GpuCullingTests.cpp)
+    target_link_libraries(GpuCullingTests PRIVATE gb_engine)
+    add_test(NAME GpuCullingTests COMMAND GpuCullingTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)
