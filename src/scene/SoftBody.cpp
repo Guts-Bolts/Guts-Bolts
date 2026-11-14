@@ -3,6 +3,7 @@
 #include "Scene.h"
 #include "SceneNode.h"
 #include "Slice.h"
+#include "../core/Jobs.h"
 
 #include <algorithm>
 #include <array>
@@ -435,18 +436,36 @@ void update(Scene& scene, float dt, const std::vector<Physics::Knock>& knocks, b
 
     tears.clear();
     const float gravity = scene.world().gravity;
+    // 1. What each body could bump into (one long list, a stretch of it per body).
+    struct Job { SceneNode* node; State* state; glm::mat4 frame; size_t first, count; bool moved; };
+    static std::vector<Job> jobs;
+    jobs.clear(); near.clear();
     for (SceneNode* n : soft) {
         State* s = stateOf(*n);
         if (!s) continue;
-        const glm::mat4 frame = n->worldMatrix();
-        near.clear();
+        Job j{n, s, n->worldMatrix(), near.size(), 0, false};
         if (work) {
-            const glm::vec3 centre = glm::vec3(frame[3]);
+            const glm::vec3 centre = glm::vec3(j.frame[3]);
             const float mine = glm::length(n->transform.scale) * 0.5f + 1.0f;
             for (size_t i = 0; i < boxes.size(); ++i)
                 if (owner[i] != n->id && glm::length(boxes[i].center - centre) < reach[i] + mine) near.push_back(boxes[i]);
         }
-        if (!solve(s->body, frame, dt, gravity, near.data(), near.size())) continue;
+        j.count = near.size() - j.first;
+        jobs.push_back(j);
+    }
+    // 2. Every body works out its wobble at the same time, on every core (each one
+    //    only touches its own corners).
+    Jobs::forEachItem(jobs.size(), [&](size_t i) {
+        Job& j = jobs[i];
+        j.moved = solve(j.state->body, j.frame, dt, gravity, j.count ? near.data() + j.first : nullptr, j.count);
+    }, 2);
+    // 3. Showing the new shapes talks to the graphics card, so that's done here, one
+    //    at a time; and so is deciding what tears.
+    for (const Job& j : jobs) {
+        if (!j.moved) continue;
+        SceneNode* n = j.node;
+        State* s = j.state;
+        const glm::mat4& frame = j.frame;
         show(*n, *s, frame);
         // Stretched too far: it tears, across the edge that gave way.
         s->tearWait = std::max(0.0f, s->tearWait - dt);

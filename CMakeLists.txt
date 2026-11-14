@@ -566,6 +566,7 @@ add_library(gb_engine STATIC
     src/game/Videos.cpp
     src/game/ImagePublish.cpp
     src/core/FrameProfile.cpp
+    src/core/Jobs.cpp
     src/game/Hud.cpp
     src/game/EmoteMenu.cpp
     src/game/GameGui.cpp
@@ -1373,6 +1374,9 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(SoftBodyTests tests/SoftBodyTests.cpp)
     target_link_libraries(SoftBodyTests PRIVATE gb_engine)
     add_test(NAME SoftBodyTests COMMAND SoftBodyTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    add_executable(JobsTests tests/JobsTests.cpp)
+    target_link_libraries(JobsTests PRIVATE gb_engine)
+    add_test(NAME JobsTests COMMAND JobsTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)
