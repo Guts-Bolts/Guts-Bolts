@@ -110,15 +110,15 @@ void Mesh::drawInstanced(GLuint perCopy, int count) const {
     glBindVertexArray(m.m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, perCopy);
     const GLsizei stride = sizeof(InstanceData);
-    for (int i = 0; i < 6; ++i) {   // 4 for the matrix's columns, then colour and info
+    for (int i = 0; i < 7; ++i) {   // 4 for the matrix's columns, then colour, info and extra
         const size_t at = i < 4 ? offsetof(InstanceData, model) + sizeof(glm::vec4) * i
-                        : i == 4 ? offsetof(InstanceData, color) : offsetof(InstanceData, info);
+                        : i == 4 ? offsetof(InstanceData, color) : i == 5 ? offsetof(InstanceData, info) : offsetof(InstanceData, extra);
         glEnableVertexAttribArray(8 + i);
         glVertexAttribPointer(8 + i, 4, GL_FLOAT, GL_FALSE, stride, (void*)at);
         glVertexAttribDivisor(8 + i, 1);
     }
     glDrawElementsInstanced(GL_TRIANGLES, m.m_indexCount, GL_UNSIGNED_INT, nullptr, count);
-    for (int i = 0; i < 6; ++i) {   // (so plain draws of this mesh don't read them)
+    for (int i = 0; i < 7; ++i) {   // (so plain draws of this mesh don't read them)
         glVertexAttribDivisor(8 + i, 0);
         glDisableVertexAttribArray(8 + i);
     }

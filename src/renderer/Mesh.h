@@ -16,7 +16,8 @@ struct Vertex {
 struct InstanceData {
     glm::mat4 model;   // where it is (shader inputs 8-11)
     glm::vec4 color;   // rgb, alpha (12)
-    glm::vec4 info;    // material id, selected (0/1), wet (0..1), unused (13)
+    glm::vec4 info;    // material id, selected (0/1), wet (0..1), a gib's or splat's seed (13)
+    glm::vec4 extra{0.0f};   // a splat: look, dry, mark; a gib: skin colour, skin on (14)
 };
 
 class Mesh {

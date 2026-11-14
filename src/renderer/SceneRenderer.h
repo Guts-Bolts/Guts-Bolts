@@ -63,8 +63,11 @@ public:
     // Memory for lists that only last one frame (FrameArena.h). For tests: how often it
     // had to be made bigger (it should stop after the first few frames).
     int frameMemoryGrown() const { return m_frame.timesGrown(); }
+    // For tests: how many lists of blood, gibs and sparks were drawn many-at-once last frame.
+    int particleBatches() const { return m_particleBatches; }
 private:
     FrameArena m_frame;
+    int m_particleBatches = 0;
     // Draws everything that casts a shadow into `target` (already bound by the caller when
     // `tile` is true). `extent` > 0: parts that can't land in a map that wide are skipped.
     void renderShadowPass(Scene& scene, const glm::mat4& lightSpace, ShadowMap& target, bool tile = false, float extent = 0.0f);
