@@ -191,21 +191,29 @@ void Scene::replaceRoot(std::unique_ptr<SceneNode> root) {
 
 void Scene::rebuildIndex() {
     m_index.clear();
-    forEach([this](SceneNode* n) { m_index[n->id] = n; });
-    std::function<void(SceneNode*)> add = [this](SceneNode* n) { m_index[n->id] = n; };
-    walk(m_cameraNode.get(), add);   // (what's in the Camera)
+    // (an explicit list instead of forEach: walking the tree asks for no memory either)
+    static thread_local std::vector<SceneNode*> todo;
+    todo.clear();
+    todo.push_back(m_root.get());
+    todo.push_back(m_cameraNode.get());   // (what's in the Camera)
+    while (!todo.empty()) {
+        SceneNode* n = todo.back();
+        todo.pop_back();
+        if (!n) continue;
+        m_index.set(n->id, n);
+        for (auto& c : n->children) todo.push_back(c.get());
+    }
     m_indexDirty = false;
 }
 
 SceneNode* Scene::findById(uint64_t id) {
     if (id == kTerrainId) return m_terrainNode.get();
     if (m_indexDirty) rebuildIndex();
-    auto it = m_index.find(id);
-    if (it != m_index.end()) return it->second;
+    if (SceneNode* const* n = m_index.find(id)) return *n;
     // Nodes may have been added since the last rebuild — try once more.
     rebuildIndex();
-    it = m_index.find(id);
-    return it != m_index.end() ? it->second : nullptr;
+    SceneNode* const* n = m_index.find(id);
+    return n ? *n : nullptr;
 }
 
 const std::vector<const char*>& Scene::serviceNames() {

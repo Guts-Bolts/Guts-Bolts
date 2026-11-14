@@ -40,6 +40,9 @@ public:
     // Replace the whole mesh (for shapes that change every frame, like waves).
     void update(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices);
     int  indexCount() const { return m_indexCount; }
+    // Goes up each time update() changes it (a cache that remembers a mesh by its
+    // pointer can tell it was refilled in place).
+    unsigned version() const { return m_version; }
     // An optional 4th value per corner (shader input 3), after update(). The
     // terrain uses it for how much of each ground is at each corner.
     void setExtra(const std::vector<glm::vec4>& extra);
@@ -62,6 +65,8 @@ private:
 
     GLuint m_vao = 0, m_vbo = 0, m_ebo = 0, m_extra = 0;
     int    m_indexCount = 0;
+    size_t m_vboBytes = 0, m_eboBytes = 0;
+    unsigned m_version = 0;   // (how big the buffers are: update() refills them in place when it fits)
     std::vector<Mesh>  m_lods;        // simpler copies, most detailed first
     std::vector<float> m_lodPixels;   // each one's "under this many pixels across"
     const Mesh& shown() const { return lod <= 0 || m_lods.empty() ? *this : m_lods[std::min(lod, (int)m_lods.size()) - 1]; }

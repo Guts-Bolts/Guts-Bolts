@@ -1,4 +1,5 @@
 #include "Physics.h"
+#include "../core/Scratch.h"
 #include "Scene.h"
 #include "SceneNode.h"
 #include "Player.h"
@@ -72,7 +73,9 @@ SceneNode* Physics::raycastIf(Scene& scene, const glm::vec3& ro, const glm::vec3
                               const std::function<bool(const SceneNode*)>& counts) {
     SceneNode* best = nullptr;
     float bestDist = 1e30f;
-    std::vector<SceneNode*> stack{scene.root()};
+    Scratch<SceneNode*> todo;   // (a list kept for reuse: rays are cast many times a frame)
+    std::vector<SceneNode*>& stack = *todo;
+    stack.push_back(scene.root());
     while (!stack.empty()) {
         SceneNode* node = stack.back();
         stack.pop_back();
@@ -242,7 +245,9 @@ void Physics::gather(Scene& scene) {
     const bool groups = !m_groups.onlyDefault();
     uint64_t hash = 1469598103934665603ull;
     // Manual walk so whole subtrees (hidden models, the character) can be skipped.
-    std::vector<SceneNode*> stack{scene.root()};
+    Scratch<SceneNode*> todo;   // (kept for reuse: this runs every frame)
+    std::vector<SceneNode*>& stack = *todo;
+    stack.push_back(scene.root());
     while (!stack.empty()) {
         SceneNode* n = stack.back();
         stack.pop_back();
@@ -555,12 +560,13 @@ bool Physics::terrainGround(const glm::vec3& feet, float yaw, float& y) const {
 // stepParts (rigid bodies + constraints) lives in RigidBodies.cpp.
 
 void Physics::collectTouches(Scene& scene, std::vector<TouchEvent>& out, std::vector<TouchEvent>* ended) {
-    std::set<std::pair<uint64_t, uint64_t>> now;
-
-    auto report = [&](uint64_t part, uint64_t pairKey, uint64_t other) {
-        auto key = std::make_pair(part, pairKey);
-        if (!now.insert(key).second) return;
-        if (!m_touching.count(key)) out.push_back({part, other});
+    // Every touch found goes in a list (in the order found, maybe twice); afterwards
+    // it's sorted into this frame's set, and the new ones are reported in that order.
+    // (Flat lists kept from frame to frame: no memory asked for once they're big enough.)
+    std::vector<std::pair<uint64_t, uint64_t>>& found = m_touchFound;
+    found.clear();
+    auto report = [&](uint64_t part, uint64_t pairKey, uint64_t /*other: the same as pairKey*/) {
+        found.push_back({part, pairKey});
     };
 
     // Character vs parts (every part, even non-collidable ones like coins). Like
@@ -571,7 +577,8 @@ void Physics::collectTouches(Scene& scene, std::vector<TouchEvent>& out, std::ve
     SceneNode* charRoot = player ? player->root() : nullptr;
     if (charRoot && !player->isDead()) {
         AABB body = characterBox(player->position()).inflated(1.2f);   // everything the limbs could reach
-        std::vector<std::pair<SceneNode*, OBB>> limbs;
+        static thread_local std::vector<std::pair<SceneNode*, OBB>> limbs;
+        limbs.clear();
         for (auto& ch : charRoot->children) {
             if (!ch->isPart() || ch->internal) continue;
             OBB o = worldOBB(ch.get());
@@ -594,14 +601,16 @@ void Physics::collectTouches(Scene& scene, std::vector<TouchEvent>& out, std::ve
     // The tool in each character's hand vs everything it swings through (a sword's
     // Handle.Touched fires on what it hits; the thing hit gets Touched too). That's
     // yours, and (hosting) the ones held by people who joined.
-    std::vector<SceneNode*> held;
+    static thread_local std::vector<SceneNode*> held, stack;
+    held.clear();
     if (charRoot && !player->isDead())
         if (SceneNode* tool = player->equippedTool()) held.push_back(tool);
     for (const RemoteCharacter& rc : scene.remotes())
         if (rc.alive)
             if (SceneNode* tool = Player::heldTool(scene.findById(rc.rootId))) held.push_back(tool);
     for (SceneNode* tool : held) {
-        std::vector<SceneNode*> stack{tool};
+        stack.clear();
+        stack.push_back(tool);
         while (!stack.empty()) {
             SceneNode* p = stack.back(); stack.pop_back();
             for (auto& ch : p->children) stack.push_back(ch.get());
@@ -632,16 +641,17 @@ void Physics::collectTouches(Scene& scene, std::vector<TouchEvent>& out, std::ve
     // overlapping it. Check the path they took since last frame too. (Only movement their
     // speed explains: a script teleporting a part doesn't touch everything on the way.)
     {
-        std::unordered_map<uint64_t, glm::vec3> centers;
+        IdMap<glm::vec3>& centers = m_centers;
+        centers.clear();
         for (size_t i = 0; i < m_colliders.size(); ++i) {
             const Collider& ci = m_colliders[i];
             if (!ci.dynamic) continue;
             const glm::vec3 c = (ci.box.min + ci.box.max) * 0.5f;
             const glm::vec3 half = (ci.box.max - ci.box.min) * 0.5f;
-            centers[ci.node->id] = c;
-            auto it = m_lastCenter.find(ci.node->id);
-            if (it == m_lastCenter.end()) continue;
-            const glm::vec3 from = it->second, d = c - from;
+            centers.set(ci.node->id, c);
+            const glm::vec3* was = m_lastCenter.find(ci.node->id);
+            if (!was) continue;
+            const glm::vec3 from = *was, d = c - from;
             const float dist = glm::length(d), speed = glm::length(ci.node->velocity);
             if (dist <= std::min(half.x, std::min(half.y, half.z)) || dist > speed * 0.25f + 0.5f) continue;
             for (size_t j = 0; j < m_colliders.size(); ++j) {
@@ -666,15 +676,28 @@ void Physics::collectTouches(Scene& scene, std::vector<TouchEvent>& out, std::ve
         m_lastCenter.swap(centers);
     }
 
+    std::vector<std::pair<uint64_t, uint64_t>>& now = m_touchingNow;
+    now.assign(found.begin(), found.end());
+    std::sort(now.begin(), now.end());
+    now.erase(std::unique(now.begin(), now.end()), now.end());
+    // New touches (not touching last frame), each once, in the order they were found.
+    m_touchSent.assign(now.size(), 0);
+    for (const auto& key : found) {
+        const size_t at = (size_t)(std::lower_bound(now.begin(), now.end(), key) - now.begin());
+        if (m_touchSent[at]) continue;
+        m_touchSent[at] = 1;
+        if (!std::binary_search(m_touching.begin(), m_touching.end(), key)) out.push_back({key.first, key.second});
+    }
     if (ended)
         for (const auto& key : m_touching)
-            if (!now.count(key)) ended->push_back({key.first, key.second});
+            if (!std::binary_search(now.begin(), now.end(), key)) ended->push_back({key.first, key.second});
     m_touching.swap(now);
 }
 
 std::vector<uint64_t> Physics::touching(uint64_t part) const {
     std::vector<uint64_t> out;
-    for (auto it = m_touching.lower_bound({part, 0}); it != m_touching.end() && it->first == part; ++it)
+    for (auto it = std::lower_bound(m_touching.begin(), m_touching.end(), std::make_pair(part, (uint64_t)0));
+         it != m_touching.end() && it->first == part; ++it)
         out.push_back(it->second);
     return out;
 }

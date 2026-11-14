@@ -1,4 +1,5 @@
 #pragma once
+#include "../core/IdMap.h"
 #include <functional>
 #include <cstdint>
 #include <set>
@@ -185,8 +186,11 @@ private:
     const Terrain*                         m_terrain = nullptr;   // this frame's terrain (null = none)
     CollisionGroups                        m_groups;              // this frame's collision groups
     std::vector<Collider>                  m_bodies;   // characters' body boxes (players bumping into players)
-    std::set<std::pair<uint64_t, uint64_t>> m_touching;
-    std::unordered_map<uint64_t, glm::vec3> m_lastCenter;   // where each unanchored part was last frame (fast ones)
+    // What touched what last frame, sorted (a flat list, not a std::set: it's made again
+    // every frame, and a set asks for memory for every pair). And this frame's, being made.
+    std::vector<std::pair<uint64_t, uint64_t>> m_touching, m_touchingNow, m_touchFound;
+    std::vector<char>                          m_touchSent;
+    IdMap<glm::vec3>                           m_lastCenter, m_centers;   // where each unanchored part was last frame (fast ones)
     uint64_t                               m_staticHash = 0;     // the anchored solid parts, as a number
     mutable NavMesh::Settings              m_navSettings;
     mutable NavMesh                        m_nav;
@@ -195,6 +199,8 @@ private:
     // How hard each contact pushed last step, so the solver starts from there
     // next step instead of from nothing (stacks stay still). See RigidBodies.cpp.
     // (Per pair of touching parts: where each contact was on the first part, and its pushes.)
-    struct ContactMemory { glm::vec3 local, n; float jn, jt1, jt2; };
-    std::unordered_map<uint64_t, std::vector<ContactMemory>> m_contactMemory;
+    // One flat list sorted by pair (then in the order they were found), so filling it
+    // again each step asks for no memory.
+    struct ContactMemory { uint64_t pair; uint32_t order; glm::vec3 local, n; float jn, jt1, jt2; };
+    std::vector<ContactMemory> m_contactMemory;
 };

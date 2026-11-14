@@ -17,6 +17,7 @@
 #include "SceneNode.h"
 #include "Water.h"
 #include "Movers.h"
+#include "../core/IdMap.h"
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/euler_angles.hpp>
@@ -240,32 +241,45 @@ bool faceContacts(int ia, int ib, const OBB& a, const OBB& b, const glm::vec3& n
     const int ku = (k + 1) % 3, kv = (k + 2) % 3;
     const glm::vec3 fc = inc->center + inc->axis[k] * (inc->half[k] * s);
     const glm::vec3 eu = inc->axis[ku] * inc->half[ku], ev = inc->axis[kv] * inc->half[kv];
-    std::vector<glm::vec3> poly{fc + eu + ev, fc - eu + ev, fc - eu - ev, fc + eu - ev}, next;
+    // (Fixed-size lists, not std::vectors: this runs for every pair of touching boxes,
+    // several times a frame. Cutting a 4-cornered face by 4 lines leaves at most 8.)
+    struct Poly {
+        glm::vec3 p[16];
+        size_t n = 0;
+        size_t size() const { return n; }
+        bool empty() const { return n == 0; }
+        void push_back(const glm::vec3& v) { if (n < 16) p[n++] = v; }
+        const glm::vec3& operator[](size_t i) const { return p[i]; }
+    };
+    Poly polys[2];
+    Poly* poly = &polys[0];
+    Poly* next = &polys[1];
+    for (const glm::vec3& c : {fc + eu + ev, fc - eu + ev, fc - eu - ev, fc + eu - ev}) poly->push_back(c);
 
     // Cut it by the four sides of the reference face.
     for (int side = 0; side < 4; ++side) {
         const glm::vec3 dir = ref->axis[side < 2 ? u : v] * (side % 2 ? -1.0f : 1.0f);
         const float lim = ref->half[side < 2 ? u : v] + glm::dot(ref->center, dir);
-        next.clear();
-        for (size_t i = 0; i < poly.size(); ++i) {
-            const glm::vec3 &p = poly[i], &q = poly[(i + 1) % poly.size()];
+        next->n = 0;
+        for (size_t i = 0; i < poly->size(); ++i) {
+            const glm::vec3 &p = (*poly)[i], &q = (*poly)[(i + 1) % poly->size()];
             const float dp = glm::dot(p, dir) - lim, dq = glm::dot(q, dir) - lim;
-            if (dp <= 0.0f) next.push_back(p);
-            if ((dp < 0.0f) != (dq < 0.0f) && std::abs(dp - dq) > 1e-9f) next.push_back(p + (q - p) * (dp / (dp - dq)));
+            if (dp <= 0.0f) next->push_back(p);
+            if ((dp < 0.0f) != (dq < 0.0f) && std::abs(dp - dq) > 1e-9f) next->push_back(p + (q - p) * (dp / (dp - dq)));
         }
-        poly.swap(next);
-        if (poly.empty()) return false;
+        std::swap(poly, next);
+        if (poly->empty()) return false;
     }
     const size_t before = out.size();
-    for (size_t i = 0; i < poly.size(); ++i) {
-        const float sep = glm::dot(poly[i] - refCenter, rn);
+    for (size_t i = 0; i < poly->size(); ++i) {
+        const float sep = glm::dot((*poly)[i] - refCenter, rn);
         if (sep > 0.0f) continue;                   // (that bit of the face isn't touching)
         bool twice = false;                         // (a corner the cut landed right on)
         for (size_t j = before; j < out.size(); ++j)
-            if (glm::length(out[j].p - (poly[i] - rn * (sep * 0.5f))) < 0.01f) twice = true;
+            if (glm::length(out[j].p - ((*poly)[i] - rn * (sep * 0.5f))) < 0.01f) twice = true;
         if (twice) continue;
         // On the reference face, halfway between the two surfaces.
-        out.push_back({ia, ib, poly[i] - rn * (sep * 0.5f), n, std::min(-sep, depth)});
+        out.push_back({ia, ib, (*poly)[i] - rn * (sep * 0.5f), n, std::min(-sep, depth)});
     }
     return out.size() > before;
 }
@@ -988,6 +1002,44 @@ void applyMover(const ActiveMover& am, std::vector<Body>& bodies, const Assembly
     }
 }
 
+// A part's id -> its place in `bodies` (an IdMap: filling it again each step asks for
+// no memory once it's big enough). -1 = not a body.
+class FlatIndex {
+public:
+    void clear() { m_map.clear(); }
+    void set(uint64_t key, int value) { m_map.set(key, value); }
+    int find(uint64_t key) const { const int* p = m_map.find(key); return p ? *p : -1; }
+private:
+    IdMap<int> m_map;
+};
+
+struct Zone { SceneNode* node; OBB box; };
+
+// Everything a physics step works with, kept from step to step (one set per thread,
+// so a server running several games at once doesn't mix them up): the lists are only
+// emptied, never thrown away, so a step doesn't ask for memory once things settle.
+struct StepScratch {
+    std::vector<Body> bodies;
+    FlatIndex index;
+    std::vector<SceneNode*> constraintNodes, moverNodes, stack;
+    std::vector<Zone> zones;
+    std::vector<Joint> joints;
+    std::vector<std::pair<int, int>> noCollide;   // sorted
+    std::vector<ActiveMover> movers;
+    std::vector<int> group;
+    std::vector<char> breakableBody;
+    std::vector<Contact> contacts;
+    std::vector<int> near;
+    BroadPhase broad;
+};
+StepScratch& stepScratch() {
+    thread_local StepScratch s;
+    return s;
+}
+bool noCollision(const std::vector<std::pair<int, int>>& sorted, int a, int b) {
+    return std::binary_search(sorted.begin(), sorted.end(), std::make_pair(std::min(a, b), std::max(a, b)));
+}
+
 } // namespace
 
 // ============================================================================
@@ -996,12 +1048,24 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     // ---- 1. Bodies ------------------------------------------------------------
     const CollisionGroups& groups = scene.world().collisionGroups;
     const bool useGroups = !groups.onlyDefault() || !groups.collides(0, 0);
-    std::vector<Body> bodies;
-    std::unordered_map<uint64_t, int> index;
-    std::vector<SceneNode*> constraintNodes, moverNodes;
-    struct Zone { SceneNode* node; OBB box; };
-    std::vector<Zone> zones;
-    std::vector<SceneNode*> stack{scene.root()};
+    StepScratch& S = stepScratch();
+    // Last step's contacts between two parts (m_contactMemory is sorted by pair).
+    auto rememberedRange = [this](uint64_t pair) {
+        const auto lo = std::lower_bound(m_contactMemory.begin(), m_contactMemory.end(), pair,
+                                         [](const ContactMemory& m, uint64_t p) { return m.pair < p; });
+        auto hi = lo;
+        while (hi != m_contactMemory.end() && hi->pair == pair) ++hi;
+        return std::make_pair(m_contactMemory.data() + (lo - m_contactMemory.begin()), m_contactMemory.data() + (hi - m_contactMemory.begin()));
+    };
+    auto rememberedPair = [&](uint64_t pair) { const auto r = rememberedRange(pair); return r.first != r.second; };
+    std::vector<Body>& bodies = S.bodies;
+    FlatIndex& index = S.index;
+    std::vector<SceneNode*>& constraintNodes = S.constraintNodes;
+    std::vector<SceneNode*>& moverNodes = S.moverNodes;
+    std::vector<Zone>& zones = S.zones;
+    std::vector<SceneNode*>& stack = S.stack;
+    bodies.clear(); index.clear(); constraintNodes.clear(); moverNodes.clear(); zones.clear(); stack.clear();
+    stack.push_back(scene.root());
     while (!stack.empty()) {
         SceneNode* n = stack.back();
         stack.pop_back();
@@ -1021,7 +1085,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             for (auto& c : n->children) if (c->isAttachment()) used = true;
             if (!used) continue;
         }
-        index[n->id] = (int)bodies.size();
+        index.set(n->id, (int)bodies.size());
         bodies.push_back(makeBody(n, dynamic));
         if (useGroups) bodies.back().group = groups.slotOf(n->collisionGroup);
     }
@@ -1049,20 +1113,20 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         worldPos = glm::vec3(m[3]);
         worldAxis = glm::normalize(glm::vec3(m[0]) + glm::vec3(1e-9f));
         if (worldTurn) *worldTurn = Movers::worldRot(att);
-        auto it = index.find(att->parent->id);
-        return it == index.end() ? -1 : it->second;
+        return index.find(att->parent->id);
     };
-    std::vector<Joint> joints;
-    std::set<std::pair<int, int>> noCollide;
+    std::vector<Joint>& joints = S.joints;
+    std::vector<std::pair<int, int>>& noCollide = S.noCollide;
+    joints.clear(); noCollide.clear();
     for (SceneNode* cn : constraintNodes) {
         Joint j;
         j.node = cn;
         j.type = cn->constraintType;
         glm::vec3 pa, pb, axa, axb;
         if (j.type == ConstraintType::Weld) {
-            auto ia = index.find(cn->ref0), ib = index.find(cn->ref1);
-            if (ia == index.end() || ib == index.end() || ia->second == ib->second) continue;
-            j.a = ia->second; j.b = ib->second;
+            const int ia = index.find(cn->ref0), ib = index.find(cn->ref1);
+            if (ia < 0 || ib < 0 || ia == ib) continue;
+            j.a = ia; j.b = ib;
             Body &A = bodies[j.a], &B = bodies[j.b];
             if (cn->legacyJoint) {
                 // Weld / Motor6D: where C0 and C1 say, not where they happen to be.
@@ -1111,7 +1175,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         }
         if (!bodies[j.a].dynamic && !bodies[j.b].dynamic) continue;
         if (j.type == ConstraintType::Weld || j.type == ConstraintType::Hinge || usesJointProps(j.type))
-            noCollide.insert({std::min(j.a, j.b), std::max(j.a, j.b)});
+            noCollide.push_back({std::min(j.a, j.b), std::max(j.a, j.b)});
         // A running motor keeps things awake; a connected body wakes its partner.
         const JointProps& jp = cn->joint;
         bool motorOn = (j.type == ConstraintType::Hinge && cn->motorTorque > 0.0f && cn->motorSpeed != 0.0f) ||
@@ -1128,9 +1192,11 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         }
         joints.push_back(j);
     }
+    std::sort(noCollide.begin(), noCollide.end());   // (looked up below with noCollision)
 
     // ---- 2b. Movers, and the welded assemblies they push ---------------------------
-    std::vector<ActiveMover> movers;
+    std::vector<ActiveMover>& movers = S.movers;
+    movers.clear();
     for (SceneNode* mn : moverNodes) {
         ActiveMover am{mn, -1};
         SceneNode* part = mn->parent;
@@ -1143,13 +1209,13 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         }
         // Parts inside a loose part ride along with it: push that one.
         for (; part; part = part->parent) {
-            auto it = index.find(part->id);
-            if (it != index.end()) { am.body = it->second; break; }
+            if (const int k = index.find(part->id); k >= 0) { am.body = k; break; }
         }
         if (am.body < 0 || !bodies[am.body].dynamic) continue;
         movers.push_back(am);
     }
-    std::vector<int> group(bodies.size(), -1);
+    std::vector<int>& group = S.group;
+    group.assign(bodies.size(), -1);
     std::vector<Assembly> assemblies;
     if (!movers.empty()) {
         std::vector<int> link(bodies.size());
@@ -1203,9 +1269,10 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
 
     smashes.clear();
     knocks.clear();
-    std::vector<char> breakableBody(bodies.size(), 0);
+    std::vector<char>& breakableBody = S.breakableBody;
+    breakableBody.assign(bodies.size(), 0);
     for (size_t i = 0; i < bodies.size(); ++i) breakableBody[i] = bodies[i].node && Shatter::breakable(*bodies[i].node);
-    BroadPhase broad;
+    BroadPhase& broad = S.broad;
 
     for (int step = 0; step < substeps; ++step) {
         // ---- 3. Gravity + springs ----------------------------------------------
@@ -1280,11 +1347,12 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         }
 
         // ---- 4. Contacts ----------------------------------------------------------
-        std::vector<Contact> contacts;
+        std::vector<Contact>& contacts = S.contacts;
+        contacts.clear();
         // Which bodies might touch (only those near each other: see BroadPhase), then
         // the same checks in the same order as checking every pair.
         broad.build(bodies);
-        std::vector<int> near;
+        std::vector<int>& near = S.near;
         for (int i = 0; i < (int)bodies.size(); ++i) {
             if (!bodies[i].dynamic || !bodies[i].solid) continue;
             broad.near(bodies, i, near);
@@ -1296,7 +1364,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                 if (A.aabbMax.x < B.aabbMin.x || A.aabbMin.x > B.aabbMax.x || A.aabbMax.y < B.aabbMin.y ||
                     A.aabbMin.y > B.aabbMax.y || A.aabbMax.z < B.aabbMin.z || A.aabbMin.z > B.aabbMax.z)
                     continue;
-                if (noCollide.count({std::min(i, k), std::max(i, k)})) continue;
+                if (noCollision(noCollide, i, k)) continue;
                 if (useGroups && !groups.collides(A.group, B.group)) continue;   // collision groups that pass through
                 if (A.sphere && B.sphere)      sphereSphere(i, k, A, B, contacts);
                 else if (A.sphere && B.cylinder) sphereCylinder(i, k, A, B, contacts, true);
@@ -1371,7 +1439,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             // A new knock (they weren't touching a moment ago): something to hear.
             if (A.node && knocks.size() < 64) {
                 const float hitSpeed = -glm::dot(A.velocityAt(c.p) - B.velocityAt(c.p), c.n);
-                if (hitSpeed > 3.0f && !m_contactMemory.count(pairKey(A, B)) &&
+                if (hitSpeed > 3.0f && !rememberedPair(pairKey(A, B)) &&
                     std::none_of(knocks.begin(), knocks.end(), [&](const Knock& k) { return k.a == A.node->id && k.b == (B.node ? B.node->id : 0); }))
                     knocks.push_back({A.node->id, B.node ? B.node->id : 0, c.p, hitSpeed, A.invMass > 0.0f ? 1.0f / A.invMass : 0.0f});
             }
@@ -1405,13 +1473,14 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         // quite settles (it shuffles and slowly topples) and boxes creep down slopes.
         for (auto& c : contacts) {
             Body &A = bodies[c.a], &B = bodies[c.b];
-            auto it = m_contactMemory.find(pairKey(A, B));
-            if (it == m_contactMemory.end()) continue;
+            const auto [from, to] = rememberedRange(pairKey(A, B));
+            if (from == to) continue;
             // The one from last step in (nearly) the same spot on the part.
             const glm::vec3 local = glm::inverse(A.rot) * c.ra;
             const Physics::ContactMemory* was = nullptr;
             float best = 0.15f * 0.15f;
-            for (const auto& m : it->second) {
+            for (const Physics::ContactMemory* mp = from; mp != to; ++mp) {
+                const Physics::ContactMemory& m = *mp;
                 const glm::vec3 d = m.local - local;
                 if (glm::dot(d, d) < best && glm::dot(m.n, c.n) > 0.95f) { best = glm::dot(d, d); was = &m; }
             }
@@ -1570,8 +1639,11 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         m_contactMemory.clear();
         for (const auto& c : contacts)
             if (c.jn > 0.0f)
-                m_contactMemory[pairKey(bodies[c.a], bodies[c.b])].push_back(
-                    {glm::inverse(bodies[c.a].rot) * c.ra, c.n, c.jn, c.jt1, c.jt2});
+                m_contactMemory.push_back({pairKey(bodies[c.a], bodies[c.b]), (uint32_t)m_contactMemory.size(),
+                                           glm::inverse(bodies[c.a].rot) * c.ra, c.n, c.jn, c.jt1, c.jt2});
+        std::sort(m_contactMemory.begin(), m_contactMemory.end(), [](const Physics::ContactMemory& x, const Physics::ContactMemory& y) {
+            return x.pair != y.pair ? x.pair < y.pair : x.order < y.order;
+        });
 
         // ---- 6. Move ------------------------------------------------------------------
         for (int bi = 0; bi < (int)bodies.size(); ++bi) {
@@ -1600,7 +1672,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                     if (o.aabbMax.x < lo.x || o.aabbMin.x > hi.x || o.aabbMax.y < lo.y || o.aabbMin.y > hi.y ||
                         o.aabbMax.z < lo.z || o.aabbMin.z > hi.z)
                         continue;
-                    if (noCollide.count({std::min(bi, k), std::max(bi, k)})) continue;
+                    if (noCollision(noCollide, bi, k)) continue;
                     if (useGroups && !groups.collides(b.group, o.group)) continue;
                     OBB box = o.obb();
                     if (o.sphere) box.half = glm::vec3(o.radius);

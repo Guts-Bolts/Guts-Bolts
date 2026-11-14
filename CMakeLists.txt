@@ -1378,6 +1378,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(JobsTests PRIVATE gb_engine)
     add_test(NAME JobsTests COMMAND JobsTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # Not asking for memory every frame: IdMap, Scratch lists, a settled physics step.
+    add_executable(MemoryReuseTests tests/MemoryReuseTests.cpp)
+    target_link_libraries(MemoryReuseTests PRIVATE gb_engine)
+    add_test(NAME MemoryReuseTests COMMAND MemoryReuseTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)
     target_link_libraries(GroundworkTests PRIVATE gb_engine)
