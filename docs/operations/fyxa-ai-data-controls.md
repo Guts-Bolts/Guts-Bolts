@@ -1,6 +1,6 @@
 # Fyxa AI data controls (initial backend)
 
-**Implementation status:** Backend preferences, eligibility metadata and the Settings switch are implemented in the Worker and website. This is not a training pipeline and does not send user content to an AI provider.
+**Implementation status:** Account preferences and public-asset eligibility are implemented. Fyxa Studio now submits bounded quality metadata and explicit response feedback to the Worker when training is enabled. This metadata path does not transmit prompts, answers, tool arguments, tool results, screenshots, or project files, and it does not train model weights. A content-training pipeline is still not implemented.
 
 ## Current scope
 
@@ -11,6 +11,7 @@ The authoritative records are in `GbServerObject` SQLite:
 - `ai_training_preferences`: one account-level preference record.
 - `ai_content_eligibility`: per-asset preference, rights attestation, review status, and computed eligibility.
 - `ai_training_audit`: user-visible preference and rights-review history.
+- `ai_learning_signals`: short-lived, account-scoped provider/model/category/tool-outcome metadata and optional user feedback; no conversation content.
 
 These tables are created additively by the existing Durable Object constructor. No new Durable Object class, binding, Wrangler migration, or Supabase table is required.
 
@@ -28,7 +29,10 @@ Changed 2026-11-09 (Script chose opt-out for training):
 - Existing and new assets are not automatically eligible: the creator must attest that they have the necessary rights, and staff must approve the rights review.
 - Once rights are approved, the account-wide preference applies to assets whose per-content choice is `inherit`. An explicit per-content `exclude` overrides account-level inclusion.
 - Private assets, assets awaiting/rejected in moderation, exclusive/promo-only assets, and assets whose creator no longer matches the recorded owner remain excluded. When ownership changes, the new owner must make a fresh rights attestation and obtain a new staff review; the prior owner's approval is never inherited.
-- A global account opt-out immediately recomputes stored eligibility. Per-content inclusion cannot override it.
+- A global account opt-out immediately recomputes stored asset eligibility, deletes that account's pending learning signals, and blocks future signal capture. Per-content inclusion cannot override it.
+- Studio records a quality signal after a completed Fyxa turn only for signed-in accounts whose training preference is enabled. The signal contains provider, model, a coarse topic category, and tool names/outcomes only. Tool arguments and tool outputs are never sent by this telemetry path.
+- A tool error is labelled `tool_failure`; otherwise the signal waits for user feedback rather than assuming the answer was correct. Users can mark the response helpful or identify a reason it was not helpful.
+- Learning signals are capped at 50 per account per day and retained for at most 90 days. Users can view or delete their own signal history. Account deletion removes all learning signals.
 - Deleting an asset removes its eligibility row and leaves an audit event.
 - Deleting an account revokes both AI preferences, clears its content rights attestations, disables all retained content eligibility, and records the deletion event. Published games/items remain under the platform's existing account-deletion behavior, but they are no longer eligible for Fyxa use.
 
@@ -116,6 +120,30 @@ Only staff may use this operation. Approval requires a creator attestation and a
 
 Returns up to the latest 50 preference, content-choice, rights-review, and deletion events associated with the account.
 
+### Fyxa response-quality metadata
+
+After a completed Studio turn, the client may submit:
+
+```json
+{
+  "op": "ai.learning.capture",
+  "args": {
+    "provider": "ollama",
+    "model": "qwen3:8b",
+    "category": "scripting",
+    "tools": [{ "name": "get_script_source", "outcome": "success" }]
+  }
+}
+```
+
+The server requires a signed-in account and `trainingEnabled: true`. It validates provider, category, tool names, and outcomes; limits capture to 50 signals per account per day; and expires signals after 90 days. It stores only metadata. It does not accept prompt text, assistant response text, tool arguments, tool output, images, or source files.
+
+Tool errors are marked `tool_failure`. Successful tool execution alone is not treated as proof that the answer was correct; other signals remain `awaiting_feedback` until the user rates the response.
+
+The Studio panel submits explicit feedback with `ai.learning.feedback` using a signal ID, rating (`1` or `-1`), and a reason code. Supported negative reasons are `incorrect`, `incomplete`, `irrelevant`, `tool_failure`, `unsafe`, and `other`. Users can read their latest 50 records with `ai.learning.history` and erase them with `ai.learning.delete`. Staff can view category-level aggregate counts with `ai.learning.admin.summary`; this operation does not expose individual accounts or content.
+
+These signals are product-quality telemetry, not a fine-tuning dataset. They are not currently fed back into model weights or automatically treated as verified ground truth.
+
 ## Eligibility rules
 
 A content record is eligible for a purpose only when all of these are true:
@@ -136,9 +164,9 @@ Preference changes and content choices are recorded in `ai_training_audit`. Staf
 
 ## Explicit limitations
 
-- No dataset export, dataset registry, model training, fine-tuning, model evaluation or AI reference index is implemented here.
-- No automated screening for secrets, sensitive personal information, or content involving minors is implemented here. The staff rights-review gate does not replace those controls. Do not enable user-content training until purpose-specific content-safety screening, age safeguards, and the required legal authorization flow are implemented and tested.
-- No content is currently selected or transmitted for training by this backend.
+- No dataset export, dataset registry, model training, fine-tuning, semantic answer evaluation or AI reference index is implemented here. The new quality signals are telemetry only.
+- This telemetry deliberately excludes raw prompts, responses, tool arguments/results, screenshots, and project files. The separate public-asset training path still requires purpose-specific screening for secrets and sensitive personal information, age safeguards, legal review, and a tested dataset authorization flow before raw user content can be exported or used to train model weights.
+- No raw conversation or game-file content is currently selected or transmitted for model-weight training by this backend. Only the metadata signals described above are collected when the account's opt-out switch is on.
 - No automatic model unlearning is implemented.
 - The current rights-review mechanism is a staff gate plus a recorded review note; the operational evidence-review process still needs to be defined.
 - The initial version covers existing asset records only. Other content classes must not be assumed to be covered.
