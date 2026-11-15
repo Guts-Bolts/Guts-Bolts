@@ -83,7 +83,10 @@ private:
     std::string m_activeRequestText;
     size_t m_turnLineStartIndex = 0;
     std::string m_learningSignalId;
+    unsigned long long m_learningGeneration = 0;
     bool m_learningFeedbackSubmitted = false;
+    bool m_learningFeedbackPending = false;
+    bool m_learningFeedbackFailed = false;
     std::vector<std::string> m_discoveredToolNames;
     nlohmann::json m_messages = nlohmann::json::array();
     std::vector<Line> m_lines;
