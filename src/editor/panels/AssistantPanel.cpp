@@ -2013,6 +2013,111 @@ void AssistantPanel::render(bool* open) {
         if (ImGui::SmallButton("Turn off##bypassbanner")) m_editor.setFyxaBypass(false);
     }
 
+    if (ImGui::BeginTabBar("##fyxa-tabs")) {
+        if (ImGui::BeginTabItem("Chat")) {
+    if (m_externalApprovalPending && !m_externalQueue.empty()) {
+        const ExternalCall& pendingCall = m_externalQueue.front();
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "External MCP action requires approval");
+        ImGui::TextWrapped("Fyxa wants to call: %s", pendingCall.name.c_str());
+        const json safeArguments = redactMcpArguments(pendingCall.args);
+        const std::string argumentText = safeArguments.dump(2);
+        ImGui::TextWrapped("Arguments:");
+        ImGui::BeginChild("##mcpapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
+        ImGui::TextUnformatted(argumentText.c_str());
+        ImGui::EndChild();
+        ImGui::TextWrapped("This action runs on the connected service. It may read, modify, or delete remote data and cannot necessarily be undone from Studio.");
+        if (ImGui::Button("Approve this action")) {
+            appendMcpAudit("approval", pendingCall.name, pendingCall.args,
+                           "approved-by-user", pendingCall.idempotencyKey);
+            m_externalApprovalGranted = true;
+            m_externalApprovalPending = false;
+            startNextExternalCall();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Deny")) {
+            ExternalCall denied = std::move(m_externalQueue.front());
+            m_externalQueue.pop_front();
+            appendMcpAudit("approval", denied.name, denied.args, "denied-by-user", denied.idempotencyKey);
+            const std::string message = "The user denied this external MCP action.";
+            m_lines.push_back({Line::Note, message});
+            if (denied.claude) {
+                m_deferredClaudeResults.push_back({{"type", "tool_result"}, {"tool_use_id", denied.id},
+                    {"content", message}, {"is_error", true}});
+            } else {
+                m_deferredOllamaMessages.push_back({{"role", "tool"}, {"name", denied.name},
+                    {"content", message}});
+            }
+            m_externalApprovalPending = false;
+            startNextExternalCall();
+        }
+    }
+
+    if (m_relay.approvalPending()) {
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "Connected app action requires approval");
+        ImGui::TextWrapped("App: %s", m_relay.pendingApp().c_str());
+        ImGui::TextWrapped("Tool: %s", m_relay.pendingTool().c_str());
+        ImGui::TextWrapped("Arguments (sensitive fields redacted):");
+        ImGui::BeginChild("##relayapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
+        ImGui::TextUnformatted(m_relay.pendingArguments().c_str());
+        ImGui::EndChild();
+        ImGui::TextWrapped("The connected app is requesting a Studio tool call. Review the arguments before allowing it.");
+        if (ImGui::Button("Approve connected-app action"))
+            m_relay.resolveApproval(true, m_editor, m_mcp);
+        ImGui::SameLine();
+        if (ImGui::Button("Deny connected-app action"))
+            m_relay.resolveApproval(false, m_editor, m_mcp);
+    }
+
+    const float footer = ImGui::GetFrameHeightWithSpacing() * 3.2f;
+    ImGui::BeginChild("##chat", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+    if (m_lines.empty())
+        ImGui::TextWrapped("I'm Fyxa, the AI agent for Guts&Bolts. I'm designed to help across the platform, including games, Studio, accounts, social features, inventory, and the marketplace. In this Studio session, I can use the native Studio tools and any connected MCP tools that you approve. Studio changes remain available in AI Activity for review and undo.");
+    for (const Line& line : m_lines) {
+        ImGui::PushTextWrapPos(0.0f);
+        switch (line.kind) {
+            case Line::You:       ImGui::TextColored(ImVec4(0.55f, 0.8f, 1, 1), "You:"); ImGui::TextUnformatted(line.text.c_str()); break;
+            case Line::Assistant: ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.45f, 1), "Fyxa:"); ImGui::TextUnformatted(line.text.c_str()); break;
+            case Line::Tool:      ImGui::TextDisabled("  > %s", line.text.c_str()); break;
+            case Line::Note:      ImGui::TextColored(ImVec4(1, 0.85f, 0.4f, 1), "%s", line.text.c_str()); break;
+            case Line::Error:     ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", line.text.c_str()); break;
+        }
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+    }
+    if (busy) ImGui::TextDisabled("Working%s", std::string((size_t)((int)(ImGui::GetTime() * 3) % 4), '.').c_str());
+    if (m_scrollDown) { ImGui::SetScrollHereY(1.0f); m_scrollDown = false; }
+    ImGui::EndChild();
+
+    const bool configured = m_provider == "cloud" ? Online::configured()
+                          : m_provider == "ollama" ? (!m_ollamaHost.empty() && !m_ollamaModel.empty() && m_ollamaPort > 0)
+                                                    : !m_apiKey.empty();
+    ImGui::BeginDisabled(!configured);
+    ImGui::SetNextItemWidth(-1);
+    bool enter = ImGui::InputTextMultiline("##ask", &m_input, ImVec2(-1, ImGui::GetFrameHeight() * 1.9f),
+                                           ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue);
+    if (busy) {
+        if (agentBusy && ImGui::Button("Stop")) {
+            m_stopAsked = true;
+            if (m_agentCancel) m_agentCancel->store(true);
+        }
+    } else if ((enter || ImGui::Button("Send (Enter)")) && !m_input.empty()) {
+        send(m_input);
+        m_input.clear();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("New chat") && !busy) { m_messages = json::array(); m_lines.clear(); }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(m_editor.aiHasChanges() ? "Review its changes" : "AI Activity")) m_editor.showAiActivity();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everything Fyxa did and changed. Undo all of it in one click.");
+    if (!configured) ImGui::TextDisabled(m_provider == "cloud" ? "Sign in to a Guts&Bolts server to use Fyxa's cloud." :
+                                         m_provider == "ollama" ? "Configure the Ollama server and model in Assistant settings." :
+                                                                  "Add your Anthropic API key in Assistant settings.");
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Settings")) {
     if (ImGui::CollapsingHeader("Fyxa settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Bypass permissions mode: for people who want Fyxa to just get on with it. Off every time
         // Studio starts, and turning it on asks once more, so it is never on by accident.
@@ -2265,44 +2370,6 @@ void AssistantPanel::render(bool* open) {
         ImGui::EndDisabled();
     }
 
-    if (m_externalApprovalPending && !m_externalQueue.empty()) {
-        const ExternalCall& pendingCall = m_externalQueue.front();
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "External MCP action requires approval");
-        ImGui::TextWrapped("Fyxa wants to call: %s", pendingCall.name.c_str());
-        const json safeArguments = redactMcpArguments(pendingCall.args);
-        const std::string argumentText = safeArguments.dump(2);
-        ImGui::TextWrapped("Arguments:");
-        ImGui::BeginChild("##mcpapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
-        ImGui::TextUnformatted(argumentText.c_str());
-        ImGui::EndChild();
-        ImGui::TextWrapped("This action runs on the connected service. It may read, modify, or delete remote data and cannot necessarily be undone from Studio.");
-        if (ImGui::Button("Approve this action")) {
-            appendMcpAudit("approval", pendingCall.name, pendingCall.args,
-                           "approved-by-user", pendingCall.idempotencyKey);
-            m_externalApprovalGranted = true;
-            m_externalApprovalPending = false;
-            startNextExternalCall();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Deny")) {
-            ExternalCall denied = std::move(m_externalQueue.front());
-            m_externalQueue.pop_front();
-            appendMcpAudit("approval", denied.name, denied.args, "denied-by-user", denied.idempotencyKey);
-            const std::string message = "The user denied this external MCP action.";
-            m_lines.push_back({Line::Note, message});
-            if (denied.claude) {
-                m_deferredClaudeResults.push_back({{"type", "tool_result"}, {"tool_use_id", denied.id},
-                    {"content", message}, {"is_error", true}});
-            } else {
-                m_deferredOllamaMessages.push_back({{"role", "tool"}, {"name", denied.name},
-                    {"content", message}});
-            }
-            m_externalApprovalPending = false;
-            startNextExternalCall();
-        }
-    }
-
     if (ImGui::CollapsingHeader("Connect AI apps to Studio (MCP)")) {
         ImGui::TextWrapped("This exposes Studio's tools to other AI apps on this computer. It is an MCP server, not an outbound MCP client.");
         bool on = m_mcp.running();
@@ -2350,68 +2417,10 @@ void AssistantPanel::render(bool* open) {
         }
     }
 
-    if (m_relay.approvalPending()) {
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "Connected app action requires approval");
-        ImGui::TextWrapped("App: %s", m_relay.pendingApp().c_str());
-        ImGui::TextWrapped("Tool: %s", m_relay.pendingTool().c_str());
-        ImGui::TextWrapped("Arguments (sensitive fields redacted):");
-        ImGui::BeginChild("##relayapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
-        ImGui::TextUnformatted(m_relay.pendingArguments().c_str());
-        ImGui::EndChild();
-        ImGui::TextWrapped("The connected app is requesting a Studio tool call. Review the arguments before allowing it.");
-        if (ImGui::Button("Approve connected-app action"))
-            m_relay.resolveApproval(true, m_editor, m_mcp);
-        ImGui::SameLine();
-        if (ImGui::Button("Deny connected-app action"))
-            m_relay.resolveApproval(false, m_editor, m_mcp);
-    }
-
-    const float footer = ImGui::GetFrameHeightWithSpacing() * 3.2f;
-    ImGui::BeginChild("##chat", ImVec2(0, -footer), ImGuiChildFlags_Borders);
-    if (m_lines.empty())
-        ImGui::TextWrapped("I'm Fyxa, the AI agent for Guts&Bolts. I'm designed to help across the platform, including games, Studio, accounts, social features, inventory, and the marketplace. In this Studio session, I can use the native Studio tools and any connected MCP tools that you approve. Studio changes remain available in AI Activity for review and undo.");
-    for (const Line& line : m_lines) {
-        ImGui::PushTextWrapPos(0.0f);
-        switch (line.kind) {
-            case Line::You:       ImGui::TextColored(ImVec4(0.55f, 0.8f, 1, 1), "You:"); ImGui::TextUnformatted(line.text.c_str()); break;
-            case Line::Assistant: ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.45f, 1), "Fyxa:"); ImGui::TextUnformatted(line.text.c_str()); break;
-            case Line::Tool:      ImGui::TextDisabled("  > %s", line.text.c_str()); break;
-            case Line::Note:      ImGui::TextColored(ImVec4(1, 0.85f, 0.4f, 1), "%s", line.text.c_str()); break;
-            case Line::Error:     ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", line.text.c_str()); break;
+            ImGui::EndTabItem();
         }
-        ImGui::PopTextWrapPos();
-        ImGui::Spacing();
+        ImGui::EndTabBar();
     }
-    if (busy) ImGui::TextDisabled("Working%s", std::string((size_t)((int)(ImGui::GetTime() * 3) % 4), '.').c_str());
-    if (m_scrollDown) { ImGui::SetScrollHereY(1.0f); m_scrollDown = false; }
-    ImGui::EndChild();
-
-    const bool configured = m_provider == "cloud" ? Online::configured()
-                          : m_provider == "ollama" ? (!m_ollamaHost.empty() && !m_ollamaModel.empty() && m_ollamaPort > 0)
-                                                    : !m_apiKey.empty();
-    ImGui::BeginDisabled(!configured);
-    ImGui::SetNextItemWidth(-1);
-    bool enter = ImGui::InputTextMultiline("##ask", &m_input, ImVec2(-1, ImGui::GetFrameHeight() * 1.9f),
-                                           ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue);
-    if (busy) {
-        if (agentBusy && ImGui::Button("Stop")) {
-            m_stopAsked = true;
-            if (m_agentCancel) m_agentCancel->store(true);
-        }
-    } else if ((enter || ImGui::Button("Send (Enter)")) && !m_input.empty()) {
-        send(m_input);
-        m_input.clear();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("New chat") && !busy) { m_messages = json::array(); m_lines.clear(); }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button(m_editor.aiHasChanges() ? "Review its changes" : "AI Activity")) m_editor.showAiActivity();
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everything Fyxa did and changed. Undo all of it in one click.");
-    if (!configured) ImGui::TextDisabled(m_provider == "cloud" ? "Sign in to a Guts&Bolts server to use Fyxa's cloud." :
-                                         m_provider == "ollama" ? "Configure the Ollama server and model in Assistant settings." :
-                                                                  "Add your Anthropic API key in Assistant settings.");
     ImGui::End();
 }
 // How many cloud steps are left today (worker/fyxa-cloud.js fyxacloud.usage).
