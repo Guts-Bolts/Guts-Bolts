@@ -39,6 +39,9 @@ function safeStatus(raw) {
     osVersion: safeText(raw.osVersion, 100),
     hostname: safeText(raw.hostname, 80, 'Unnamed machine'),
     agentVersion: safeText(raw.agentVersion, 24, 'unknown'),
+    models: Array.isArray(raw.models)
+      ? [...new Set(raw.models.filter((x) => typeof x === 'string').map((x) => safeText(x, 128)).filter((x) => /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(x)))].slice(0, 32)
+      : [],
     capabilities: Array.isArray(raw.capabilities)
       ? [...new Set(raw.capabilities.filter((x) => typeof x === 'string').map((x) => safeText(x, 32)).filter(Boolean))].slice(0, 16)
       : [],
@@ -61,6 +64,9 @@ export class InfrastructureObject extends DurableObject {
     this.sql = ctx.storage.sql;
     this.connections = new Map();
     this.nodes = new Map();
+    this.busyNodes = new Set();
+    this.pendingInference = new Map();
+    this.requestWindows = new Map();
     const initialize = () => this.sql.exec(`
       CREATE TABLE IF NOT EXISTS infra_devices (
         id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL,
@@ -115,7 +121,7 @@ export class InfrastructureObject extends DurableObject {
           if (text && typeof text.text === 'function') text = await text.text();
           else return this.drop(c);
         }
-        if (text.length > 16384) return this.drop(c);
+        if (text.length > 450 * 1024) return this.drop(c);
         let message;
         try { message = JSON.parse(text); } catch { return this.drop(c); }
         if (!message || typeof message !== 'object' || Array.isArray(message)) return this.drop(c);
@@ -180,6 +186,24 @@ export class InfrastructureObject extends DurableObject {
         now(), JSON.stringify(status), c.nodeId);
       return;
     }
+    if (message.t === 'node.infer.result' || message.t === 'node.infer.error') {
+      const pending = typeof message.requestId === 'string' ? this.pendingInference.get(message.requestId) : null;
+      if (!pending || pending.nodeId !== c.nodeId) return this.drop(c);
+      this.pendingInference.delete(message.requestId);
+      clearTimeout(pending.timer);
+      this.busyNodes.delete(c.nodeId);
+      if (message.t === 'node.infer.error') {
+        pending.resolve(fail(safeText(message.error, 240, 'The local model could not answer.'), 502));
+      } else {
+        const answer = message.message;
+        if (!answer || typeof answer !== 'object' || Array.isArray(answer) || answer.role !== 'assistant' ||
+            typeof answer.content !== 'string' || answer.content.length > 200000 ||
+            (answer.tool_calls !== undefined && (!Array.isArray(answer.tool_calls) || answer.tool_calls.length > 64))) {
+          pending.resolve(fail('The local model returned an invalid response.', 502));
+        } else pending.resolve(success({ message: answer, deviceId: c.nodeId }));
+      }
+      return;
+    }
     if (message.t === 'node.error') {
       this.audit('agent', 'node.error', safeText(message.message, 180, 'Agent reported an error'));
       return;
@@ -201,9 +225,56 @@ export class InfrastructureObject extends DurableObject {
     this.connections.delete(c.id);
     if (c.nodeId && this.nodes.get(c.nodeId) === c) {
       this.nodes.delete(c.nodeId);
+      this.busyNodes.delete(c.nodeId);
+      for (const [requestId, pending] of this.pendingInference) {
+        if (pending.nodeId !== c.nodeId) continue;
+        this.pendingInference.delete(requestId);
+        clearTimeout(pending.timer);
+        pending.resolve(fail('The inference machine disconnected before answering.', 503));
+      }
       if (markOffline) this.audit('agent', 'node.disconnected', 'Infrastructure node disconnected: ' + c.nodeId);
     }
     try { c.ws.close(1000, 'bye'); } catch { /* already closed */ }
+  }
+
+  async infer(job) {
+    if (!job || typeof job !== 'object' || Array.isArray(job) ||
+        typeof job.account !== 'string' || !isHex(job.account) ||
+        typeof job.model !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(job.model) ||
+        !Array.isArray(job.messages) || !job.messages.length || job.messages.length > 80 ||
+        (job.tools !== undefined && !Array.isArray(job.tools))) return fail('Invalid home inference request.', 400);
+    let encoded;
+    try { encoded = JSON.stringify(job); } catch { return fail('Invalid home inference request.', 400); }
+    if (new TextEncoder().encode(encoded).length > 300 * 1024) return fail('The conversation is too large for home inference.', 413);
+    const t = now();
+    const window = this.requestWindows.get(job.account) || { start: t, count: 0 };
+    if (t - window.start >= 60) { window.start = t; window.count = 0; }
+    if (window.count >= 30) return fail('Home AI is rate-limited to 30 requests per minute per account.', 429);
+    window.count++;
+    this.requestWindows.set(job.account, window);
+    const rows = [...this.sql.exec('SELECT id, status, last_seen, revoked FROM infra_devices WHERE revoked = 0')];
+    const candidates = rows.filter((row) => {
+      const connection = this.nodes.get(row.id);
+      if (!connection || !connection.authed || this.busyNodes.has(row.id) || t - row.last_seen >= 45) return false;
+      let status = {};
+      try { status = JSON.parse(row.status || '{}'); } catch { return false; }
+      return Array.isArray(status.models) && status.models.includes(job.model);
+    }).sort((a, b) => {
+      const aa = this.nodes.get(a.id), bb = this.nodes.get(b.id);
+      return (Number(aa.status?.cpuPercent) || 0) - (Number(bb.status?.cpuPercent) || 0);
+    });
+    if (!candidates.length) return fail('No online Nexus machine currently reports the requested Ollama model. Check that Ollama is running and the model is installed.', 503);
+    const nodeId = candidates[0].id, connection = this.nodes.get(nodeId), requestId = randomHex(16);
+    this.busyNodes.add(nodeId);
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingInference.delete(requestId);
+        this.busyNodes.delete(nodeId);
+        resolve(fail('The local model did not answer within 90 seconds.', 504));
+      }, 90000);
+      this.pendingInference.set(requestId, { resolve, timer, nodeId });
+      send(connection.ws, { t: 'node.infer', requestId, model: job.model, messages: job.messages, tools: job.tools || [], options: { num_predict: 2048 } });
+    });
   }
 
   async control(actor, body, ip = 'unknown') {
