@@ -18,6 +18,38 @@ async function chat(s, me) {
   return r.ok && r.fyxaCloud ? s.fyxaCloudAnswer(r) : r;
 }
 
+test('G&B Home AI forwards a signed-in account request to the Nexus inference relay', async () => {
+  const s = makeServer();
+  const ann = s.signUp('ann');
+  let received = null;
+  s.env.INFRA_CONTROL = { getByName(name) {
+    assert.equal(name, 'registry');
+    return { async infer(job) {
+      received = job;
+      return { body: { ok: true, message: { role: 'assistant', content: 'Hello from the home GPU.' } } };
+    } };
+  } };
+  const queued = s.call(ann, 'fyxacloud.homeChat', {
+    model: 'qwen3:8b', messages: [{ role: 'user', content: 'Hello' }],
+    tools: [{ type: 'function', function: { name: 'get_game_tree', parameters: { type: 'object', properties: {} } } }],
+  });
+  assert.ok(queued.ok, queued.error);
+  assert.equal(queued.fyxaHome.account, ann.id);
+  const answer = await s.fyxaHomeAnswer(queued);
+  assert.ok(answer.ok, answer.error);
+  assert.equal(answer.message.content, 'Hello from the home GPU.');
+  assert.equal(received.model, 'qwen3:8b');
+  assert.equal(received.tools[0].function.name, 'get_game_tree');
+});
+
+test('G&B Home AI rejects invalid models and does not expose the relay to guests', () => {
+  const s = makeServer();
+  const guest = s.user('c'.repeat(64));
+  assert.match(s.call(guest, 'fyxacloud.homeChat', { model: 'qwen3:8b', messages: [{ role: 'user', content: 'hi' }] }).error, /Sign up/);
+  const ann = s.signUp('ann');
+  assert.equal(s.call(ann, 'fyxacloud.homeChat', { model: '../other', messages: [{ role: 'user', content: 'hi' }] }).ok, false);
+});
+
 test('a cloud answer comes back in the shape Studio reads, and counts a step and neurons', async () => {
   const s = withAi(makeServer());
   const ann = s.signUp('ann');
