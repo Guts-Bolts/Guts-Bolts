@@ -222,7 +222,7 @@ html.is-dark .theme-toggle .moon { display: block; }
   padding: 20px;
   color: #321719;
 }
-.auction-promo-main:hover { background: rgba(255,255,255,.38); }
+.auction-promo-main:hover { background: rgba(255,255,255,.38); color: #321719; }
 .auction-promo-art {
   border: 2px solid #d4a4a1;
   border-radius: 10px;
@@ -270,7 +270,8 @@ html.is-dark .theme-toggle .moon { display: block; }
     background: linear-gradient(112deg, #211519 0%, #2a171b 58%, #421b20 100%);
     box-shadow: 0 12px 28px -10px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.04);
   }
-  :root:not([data-theme="light"]) .auction-promo-main { color: #f8e9e9; }
+  :root:not([data-theme="light"]) .auction-promo-main,
+  :root:not([data-theme="light"]) .auction-promo-main:hover { color: #f8e9e9; }
   :root:not([data-theme="light"]) .auction-promo-copy h3,
   :root:not([data-theme="light"]) .auction-promo-bid strong { color: #fff0f0; }
   :root:not([data-theme="light"]) .auction-promo-copy p,
