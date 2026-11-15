@@ -168,3 +168,150 @@ html.is-dark .theme-toggle .moon { display: block; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+
+/* Classic auction banner: make active bidding the first major homepage promotion. */
+.auction-promo > .auction-promo-head,
+.auction-promo > .auction-promo-feature,
+.auction-promo > .auction-promo-more { margin-left: 0; margin-right: 0; }
+.auction-promo {
+  margin: 0 0 22px;
+  border: 3px solid #a30f1c;
+  border-radius: 16px;
+  background: linear-gradient(112deg, #fff 0%, #fff4f2 52%, #ffd9d7 100%);
+  box-shadow: 0 12px 28px -10px rgba(125, 10, 20, .38), inset 0 0 0 1px rgba(255, 255, 255, .75);
+}
+.auction-promo-head {
+  min-height: 52px;
+  gap: 12px;
+  padding: 8px 14px;
+  background: linear-gradient(100deg, #8f101a 0%, #c71925 58%, #e52d36 100%);
+  border: 0;
+}
+.auction-promo-ribbon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid #ffdf70;
+  border-radius: 4px;
+  background: linear-gradient(#ffe98b, #f7c844);
+  color: #4b1113;
+  font: 900 13px/1 var(--gb-display);
+  letter-spacing: 1.2px;
+  box-shadow: 0 2px 0 rgba(50, 0, 0, .24);
+}
+.auction-promo-head h2 {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font: 900 19px/1.1 var(--gb-display);
+  letter-spacing: .06em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+.auction-promo-head h2::before { display: none; }
+.auction-promo-head a { color: #fff; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
+.auction-promo-position { color: #ffe7e7; font-size: 10px; }
+.auction-promo-control { border-color: rgba(255,255,255,.55); background: rgba(255,255,255,.14); color: #fff; }
+.auction-promo-control:hover:not(:disabled) { background: rgba(255,255,255,.28); }
+.auction-promo-main {
+  grid-template-columns: minmax(170px, 230px) minmax(0, 1fr) minmax(180px, 220px);
+  gap: 22px;
+  padding: 20px;
+  color: #321719;
+}
+.auction-promo-main:hover { background: rgba(255,255,255,.38); color: #321719; }
+.auction-promo-art {
+  border: 2px solid #d4a4a1;
+  border-radius: 10px;
+  background: radial-gradient(circle, #fff 0%, #f4d9d7 76%);
+  box-shadow: 0 5px 14px rgba(80, 15, 20, .15), inset 0 1px 5px rgba(0,0,0,.08);
+}
+.auction-promo-kicker { color: #a20f1c; font-size: 12px; letter-spacing: 1.5px; }
+.auction-promo-copy h3 { margin: 4px 0 8px; color: #301416; font-size: clamp(25px, 3vw, 34px); }
+.auction-promo-copy p { color: #65494a; font-size: 13px; }
+.auction-promo-bid { margin-top: 8px; }
+.auction-promo-bid span, .auction-promo-clock > span { color: #754b4d; font-size: 10px; letter-spacing: 1px; }
+.auction-promo-bid strong { color: #2a1113; font-size: 25px; }
+.auction-promo-clock {
+  align-self: stretch;
+  justify-content: center;
+  padding: 16px;
+  border: 1px solid #dca6a2;
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(255,255,255,.88), rgba(255,229,227,.82));
+  box-shadow: inset 0 1px 0 #fff, 0 4px 12px rgba(100, 15, 20, .08);
+}
+.auction-promo-clock strong { color: #a30f1c; font-size: clamp(24px, 2.8vw, 32px); }
+.auction-promo-cta {
+  align-self: stretch;
+  margin-top: 8px;
+  padding: 12px 16px;
+  border: 1px solid #740d17;
+  border-radius: 8px;
+  background: linear-gradient(#ed343e, #a90e1a);
+  box-shadow: 0 5px 12px rgba(130, 10, 20, .24), inset 0 1px 0 rgba(255,255,255,.3);
+  text-align: center;
+  font-size: 14px;
+  letter-spacing: .8px;
+}
+.auction-promo-more { padding-top: 0; }
+.auction-promo-more > a { border-radius: 8px; border-color: #d7aaa7; }
+.auction-promo-actions { padding-bottom: 14px; }
+.auction-promo-watch { padding: 7px 12px; border-radius: 7px; }
+.auction-promo.urgent, .auction-promo.last-five-minutes, .auction-promo.last-minute {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .12), 0 12px 28px -10px rgba(125, 10, 20, .4);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .auction-promo {
+    border-color: #a91d29;
+    background: linear-gradient(112deg, #211519 0%, #2a171b 58%, #421b20 100%);
+    box-shadow: 0 12px 28px -10px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.04);
+  }
+  :root:not([data-theme="light"]) .auction-promo-main,
+  :root:not([data-theme="light"]) .auction-promo-main:hover { color: #f8e9e9; }
+  :root:not([data-theme="light"]) .auction-promo-copy h3,
+  :root:not([data-theme="light"]) .auction-promo-bid strong { color: #fff0f0; }
+  :root:not([data-theme="light"]) .auction-promo-copy p,
+  :root:not([data-theme="light"]) .auction-promo-bid span,
+  :root:not([data-theme="light"]) .auction-promo-clock > span { color: #d6b9bb; }
+  :root:not([data-theme="light"]) .auction-promo-art { background: radial-gradient(circle, #3c2a2d, #211519 78%); border-color: #6d3a40; }
+  :root:not([data-theme="light"]) .auction-promo-clock { background: linear-gradient(160deg, #321d21, #26171a); border-color: #6d3a40; box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
+  :root:not([data-theme="light"]) .auction-promo-clock strong { color: #ff727b; }
+  :root:not([data-theme="light"]) .auction-promo-more > a { background: rgba(255,255,255,.06); border-color: #58343a; color: #f5e7e8; }
+}
+@media (max-width: 680px) {
+  .auction-promo { margin-bottom: 16px; border-width: 2px; border-radius: 12px; }
+  .auction-promo-head { min-height: 44px; gap: 7px; padding: 6px 9px; }
+  .auction-promo-ribbon { min-height: 26px; padding: 4px 8px; font-size: 11px; }
+  .auction-promo-head h2 { font-size: 14px; }
+  .auction-promo-main { grid-template-columns: 96px minmax(0, 1fr); gap: 10px; padding: 11px; }
+  .auction-promo-art { grid-row: span 2; }
+  .auction-promo-copy h3 { font-size: 20px; }
+  .auction-promo-copy p { font-size: 11px; }
+  .auction-promo-bid strong { font-size: 20px; }
+  .auction-promo-clock {
+    grid-column: 2;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5px;
+    padding: 8px 0 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .auction-promo-clock > span { width: 100%; }
+  .auction-promo-clock strong { font-size: clamp(17px, 4vw, 22px); }
+  .auction-promo-cta { align-self: auto; margin: 0; padding: 7px 9px; font-size: 10px; }
+  .auction-promo-actions { padding: 0 11px 11px; }
+  .auction-promo-more { grid-template-columns: 1fr; padding: 0 11px 11px; }
+}
