@@ -1780,13 +1780,15 @@ void AssistantPanel::requestNext() {
     const json nativeTools = FyxaToolSelection::selectNative(AiTools::mcpTools(), m_activeRequestText, m_discoveredToolNames, 24);
     const json localTools = fyxaAgentTools();
     const json externalTools = FyxaToolSelection::selectExternal(externalMcpTools(), m_activeRequestText, m_discoveredToolNames, 12);
-    const bool cloud = m_provider == "cloud";   // Guts&Bolts cloud (worker/fyxa-cloud.js): Ollama's shape, sent to our server
+    const bool cloud = m_provider == "cloud";   // Cloudflare Workers AI
+    const bool home = m_provider == "home";     // Paired Nexus machines running local Ollama
     const std::string payload = [&]() {
-        if (cloud) {
+        if (cloud || home) {
             json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
             for (const auto& message : m_messages) messages.push_back(message);
-            return Online::signedRequest("fyxacloud.chat", {{"messages", messages},
-                                         {"tools", ollamaTools(nativeTools, localTools, externalTools)}}).dump();
+            json args = {{"messages", messages}, {"tools", ollamaTools(nativeTools, localTools, externalTools)}};
+            if (home) args["model"] = m_ollamaModel;
+            return Online::signedRequest(home ? "fyxacloud.homeChat" : "fyxacloud.chat", args).dump();
         }
         if (m_provider == "ollama") {
             json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
@@ -1824,12 +1826,12 @@ void AssistantPanel::requestNext() {
     const bool ollama = m_provider == "ollama";
     std::string host = ollama ? m_ollamaHost : "wss://api.anthropic.com";
     int port = ollama ? m_ollamaPort : 443;
-    if (cloud && (!Online::serverHostPort(host, port) || !Net::isWebAddress(host))) {
-        m_lines.push_back({Line::Error, "Fyxa's cloud only works with the gutsandbolts.net server. Fyxa on your own computer (Ollama) works anywhere."});
+    if ((cloud || home) && (!Online::serverHostPort(host, port) || !Net::isWebAddress(host))) {
+        m_lines.push_back({Line::Error, "G&B cloud and G&B Home AI require the gutsandbolts.net server. Direct Ollama works on your own network."});
         return;
     }
-    const std::string path = ollama ? "/api/chat" : cloud ? "/api" : "/v1/messages";
-    const std::string headers = ollama || cloud ? std::string() :
+    const std::string path = ollama ? "/api/chat" : (cloud || home) ? "/api" : "/v1/messages";
+    const std::string headers = ollama || cloud || home ? std::string() :
         "x-api-key: " + m_apiKey + "\r\nanthropic-version: 2023-06-01\r\n" +
         (m_model != "claude-haiku-4-5" ? "anthropic-beta: server-side-fallback-2026-07-01\r\n" : "");
     const auto cancel = m_agentCancel;
@@ -1842,7 +1844,7 @@ void AssistantPanel::requestNext() {
 }
 
 void AssistantPanel::handleReply(int status, const std::string& body, const std::string& error) {
-    if (m_provider == "ollama" || m_provider == "cloud") handleOllamaReply(status, body, error);
+    if (m_provider == "ollama" || m_provider == "cloud" || m_provider == "home") handleOllamaReply(status, body, error);
     else handleClaudeReply(status, body, error);
 }
 
@@ -2146,10 +2148,10 @@ void AssistantPanel::render(bool* open) {
             ImGui::EndPopup();
         }
         ImGui::Separator();
-        const char* providers[] = {"Ollama (your own GPU, free)", "Claude (Anthropic)", "Guts&Bolts cloud (daily limit)"};
-        int provider = m_provider == "claude" ? 1 : m_provider == "cloud" ? 2 : 0;
-        if (ImGui::Combo("AI provider", &provider, providers, 3)) {
-            m_provider = provider == 0 ? "ollama" : provider == 1 ? "claude" : "cloud";
+        const char* providers[] = {"Ollama (this computer)", "Claude (Anthropic)", "Guts&Bolts cloud (daily limit)", "G&B Home AI (your paired machines)"};
+        int provider = m_provider == "claude" ? 1 : m_provider == "cloud" ? 2 : m_provider == "home" ? 3 : 0;
+        if (ImGui::Combo("AI provider", &provider, providers, 4)) {
+            m_provider = provider == 0 ? "ollama" : provider == 1 ? "claude" : provider == 2 ? "cloud" : "home";
             if (m_provider == "cloud") refreshCloudUsage();
             m_messages = json::array();
             m_lines.clear();
@@ -2165,6 +2167,11 @@ void AssistantPanel::render(bool* open) {
                 ImGui::TextWrapped("%s", m_cloudUsage.value("error", std::string("Couldn't check your daily limit.")).c_str());
             if (ImGui::SmallButton("Check my daily limit")) refreshCloudUsage();
             ImGui::TextDisabled("One step = one answer from the AI. A task that uses tools takes a few.");
+        } else if (m_provider == "home") {
+            ImGui::TextWrapped("Fyxa sends requests through G&B Nexus to an online machine paired with your infrastructure fleet. The selected model must already be installed in Ollama on that machine.");
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputTextWithHint("Nexus model", "qwen3:8b", &m_ollamaModel)) save();
+            ImGui::TextDisabled("Nexus runs one inference request per machine at a time. The agent must be online with Ollama running.");
         } else if (m_provider == "ollama") {
             ImGui::TextWrapped("Fyxa connects directly to an Ollama server. The default address is local to this computer; install and start Ollama, then pull a model that supports tool calling.");
             ImGui::SetNextItemWidth(-1);
