@@ -2189,7 +2189,7 @@ void AssistantPanel::render(bool* open) {
             ImGui::EndPopup();
         }
         ImGui::Separator();
-        const char* providers[] = {"Ollama (this computer)", "Claude (Anthropic)", "Guts&Bolts cloud (daily limit)", "G&B Home AI (your paired machines)"};
+        const char* providers[] = {"Ollama (this computer)", "Claude (Anthropic)", "Guts&Bolts cloud (daily limit)", "G&B Home AI (G&B servers)"};
         int provider = m_provider == "claude" ? 1 : m_provider == "cloud" ? 2 : m_provider == "home" ? 3 : 0;
         if (ImGui::Combo("AI provider", &provider, providers, 4)) {
             m_provider = provider == 0 ? "ollama" : provider == 1 ? "claude" : provider == 2 ? "cloud" : "home";
@@ -2209,7 +2209,7 @@ void AssistantPanel::render(bool* open) {
             if (ImGui::SmallButton("Check my daily limit")) refreshCloudUsage();
             ImGui::TextDisabled("One step = one answer from the AI. A task that uses tools takes a few.");
         } else if (m_provider == "home") {
-            ImGui::TextWrapped("Fyxa sends requests through G&B Nexus to an online machine paired with your infrastructure fleet. The selected model must already be installed in Ollama on that machine.");
+            ImGui::TextWrapped("Fyxa sends requests through G&B Nexus to G&B's online home-compute machines. The selected model must already be installed in Ollama on one of those machines.");
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextWithHint("Nexus model", "qwen3:8b", &m_ollamaModel)) save();
             ImGui::TextDisabled("Nexus runs one inference request per machine at a time. The agent must be online with Ollama running.");
