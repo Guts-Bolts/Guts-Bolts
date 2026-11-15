@@ -10,7 +10,7 @@ for checking the licence and provenance of each selected file at import time.
 | Source | Licence stated by publisher | Best candidates for Guts & Bolts | Preview / download |
 |---|---|---|---|
 | FoleyKit | Rendered sounds are CC0; generator code is MIT | Soft UI feedback, nature ambience, rain, wind, water, birds, footsteps, machinery | https://rudqlsdla.github.io/foleykit/ |
-| Kenney Audio | CC0 1.0 on the individual Kenney packs | Interface clicks, menu feedback, digital blips, restrained impacts | https://kenney.nl/assets/interface-sounds ; https://kenney.nl/assets/ui-audio ; https://kenney.nl/assets/digital-audio ; https://kenney.nl/assets/impact-sounds |
+| Kenney Audio | CC0 1.0 on the individual Kenney packs; five original OGG files imported | Interface clicks, open/close, toggle and notification feedback | https://kenney.nl/assets/interface-sounds |
 | Kaino SFX | CC0 1.0 | Nature/weather, ambience beds, footsteps, doors, household sounds, vehicles, gentle interface feedback | https://kaino.dev/library/sfx |
 | Lots of Sounds | CC0 1.0 for catalog recordings | Birds, wind, rain, water, room tone, machinery and everyday Foley | https://www.lotsofsounds.com/sounds |
 | SpritePilot | CC0 1.0 | Interface clicks, footsteps, movement, water, and ambient loops | https://spritepilot.com/free-game-assets/sound-effects (150 sounds; OGG-only ZIP: https://spritepilot.com/free-assets/sound-effects/spritepilot-sound-effects-ogg.zip?v=2qulu) |
@@ -33,8 +33,10 @@ for checking the licence and provenance of each selected file at import time.
 
 ## Current status
 
-This is a source shortlist, not a claim that all five libraries' audio files have been
-imported. Lots of Sounds currently requires an account for catalog downloads, and the
-other collections still need individual candidate selection and listening review.
-Only files that have actually been downloaded, auditioned, converted, and checked should
-be added to `assets/sounds/real/` and listed in `CREDITS.md`.
+A first five-file Kenney UI subset is now present in the runtime asset directory and
+is automatically included by the existing CMake OGG asset glob. The files are copied
+unchanged and their exact upstream filenames are recorded in CREDITS.md. This is a
+metadata/provenance-based first pass, not a claim that the recordings have been
+auditioned; listening review and desktop/mobile playback checks are still required.
+The other four source libraries remain candidate sources only. Lots of Sounds currently
+requires an account for catalog downloads.
