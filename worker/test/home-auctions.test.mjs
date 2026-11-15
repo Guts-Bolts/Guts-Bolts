@@ -64,3 +64,11 @@ test('in-app auction banner shows the starting bid until the first bid is placed
   assert.ok(appSource.includes("bidSummary.hasBids ? 'CURRENT HIGH BID' : 'STARTING BID'"));
   assert.ok(appSource.includes('bolts(bidSummary.amount)'));
 });
+
+
+test('auction catalog discovery page features a live auction banner and refreshes it', () => {
+  assert.ok(appSource.includes('id="liveAuctionsCatalog"'));
+  assert.ok(appSource.includes('renderAuctionHomeSection(list)'));
+  assert.match(appSource, /if \(path\[0\] === 'catalog'\)[\s\S]*?hashParams\(\)\.get\('cat'\) !== 'auctions'/);
+  assert.match(appSource, /section\.innerHTML = renderAuctionHomeSection\(r\.assets\)\.s/);
+});
