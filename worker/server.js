@@ -12,6 +12,7 @@
 // If you change a rule here, change it in src/server too (and the other way round).
 import { DurableObject } from 'cloudflare:workers';
 import { readLimitedText } from './http.js';
+import { screenFyxaTrainingSource } from './fyxa-dataset-screening.js';
 export { readLimitedText } from './http.js';
 import wasmModule from '../website/app/gbcrypto.wasm';
 import { BUILT_IN_UPDATES } from './updates.js';
@@ -880,6 +881,10 @@ export class GbServerObject extends DurableObject {
         feedback_reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, feedback_at INTEGER);
       CREATE INDEX IF NOT EXISTS ai_learning_account_created ON ai_learning_signals (account_id, created_at);
       CREATE INDEX IF NOT EXISTS ai_learning_quality ON ai_learning_signals (quality_label, created_at);
+      CREATE TABLE IF NOT EXISTS ai_dataset_screenings (
+        content_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, source_revision TEXT NOT NULL,
+        result_json TEXT NOT NULL, scanned_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS ai_dataset_screenings_owner ON ai_dataset_screenings (owner_id, scanned_at);
       CREATE TABLE IF NOT EXISTS ai_sessions (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, project_id TEXT, title TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -1381,6 +1386,12 @@ export class GbServerObject extends DurableObject {
   }
   saveAsset(a) {
     this.dirty.assets.add(a.id);
+    const screening = [...this.sql.exec('SELECT source_revision FROM ai_dataset_screenings WHERE content_id = ?', a.id)][0];
+    if (screening) {
+      const latestVersion = a.versions && a.versions.length ? a.versions[a.versions.length - 1].v : 1;
+      const revision = String(a.updated || a.created || 0) + ':' + String(a.size || 0) + ':' + String(latestVersion);
+      if (screening.source_revision !== revision) this.sql.exec('DELETE FROM ai_dataset_screenings WHERE content_id = ?', a.id);
+    }
     this.syncSearch(a);
     if (this.aiTrackedContent && this.aiTrackedContent.has(a.id)) {
       const fingerprint = this.aiAssetFingerprint(a);
@@ -2490,7 +2501,7 @@ export class GbServerObject extends DurableObject {
   // Lightweight operator diagnostics. Never expose player records or raw SQL contents.
   databaseDiagnostics() {
     const tables = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
-      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_learning_signals', 'ai_sessions', 'ai_memories', 'ai_memory_audit', 'ai_moderation_cases'];
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_learning_signals', 'ai_dataset_screenings', 'ai_sessions', 'ai_memories', 'ai_memory_audit', 'ai_moderation_cases'];
     const counts = {};
     for (const table of tables) {
       const rows = this.sql.exec('SELECT COUNT(*) AS count FROM "' + table + '"').toArray?.()
@@ -2523,7 +2534,7 @@ export class GbServerObject extends DurableObject {
       throw new Error('Database is larger than the configured safe backup limit; increase it only after reviewing memory headroom.');
 
     const tableNames = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
-      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_sessions', 'ai_memories', 'ai_memory_audit', 'ai_moderation_cases'];
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_learning_signals', 'ai_dataset_screenings', 'ai_sessions', 'ai_memories', 'ai_memory_audit', 'ai_moderation_cases'];
     const snapshot = this.ctx.storage.transactionSync(() => tableNames.map((table) => {
       const schemaRows = this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table).toArray?.()
         || Array.from(this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table));
@@ -3128,6 +3139,7 @@ export class GbServerObject extends DurableObject {
         // Opt-out removes pending learning signals immediately. No later dataset builder
         // can accidentally include a previously captured event from this account.
         this.sql.exec('DELETE FROM ai_learning_signals WHERE account_id = ?', me.id);
+        this.sql.exec('DELETE FROM ai_dataset_screenings WHERE owner_id = ?', me.id);
       }
       this.aiRecomputeAccountEligibility(me.id);
       return okay({ preferences: this.aiPreferencesFor(me.id) });
@@ -3308,6 +3320,63 @@ export class GbServerObject extends DurableObject {
       const rows = Array.from(this.sql.exec(`SELECT category, quality_label, COUNT(*) AS count
         FROM ai_learning_signals WHERE created_at >= ? GROUP BY category, quality_label ORDER BY category, quality_label`, now() - 30 * 86400));
       return okay({ days: 30, counts: rows.map((r) => ({ category: r.category, qualityLabel: r.quality_label, count: Number(r.count) })) });
+    }
+
+    if (name === 'ai.datasets.admin.screen') {
+      if (!this.isStaff(me)) return fail('Only staff can screen Fyxa dataset candidates.');
+      const limit = clamp(num(args, 'limit') || 5, 1, 5);
+      const offset = Math.max(0, Math.trunc(num(args, 'offset')) || 0);
+      const eligible = [];
+      for (const asset of this.assets.values()) {
+        if (asset.kind !== 'game') continue;
+        const row = this.aiContentRow(asset.id);
+        const state = this.aiContentResult(asset, row);
+        if (state.trainingEligible) eligible.push(asset);
+      }
+      eligible.sort((a, b) => Number(b.updated || b.created || 0) - Number(a.updated || a.created || 0));
+      const items = [];
+      for (const asset of eligible.slice(offset, offset + limit)) {
+        const file = this.readFile(asset.id);
+        const latestVersion = asset.versions && asset.versions.length ? asset.versions[asset.versions.length - 1].v : 1;
+        const sourceRevision = String(asset.updated || asset.created || 0) + ':' + String(asset.size || (file && file.length) || 0) + ':' + String(latestVersion);
+        let cached = [...this.sql.exec('SELECT source_revision, result_json, scanned_at FROM ai_dataset_screenings WHERE content_id = ?', asset.id)][0];
+        let scan;
+        if (cached && cached.source_revision === sourceRevision) {
+          try { scan = JSON.parse(cached.result_json); } catch { scan = null; }
+        }
+        if (!scan) {
+          scan = screenFyxaTrainingSource(file);
+          this.sql.exec('INSERT OR REPLACE INTO ai_dataset_screenings (content_id, owner_id, source_revision, result_json, scanned_at) VALUES (?, ?, ?, ?, ?)',
+            asset.id, asset.creator, sourceRevision, JSON.stringify(scan), now());
+          cached = { scanned_at: now() };
+        }
+        items.push({ contentId: asset.id, title: String(asset.name || '').slice(0, 100), sourceRevision,
+          scannedAt: Number(cached && cached.scanned_at || now()), screening: scan });
+      }
+      const summary = {};
+      for (const item of items) summary[item.screening.status] = (summary[item.screening.status] || 0) + 1;
+      return okay({ items, summary, eligibleGames: eligible.length, limit, offset,
+        datasetExportEnabled: false, note: 'Screening is advisory only. No source text is exported and no item is training-ready; age and human-review gates are not implemented.' });
+    }
+
+    if (name === 'ai.datasets.admin.screenings') {
+      if (!this.isStaff(me)) return fail('Only staff can view Fyxa dataset screening results.');
+      const limit = clamp(num(args, 'limit') || 50, 1, 100);
+      const rows = Array.from(this.sql.exec('SELECT s.content_id, s.owner_id, s.source_revision, s.result_json, s.scanned_at, a.data FROM ai_dataset_screenings s LEFT JOIN assets a ON a.id = s.content_id ORDER BY s.scanned_at DESC LIMIT ?', limit));
+      const items = [];
+      for (const row of rows) {
+        let asset = null, screening = null;
+        try { asset = row.data ? JSON.parse(row.data) : null; } catch { asset = null; }
+        try { screening = JSON.parse(row.result_json); } catch { screening = null; }
+        if (!asset || !screening || asset.creator !== row.owner_id) continue;
+        const current = this.aiContentResult(asset, this.aiContentRow(row.content_id));
+        const latestVersion = asset.versions && asset.versions.length ? asset.versions[asset.versions.length - 1].v : 1;
+        const revision = String(asset.updated || asset.created || 0) + ':' + String(asset.size || 0) + ':' + String(latestVersion);
+        if (!current.trainingEligible || revision !== row.source_revision) continue;
+        items.push({ contentId: row.content_id, title: String(asset.name || '').slice(0, 100),
+          sourceRevision: row.source_revision, scannedAt: Number(row.scanned_at), screening });
+      }
+      return okay({ items, count: items.length, datasetExportEnabled: false });
     }
 
     if (name === 'ai.training.history') {
@@ -5084,6 +5153,7 @@ export class GbServerObject extends DurableObject {
       for (const x of a.versions || []) this.sql.exec('DELETE FROM files WHERE id = ?', 'ver:' + a.id + ':' + x.v);   // its version history
       if (this.aiTrackedContent && this.aiTrackedContent.has(a.id)) {
         this.sql.exec('DELETE FROM ai_content_eligibility WHERE content_id = ?', a.id);
+        this.sql.exec('DELETE FROM ai_dataset_screenings WHERE content_id = ?', a.id);
         this.sql.exec('INSERT INTO ai_training_audit (id, account_id, content_id, event_type, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
           randomHex(16), a.creator, a.id, 'content.deleted', JSON.stringify({ actorId: me.id }), now());
         this.aiTrackedContent.delete(a.id);
@@ -5395,6 +5465,7 @@ export class GbServerObject extends DurableObject {
     this.sql.exec('DELETE FROM ai_sessions WHERE account_id = ?', u.id);
     this.sql.exec('DELETE FROM ai_memory_audit WHERE account_id = ?', u.id);
     this.sql.exec('DELETE FROM ai_learning_signals WHERE account_id = ?', u.id);
+    this.sql.exec('DELETE FROM ai_dataset_screenings WHERE owner_id = ?', u.id);
     this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
       (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
       VALUES (?, 0, 0, ?, ?, 'account_deleted', ?, ?)`, u.id, FYXA_AI_POLICY_VERSION, FYXA_AI_NOTICE_VERSION, t, t);
