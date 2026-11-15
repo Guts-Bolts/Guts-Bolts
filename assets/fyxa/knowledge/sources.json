@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "purpose": "reference_only",
+  "description": "Seed allowlist of first-party Guts & Bolts sources used by Fyxa's initial grounded evaluation set. This is not a model-training dataset.",
+  "sources": [
+    {
+      "source_id": "gb-001",
+      "path": "CMakeLists.txt",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "language-runtime"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-002",
+      "path": "assets/fyxa/skills/lua-scripting.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "scripting",
+        "debugging"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-003",
+      "path": "assets/fyxa/skills/studio-basics.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "studio-workflows",
+        "tool-use"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-004",
+      "path": "docs/engine/LEGACY_ROBLOX_SCRIPT_COMPATIBILITY.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "api-compatibility",
+        "language-runtime"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-005",
+      "path": "docs/engine/VEHICLE_SPAWNING.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "networking",
+        "security",
+        "studio-workflows"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-006",
+      "path": "src/editor/AiTools.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "tool-use",
+        "studio-capabilities"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-007",
+      "path": "src/scene/NavMesh.h",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "navigation",
+        "physics"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-008",
+      "path": "src/scripting/LuaApi.h",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "scripting",
+        "navigation"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-009",
+      "path": "src/scripting/ScriptHelp.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "scripting",
+        "ui",
+        "input"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-010",
+      "path": "src/scripting/ScriptRemotes.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "networking"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-011",
+      "path": "src/scripting/SpatialQueries.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "physics"
+      ],
+      "index_policy": "reference_only"
+    }
+  ]
+}
