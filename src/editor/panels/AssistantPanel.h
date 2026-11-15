@@ -43,6 +43,8 @@ private:
     void startNextExternalCall();
     void finishExternalCalls();
     std::string recordToolEvidence();
+    void recordLearningSignal();
+    void submitLearningFeedback(int rating, const std::string& reason);
 
     Editor&     m_editor;
     StudioMcp   m_mcp;
@@ -79,6 +81,12 @@ private:
     std::string m_mcpStatus;
     std::string m_input;
     std::string m_activeRequestText;
+    size_t m_turnLineStartIndex = 0;
+    std::string m_learningSignalId;
+    unsigned long long m_learningGeneration = 0;
+    bool m_learningFeedbackSubmitted = false;
+    bool m_learningFeedbackPending = false;
+    bool m_learningFeedbackFailed = false;
     std::vector<std::string> m_discoveredToolNames;
     nlohmann::json m_messages = nlohmann::json::array();
     std::vector<Line> m_lines;
