@@ -21,6 +21,8 @@ Nexus provides a secure multi-machine registry, live telemetry, and a narrowly s
 
 The signed-in Fyxa client can submit an Ollama-compatible conversation through `fyxacloud.homeChat`. The G&B server sends the request through the `INFRA_CONTROL` Durable Object to an authenticated node that reports the requested model. The Windows agent forwards the request only to `http://127.0.0.1:11434/api/chat` and returns the assistant message over its existing authenticated WebSocket.
 
+Studio can request `fyxacloud.homeModels` to retrieve an aggregate catalog of models reported by online, non-revoked Nexus nodes. The catalog includes the number of online machines per model and how many advertise tool-calling capability; it does not expose device IDs or hostnames. Fyxa uses this catalog to offer a model picker, while still allowing an exact model tag to be entered manually.
+
 - The agent does not receive account credentials or any owner dashboard credentials.
 - Requests are limited to 80 messages and 300 KiB; one inference runs per node at a time.
 - Inference requests time out after 90 seconds. Each account is limited to 30 home-inference requests per minute as an abuse guard.
