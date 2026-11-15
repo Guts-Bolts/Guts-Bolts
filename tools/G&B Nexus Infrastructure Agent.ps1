@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$AgentVersion = '0.1.0'
+$AgentVersion = '0.2.0'
 try { $BaseUri = [Uri]$RelayUri } catch { throw 'RelayUri must be a valid secure WebSocket URL.' }
 if (-not $BaseUri.IsAbsoluteUri -or $BaseUri.Scheme -ne 'wss' -or $BaseUri.UserInfo -or $BaseUri.Query -or $BaseUri.Fragment -or $BaseUri.AbsolutePath.TrimEnd('/') -ne '/ws/infrastructure') {
   throw 'RelayUri must use wss:// and end with /ws/infrastructure.'
