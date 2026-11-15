@@ -2432,7 +2432,17 @@ void AssistantPanel::render(bool* open) {
         m_input.clear();
     }
     ImGui::SameLine();
-    if (ImGui::Button("New chat") && !busy) { m_messages = json::array(); m_lines.clear(); }
+    if (ImGui::Button("New chat") && !busy) {
+        ++m_learningGeneration;
+        m_learningSignalId.clear();
+        m_learningFeedbackSubmitted = false;
+        m_learningFeedbackPending = false;
+        m_learningFeedbackFailed = false;
+        m_activeRequestText.clear();
+        m_discoveredToolNames.clear();
+        m_messages = json::array();
+        m_lines.clear();
+    }
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button(m_editor.aiHasChanges() ? "Review its changes" : "AI Activity")) m_editor.showAiActivity();
