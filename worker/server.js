@@ -6959,6 +6959,7 @@ export class GbServerObject extends DurableObject {
     if (answer.ok && answer.supabase) answer = await this.supabaseFollowUp(answer);
     if (answer.ok && answer.translate) answer = await this.translate(answer);
     if (answer.ok && answer.fyxaCloud) answer = await this.fyxaCloudAnswer(answer);
+    if (answer.ok && answer.fyxaHome) answer = await this.fyxaHomeAnswer(answer);
     if (answer.ok && answer.webJob) answer = await this.webFetch(answer);
     if (answer.ok && answer.iceJob) answer = await this.iceFetch(answer);
     if (this.bridgeOut && this.bridgeOut.length) {
