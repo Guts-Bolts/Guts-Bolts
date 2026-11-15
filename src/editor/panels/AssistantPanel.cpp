@@ -2210,6 +2210,7 @@ void AssistantPanel::render(bool* open) {
             if (ImGui::SmallButton("Check my daily limit")) refreshCloudUsage();
             ImGui::TextDisabled("One step = one answer from the AI. A task that uses tools takes a few.");
         } else if (m_provider == "home") {
+            if (m_homeModelsStatus.empty()) refreshHomeModels();
             ImGui::TextWrapped("Fyxa sends requests through G&B Nexus to G&B's online home-compute machines. The selected model must already be installed in Ollama on one of those machines.");
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextWithHint("Nexus model", "qwen3:8b", &m_ollamaModel)) save();
