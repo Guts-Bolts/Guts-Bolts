@@ -33,7 +33,7 @@ constexpr long long kMoveWait       = 90;    // seconds a left-behind server's p
 constexpr long long kHeirWait       = 12;    // seconds each would-be new host gets to start it
 constexpr long long kPipeSilence    = 120;
 constexpr int       kPoolMost       = 50;    // games one game server machine runs at once
-constexpr long long kPoolStartWait  = 25;    // seconds for it to start a game it was asked to
+constexpr long long kPoolStartWait  = 120;   // seconds for a dedicated machine to download and start a game
 // Paid private servers: a game's creator can charge Bolts for one. Buying lasts 30 days (buy
 // again to add 30 more); friends join free with its code.
 constexpr long long kPrivateDays    = 30;
