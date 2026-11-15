@@ -42,6 +42,25 @@ test('G&B Home AI forwards a signed-in account request to the Nexus inference re
   assert.equal(received.tools[0].function.name, 'get_game_tree');
 });
 
+test('G&B Home AI exposes the live Nexus model catalog to signed-in Studio users', async () => {
+  const s = makeServer();
+  const ann = s.signUp('ann');
+  let listed = false;
+  s.env.INFRA_CONTROL = { getByName(name) {
+    assert.equal(name, 'registry');
+    return { async listInferenceModels() {
+      listed = true;
+      return { ok: true, models: [{ name: 'qwen3:8b', onlineNodes: 2, toolCapableNodes: 1 }] };
+    } };
+  } };
+  const request = s.call(ann, 'fyxacloud.homeModels');
+  assert.ok(request.ok, request.error);
+  const answer = await s.fyxaHomeAnswer(request);
+  assert.ok(answer.ok, answer.error);
+  assert.equal(listed, true);
+  assert.deepEqual(answer.models, [{ name: 'qwen3:8b', onlineNodes: 2, toolCapableNodes: 1 }]);
+});
+
 test('G&B Home AI rejects invalid models and does not expose the relay to guests', () => {
   const s = makeServer();
   const guest = s.user('c'.repeat(64));
