@@ -15,14 +15,22 @@ G&B Nexus is the owner-only infrastructure inventory at `https://gutsandbolts.ne
 
 ## Current implementation boundary
 
-This first Nexus milestone provides a secure multi-machine registry and live telemetry. It is intentionally read-only.
+Nexus provides a secure multi-machine registry, live telemetry, and a narrowly scoped Fyxa inference relay to local Ollama. The Windows agent reports hostname, OS, CPU, memory, primary C: drive capacity, NVIDIA GPU telemetry when an Authenticode-valid `nvidia-smi.exe` is available, installed Ollama model names, and detected capabilities. The dashboard displays online state, last heartbeat, CPU/RAM/GPU/disk readings, and audit events.
 
-The Windows agent reports hostname, OS, CPU, memory, primary C: drive capacity, NVIDIA GPU telemetry when an Authenticode-valid `nvidia-smi.exe` is available, and a small set of detected capabilities. The dashboard displays online state, last heartbeat, CPU/RAM/GPU/disk readings, and audit events.
+### G&B Home AI inference
 
-The following are **not implemented by this milestone** and must not be presented as working controls yet:
+The signed-in Fyxa client can submit an Ollama-compatible conversation through `fyxacloud.homeChat`. The G&B server sends the request through the `INFRA_CONTROL` Durable Object to an authenticated node that reports the requested model. The Windows agent forwards the request only to `http://127.0.0.1:11434/api/chat` and returns the assistant message over its existing authenticated WebSocket.
 
-- Remote installation, updating, starting, or stopping arbitrary services.
-- AI model lifecycle management or inference scheduling.
+- The agent does not receive account credentials or any owner dashboard credentials.
+- Requests are limited to 80 messages and 300 KiB; one inference runs per node at a time.
+- Inference requests time out after 90 seconds. Each account is limited to 30 home-inference requests per minute as an abuse guard.
+- The model must already be installed locally. The agent does not download models or launch services.
+- This is not unlimited compute. Availability, throughput, VRAM/RAM, model size, and per-node concurrency remain constraints.
+
+The following are **not implemented** and must not be presented as working controls:
+
+- Remote installation, updating, starting, or stopping arbitrary services or models.
+- Persistent inference queues, GPU allocation policies, or multi-node model sharding.
 - ContentForge video-generation job execution and GPU allocation.
 - Multi-instance game-server provisioning and scheduling.
 - Remote file browsing, uploads, downloads, desktop streaming, or terminal access.
@@ -59,4 +67,4 @@ The agent stores its credential under `%LOCALAPPDATA%\GutsAndBolts\NexusAgent`. 
 - GPU metrics are optional. Unsupported or unavailable GPU telemetry is displayed as unavailable, not zero.
 - Capability labels are agent observations, not proof that a workload is installed, configured, or ready for production.
 - Do not expose the agent's pairing code or local DPAPI credential.
-- This agent is telemetry-only. It does not accept remote commands. Workload orchestration will require a separately reviewed, narrowly scoped command protocol with per-action authorization, expiry, acknowledgements, and audit records.
+- The agent accepts only authenticated telemetry and narrowly scoped Ollama inference requests. It does not accept shell commands, arbitrary process execution, filesystem operations, or general remote-control commands. Any future workload orchestration requires a separately reviewed protocol with per-action authorization, expiry, acknowledgements, and audit records.
