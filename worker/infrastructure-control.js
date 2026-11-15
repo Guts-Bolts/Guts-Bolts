@@ -42,6 +42,9 @@ function safeStatus(raw) {
     models: Array.isArray(raw.models)
       ? [...new Set(raw.models.filter((x) => typeof x === 'string').map((x) => safeText(x, 128)).filter((x) => /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(x)))].slice(0, 32)
       : [],
+    toolModels: Array.isArray(raw.toolModels)
+      ? [...new Set(raw.toolModels.filter((x) => typeof x === 'string').map((x) => safeText(x, 128)).filter((x) => /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(x)))].slice(0, 32)
+      : [],
     capabilities: Array.isArray(raw.capabilities)
       ? [...new Set(raw.capabilities.filter((x) => typeof x === 'string').map((x) => safeText(x, 32)).filter(Boolean))].slice(0, 16)
       : [],
@@ -258,7 +261,8 @@ export class InfrastructureObject extends DurableObject {
       if (!connection || !connection.authed || this.busyNodes.has(row.id) || t - row.last_seen >= 45) return false;
       let status = {};
       try { status = JSON.parse(row.status || '{}'); } catch { return false; }
-      return Array.isArray(status.models) && status.models.includes(job.model);
+      if (!Array.isArray(status.models) || !status.models.includes(job.model)) return false;
+      return !Array.isArray(job.tools) || !job.tools.length || (Array.isArray(status.toolModels) && status.toolModels.includes(job.model));
     }).sort((a, b) => {
       const load = (row) => { try { const status = JSON.parse(row.status || '{}'); return (Number(status.cpuPercent) || 0) + (Number(status.gpuPercent) || 0) * 0.25; } catch { return 1000; } };
       return load(a) - load(b);
