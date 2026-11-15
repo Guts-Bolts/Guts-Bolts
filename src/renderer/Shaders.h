@@ -571,7 +571,12 @@ void main() {
             if (uVOrmHas.y > 0.5) rough = orm.g;
             if (uVOrmHas.z > 0.5) metal = orm.b;
         }
-        if (uVHas.y > 0.5) N = mapNormal(N, uv, tiled(uVNormal, uv).xyz * 2.0 - 1.0);
+        if (uVHas.y > 0.5) {
+            // (Only the sideways directions are read: a packed normal map keeps just those,
+            // TexturePack.h. The third comes from them being one unit long.)
+            vec2 nxy = tiled(uVNormal, uv).xy * 2.0 - 1.0;
+            N = mapNormal(N, uv, vec3(nxy, sqrt(max(0.0, 1.0 - dot(nxy, nxy)))));
+        }
     }
     else if (gMaterial == 1) { rough = 0.3; metal = 1.0;
         albedo *= mix(1.0, 0.92 + 0.08 * vnoise(vec2(dot(vWorldPos.xz, vec2(1.0)) * 60.0, vWorldPos.y * 2.0)), detail * 0.5); }

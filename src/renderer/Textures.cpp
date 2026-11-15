@@ -25,6 +25,15 @@
 #include <cstring>
 #include <vector>
 #include "OrmPack.h"
+#include "GpuCaps.h"
+#include "../core/TexturePack.h"
+#include <atomic>
+#include <cstdlib>
+#include <fstream>
+#include <iterator>
+#if !defined(__EMSCRIPTEN__)
+#include <thread>
+#endif
 
 namespace Textures {
 
@@ -142,6 +151,85 @@ void makeClassicFace(Entry& e) {
     e.w = e.h = n;
 }
 
+// A packed copy of a picture (TexturePack.h): "door.png.gbtex" next to "door.png".
+std::filesystem::path packedFile(const std::filesystem::path& picture) {
+    std::filesystem::path p = picture;
+    p += ".gbtex";
+    return p;
+}
+
+// Loads the packed copy, if there is an up-to-date one this graphics chip can read: no
+// unpacking a PNG and no making smaller copies, just copying it over.
+bool loadPacked(const std::filesystem::path& picture, Entry& e) {
+    static const bool off = std::getenv("GB_NO_PACKED") != nullptr;   // (to compare)
+    if (off) return false;
+    const GpuCaps& caps = GpuCapsQuery::get();
+    if (caps.safeMode || caps.version == 0) return false;
+    const std::filesystem::path file = packedFile(picture);
+    std::error_code ec;
+    if (!std::filesystem::exists(file, ec)) return false;
+    if (std::filesystem::last_write_time(file, ec) < std::filesystem::last_write_time(picture, ec)) return false;   // (the picture changed since)
+    std::ifstream in(file, std::ios::binary);
+    const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    TexturePack::View v;
+    bool found = false;
+    for (bool normal : {false, true}) {
+        const TexturePack::Format f = TexturePack::pick(normal, caps.bc7, caps.bc5, caps.etc2);
+        if (f != TexturePack::None && TexturePack::read(bytes, f, v)) { found = true; break; }
+    }
+    if (!found) return false;
+    while (glGetError() != GL_NO_ERROR) {}
+    glGenTextures(1, &e.tex);
+    glBindTexture(GL_TEXTURE_2D, e.tex);
+    for (size_t l = 0; l < v.levels.size(); ++l)
+        glCompressedTexImage2D(GL_TEXTURE_2D, (GLint)l, TexturePack::glFormat(v.format), v.levels[l].width, v.levels[l].height, 0,
+                               (GLsizei)v.levels[l].size, v.levels[l].data);
+    if (glGetError() != GL_NO_ERROR) {   // (the driver said it could and then couldn't: the PNG it is)
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDeleteTextures(1, &e.tex);
+        e.tex = 0;
+        return false;
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)v.levels.size() - 1);
+    textureQuality();
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    e.w = v.width;
+    e.h = v.height;
+    return true;
+}
+
+// A downloaded picture is packed in the background the first time it's loaded, so
+// every later load is fast. One at a time; the game never waits for it.
+void packLater(const std::filesystem::path& picture, const unsigned char* px, int w, int h) {
+#if defined(__EMSCRIPTEN__)
+    (void)picture; (void)px; (void)w; (void)h;   // (the web Player doesn't keep files)
+#else
+    static std::atomic<int> busy{0};
+    const GpuCaps& caps = GpuCapsQuery::get();
+    if (!TexturePack::packable(w, h) || caps.safeMode || (!caps.bc7 && !caps.etc2) || busy.load() > 0) return;
+    ++busy;
+    std::vector<uint8_t> copy(px, px + (size_t)w * h * 4);
+    std::thread([picture, copy = std::move(copy), w, h]() {
+        const std::vector<uint8_t> bytes = TexturePack::pack(copy.data(), w, h, TexturePack::looksLikeNormalMap(picture.string()));
+        const std::filesystem::path file = packedFile(picture);
+        std::filesystem::path tmp = file;
+        tmp += ".part";
+        {
+            std::ofstream out(tmp, std::ios::binary);
+            out.write((const char*)bytes.data(), (std::streamsize)bytes.size());
+        }
+        std::error_code ec;
+        if (!bytes.empty()) std::filesystem::rename(tmp, file, ec);   // (all at once: never half a file)
+        else std::filesystem::remove(tmp, ec);
+        --busy;
+    }).detach();
+#endif
+}
+
 void load(const std::string& id, Entry& e) {
     if (id == kClassicFace) { makeClassicFace(e); return; }
     stbi_set_flip_vertically_on_load(1);                   // GL wants the bottom row first
@@ -156,7 +244,9 @@ void load(const std::string& id, Entry& e) {
     } else {
         std::filesystem::path p = locate(id);
         if (p.empty()) { e.retryAt = now() + 1.0; return; }   // maybe it's still downloading
+        if (loadPacked(p, e)) return;
         px = stbi_load(p.string().c_str(), &w, &h, &n, 4);
+        if (px && id.rfind("gb:", 0) == 0) packLater(p, px, w, h);
     }
     if (!px) {
         e.broken = true;
