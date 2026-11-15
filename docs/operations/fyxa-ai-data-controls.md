@@ -144,6 +144,20 @@ The Studio panel submits explicit feedback with `ai.learning.feedback` using a s
 
 These signals are product-quality telemetry, not a fine-tuning dataset. They are not currently fed back into model weights or automatically treated as verified ground truth.
 
+### Staff-only game-source screening preview
+
+The Worker now exposes two staff-only operations for the first-pass screening stage:
+
+```json
+{ "op": "ai.datasets.admin.screen", "args": { "limit": 5, "offset": 0 } }
+```
+
+This scans at most five currently eligible public game uploads per call. Eligibility is recalculated from the current asset record, account training preference, per-content exclusion, moderation state, creator ownership, rights attestation, and staff rights review. The source file is read from the existing private Durable Object file store. The screening helper examines bounded UTF-8 JSON text for obvious credentials, personal-data patterns, opaque geometry/media, malformed content, and resource-limit violations.
+
+The operation returns only the asset identifier/title, source revision marker, scan status, stable reason codes, and aggregate scan counts. It does not return or persist extracted source text. Results are cached as small metadata records and invalidated when the asset revision changes. Account opt-out, account deletion, and asset deletion remove the associated screening metadata. A second staff-only operation, `ai.datasets.admin.screenings`, lists current screening results after rechecking ownership, eligibility, and source revision.
+
+**A clean scan is not approval.** Every result still has `ageStatus: "not_verified"` and `datasetEligible: false`. The scanner is a conservative heuristic, not a full semantic privacy or safety classifier. It does not verify age, establish copyright ownership, or replace human review. No raw source is exported and dataset export remains disabled.
+
 ## Eligibility rules
 
 A content record is eligible for a purpose only when all of these are true:
@@ -164,8 +178,8 @@ Preference changes and content choices are recorded in `ai_training_audit`. Staf
 
 ## Explicit limitations
 
-- No dataset export, dataset registry, model training, fine-tuning, semantic answer evaluation or AI reference index is implemented here. The new quality signals are telemetry only.
-- This telemetry deliberately excludes raw prompts, responses, tool arguments/results, screenshots, and project files. The separate public-asset training path still requires purpose-specific screening for secrets and sensitive personal information, age safeguards, legal review, and a tested dataset authorization flow before raw user content can be exported or used to train model weights.
+- No dataset export, frozen dataset registry, model training, fine-tuning, semantic answer evaluation or AI reference index is implemented here. The new quality signals are telemetry only; the game-source screening preview is an internal preflight and does not create training examples.
+- This telemetry deliberately excludes raw prompts, responses, tool arguments/results, screenshots, and project files. A staff-only preflight now scans bounded public game source for obvious secrets, personal-data patterns, and opaque media, but this is not a complete content-safety screen. Age safeguards, human review, legal review, private dataset storage, and a tested dataset authorization flow are still required before raw user content can be exported or used to train model weights.
 - No raw conversation or game-file content is currently selected or transmitted for model-weight training by this backend. Only the metadata signals described above are collected when the account's opt-out switch is on.
 - No automatic model unlearning is implemented.
 - The current rights-review mechanism is a staff gate plus a recorded review note; the operational evidence-review process still needs to be defined.
