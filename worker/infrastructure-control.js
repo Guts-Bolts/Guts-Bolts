@@ -279,8 +279,8 @@ export class InfrastructureObject extends DurableObject {
     return await new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.pendingInference.delete(requestId);
-        this.busyNodes.delete(nodeId);
         resolve(fail('The local model did not answer within 90 seconds.', 504));
+        this.drop(connection);
       }, 90000);
       this.pendingInference.set(requestId, { resolve, timer, nodeId });
       send(connection.ws, { t: 'node.infer', requestId, model: job.model, messages: job.messages, tools: job.tools || [], options: { num_predict: 2048 } });
