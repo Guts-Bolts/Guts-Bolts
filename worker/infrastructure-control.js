@@ -249,11 +249,17 @@ export class InfrastructureObject extends DurableObject {
     let encoded;
     try { encoded = JSON.stringify(job); } catch { return fail('Invalid home inference request.', 400); }
     if (new TextEncoder().encode(encoded).length > 300 * 1024) return fail('The conversation is too large for home inference.', 413);
+    if (job.messages.some((message) => !message || typeof message !== 'object' || Array.isArray(message) ||
+        !['system', 'user', 'assistant', 'tool'].includes(message.role) ||
+        (message.content !== undefined && typeof message.content !== 'string'))) return fail('Conversation messages must use supported chat roles and text content.', 400);
     const t = now();
     const window = this.requestWindows.get(job.account) || { start: t, count: 0 };
     if (t - window.start >= 60) { window.start = t; window.count = 0; }
     if (window.count >= 30) return fail('Home AI is rate-limited to 30 requests per minute per account.', 429);
     window.count++;
+    if (this.requestWindows.size > 4096) {
+      for (const [account, entry] of this.requestWindows) if (t - entry.start >= 60) this.requestWindows.delete(account);
+    }
     this.requestWindows.set(job.account, window);
     const rows = [...this.sql.exec('SELECT id, status, last_seen, revoked FROM infra_devices WHERE revoked = 0')];
     const candidates = rows.filter((row) => {
