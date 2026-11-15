@@ -1791,7 +1791,8 @@ void AssistantPanel::requestNext() {
     const std::string payload = [&]() {
         if (cloud || home) {
             json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
-            for (const auto& message : m_messages) messages.push_back(message);
+            const size_t firstMessage = home && m_messages.size() > 79 ? m_messages.size() - 79 : 0;
+            for (size_t i = firstMessage; i < m_messages.size(); ++i) messages.push_back(m_messages[i]);
             json args = {{"messages", messages}, {"tools", ollamaTools(nativeTools, localTools, externalTools)}};
             if (home) args["model"] = m_ollamaModel;
             return Online::signedRequest(home ? "fyxacloud.homeChat" : "fyxacloud.chat", args).dump();
