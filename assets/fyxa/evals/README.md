@@ -43,3 +43,7 @@ Do not use a single aggregate score to hide critical failures. Report each metri
 The benchmark is version-controlled with the engine. When an API or behavior changes, update the relevant source and benchmark case in the same change. Reviewers must verify each expected fact against the cited source paths. Record the tested repository commit and model/provider version with every benchmark run.
 
 The initial set is deliberately small. Expand it from real, anonymized failure modes and documented engine behavior, not synthetic volume. Every new case requires a source review.
+
+## Validation
+
+Run `python tools/validate_fyxa_eval.py` from the repository root. The validator checks JSONL syntax, required fields, unique IDs, allowed tool-intent labels, and that every cited source path exists.
