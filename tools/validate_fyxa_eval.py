@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATASET = ROOT / "assets" / "fyxa" / "evals" / "engine-core.jsonl"
+MANIFEST = ROOT / "assets" / "fyxa" / "knowledge" / "sources.json"
 REQUIRED = {
     "id", "category", "prompt", "source_paths",
     "expected_facts", "must_not_claim", "tool_intent",
@@ -78,13 +79,47 @@ def main() -> int:
     if count == 0:
         errors.append("dataset contains no evaluation cases")
 
+
+    try:
+        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        sources = manifest.get("sources", [])
+        if manifest.get("schema_version") != 1 or manifest.get("purpose") != "reference_only":
+            errors.append("source manifest must use schema_version 1 and purpose reference_only")
+        if not isinstance(sources, list) or not sources:
+            errors.append("source manifest must contain a non-empty sources array")
+        else:
+            manifest_ids: set[str] = set()
+            manifest_paths: set[str] = set()
+            for index, source in enumerate(sources, 1):
+                if not isinstance(source, dict):
+                    errors.append(f"manifest source {index}: must be an object")
+                    continue
+                source_id = source.get("source_id")
+                path = source.get("path")
+                if not isinstance(source_id, str) or not source_id.strip() or source_id in manifest_ids:
+                    errors.append(f"manifest source {index}: source_id must be non-empty and unique")
+                else:
+                    manifest_ids.add(source_id)
+                if not isinstance(path, str) or not path.strip() or path in manifest_paths:
+                    errors.append(f"manifest source {index}: path must be non-empty and unique")
+                else:
+                    manifest_paths.add(path)
+                    if not (ROOT / path).is_file():
+                        errors.append(f"manifest source {index}: source does not exist: {path}")
+                if source.get("authority") != "first_party_repository":
+                    errors.append(f"manifest source {index}: only first-party repository sources are allowed")
+                if source.get("index_policy") != "reference_only":
+                    errors.append(f"manifest source {index}: seed corpus must remain reference_only")
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"cannot read source manifest: {exc}")
+
     if errors:
         print("Fyxa evaluation dataset validation failed:")
         for error in errors:
             print(f" - {error}")
         return 1
 
-    print(f"Fyxa evaluation dataset valid: {count} cases, {len(seen)} unique IDs.")
+    print(f"Fyxa evaluation dataset valid: {count} cases, {len(seen)} unique IDs; source manifest validated.")
     return 0
 
 
