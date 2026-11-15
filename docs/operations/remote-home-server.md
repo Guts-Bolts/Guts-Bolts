@@ -1,6 +1,6 @@
 # Secure home server remote control
 
-This feature lets the official Guts & Bolts account monitor and control one Windows game-server PC from the mobile dashboard at `https://gutsandbolts.net/server/`.
+This legacy feature lets the official Guts & Bolts account monitor and control one Windows game-server process from the dashboard at `https://gutsandbolts.net/server/`. The page is now the G&B Nexus owner console; multi-machine telemetry is documented in [gb-nexus.md](gb-nexus.md).
 
 ## Security model
 
@@ -119,7 +119,7 @@ Android Chrome supports background Web Push. If the VAPID secrets have not been 
 - Automatic crash recovery is off by default. Enable it from the dashboard only after testing. It disables itself after three crashes in ten minutes.
 - The current agent reports CPU, memory, NVIDIA GPU, and aggregate physical-network telemetry. GPU metrics are collected only from an Authenticode-valid NVIDIA `nvidia-smi.exe`, discovered in the standard NVSMI directory, `%WINDIR%\\System32`, or the executable search path. Otherwise GPU values remain unavailable.
 - The PC must stay awake, online, and running the agent for remote commands to work. The Worker and dashboard do not wake a sleeping PC.
-- This release is limited to the single configured home PC. Multi-device management, remote file access, desktop streaming, and arbitrary terminal access are intentionally out of scope.
+- This legacy game-server control channel still manages one configured dedicated-server process. Multi-machine read-only telemetry is provided separately by G&B Nexus. Remote file access, desktop streaming, and arbitrary terminal access remain intentionally out of scope.
 
 
 ## Isolated staging test
