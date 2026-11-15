@@ -6,7 +6,6 @@ export const MAX_FYXA_SCREEN_BYTES = 1 * 1024 * 1024;
 const MAX_NODES = 20000;
 const MAX_TEXT_BYTES = 512 * 1024;
 const GEOMETRY_KEY = /(vertices|positions|indices|triangles|faces|normals|uvs|weights|mesh|geometry|vertexdata|indexdata|vertexbuffer|indexbuffer|submesh|morphtarget|morph|skeleton|bonedata|boneweights|skinweights|skinning|texture|imagedata|image|bitmap|pixels|rgba|binary|blob|buffer|filedata|base64)/i;
-const TEXT_KEY = /(name|title|text|message|description|caption|label|value|prompt|dialog|script|source|code|author|license)/i;
 
 const SECRET_PATTERNS = [
   { code: 'private_key', pattern: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i },
@@ -69,11 +68,14 @@ export function screenFyxaTrainingSource(input) {
       continue;
     }
     if (typeof value === 'string') {
-      if (!TEXT_KEY.test(current.key)) continue;
-      const sample = value.slice(0, Math.max(0, MAX_TEXT_BYTES - counts.textBytes));
+      const remaining = Math.max(0, MAX_TEXT_BYTES - counts.textBytes);
+      const encoded = new TextEncoder().encode(value);
+      const sample = new TextDecoder().decode(encoded.subarray(0, remaining));
       if (!sample && value.length) { reasons.push('text_scan_budget_exceeded'); continue; }
+      const sampleBytes = new TextEncoder().encode(sample).byteLength;
       counts.textFields++;
-      counts.textBytes += new TextEncoder().encode(sample).byteLength;
+      counts.textBytes += sampleBytes;
+      if (sampleBytes < encoded.byteLength) reasons.push('text_scan_budget_exceeded');
       for (const item of SECRET_PATTERNS) if (item.pattern.test(sample)) {
         counts.secretMatches++;
         reasons.push(item.code);
@@ -85,10 +87,15 @@ export function screenFyxaTrainingSource(input) {
       continue;
     }
     if (Array.isArray(value)) {
-      for (let i = value.length - 1; i >= 0; i--) stack.push({ value: value[i], key: current.key, depth: current.depth + 1 });
+      const remainingNodes = Math.max(0, MAX_NODES - counts.scannedNodes - stack.length);
+      if (value.length > remainingNodes) reasons.push('source_node_limit');
+      for (let i = Math.min(value.length, remainingNodes) - 1; i >= 0; i--)
+        stack.push({ value: value[i], key: current.key, depth: current.depth + 1 });
     } else if (value && typeof value === 'object') {
       const entries = Object.entries(value);
-      for (let i = entries.length - 1; i >= 0; i--) {
+      const remainingNodes = Math.max(0, MAX_NODES - counts.scannedNodes - stack.length);
+      if (entries.length > remainingNodes) reasons.push('source_node_limit');
+      for (let i = Math.min(entries.length, remainingNodes) - 1; i >= 0; i--) {
         const [key, child] = entries[i];
         stack.push({ value: child, key, depth: current.depth + 1 });
       }
