@@ -250,7 +250,15 @@ void GbServer::relayRequest(Client& c, const json& req) {
     }
     if (op == "relay.host") {
         // A game server machine starting a game it was asked to: nobody plays on it.
-        const bool dedicated = args.value("dedicated", false) && isStaff(*me);
+        // Never silently turn a requested dedicated session into a player-hosted one:
+        // that makes the machine look like it connected while the account remains host.
+        const bool requestedDedicated = args.value("dedicated", false);
+        if (requestedDedicated && !isStaff(*me)) {
+            reply(fail("This account isn't authorized to run dedicated game servers. Give it the Staff badge, then restart the server."));
+            c.closing = true;
+            return;
+        }
+        const bool dedicated = requestedDedicated;
         size_t hosting = 0;
         for (const auto& [id, s] : m_sessions) if (s.host == me->id && !s.dedicated) ++hosting;
         if (!dedicated && hosting >= kHostedEach) { reply(fail("You're already running " + std::to_string(kHostedEach) + " servers.")); c.closing = true; return; }
