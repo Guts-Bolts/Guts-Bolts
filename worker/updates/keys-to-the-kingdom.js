@@ -1,5 +1,5 @@
 export default {
-  id: 'keys-to-the-kingdom', name: 'Keys to the Kingdom', time: 1793834500, tag: 'Player',
+  id: 'keys-to-the-kingdom', name: 'Keys to the Kingdom', version: '0.8.0', time: 1793834500, tag: 'Player',
   summary: 'Pick your own keys for walking, jumping, diving, emotes, voice chat and Shift Lock.',
   items: [
     'New Keys section in the in-game Settings (Esc > Settings): click a key, press the one you want instead, done',

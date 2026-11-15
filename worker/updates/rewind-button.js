@@ -1,5 +1,5 @@
 export default {
-  id: 'rewind-button', name: 'Rewind Button', time: 1794356478, tag: 'Website',
+  id: 'rewind-button', name: 'Rewind Button', version: '0.8.0', time: 1794356478, tag: 'Website',
   summary: 'Your sounds, decals, models, plugins and animations now keep their old versions, like games do.',
   items: [
     'Every time you update one of your creations, the old file is kept (the newest 50)',

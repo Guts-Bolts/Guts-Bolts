@@ -1,5 +1,5 @@
 export default {
-  id: 'under-the-microscope', name: 'Under the Microscope', time: 1794367500, tag: 'Engine',
+  id: 'under-the-microscope', name: 'Under the Microscope', version: '0.8.0', time: 1794367500, tag: 'Engine',
   summary: 'Engine builders can now switch on Tracy, a super-detailed profiler, to hunt down slow frames.',
   items: [
     'A new build switch (GB_TRACY) adds the free Tracy profiler, for people working on the engine itself',

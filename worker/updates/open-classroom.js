@@ -1,5 +1,5 @@
 export default {
-  id: 'open-classroom', name: 'Open Classroom', time: 1794540000, tag: 'Website',
+  id: 'open-classroom', name: 'Open Classroom', version: '0.8.0', time: 1794540000, tag: 'Website',
   summary: 'G&B Academy is here: free courses about scripting, building, modeling and making games, written by the community.',
   items: [
     'A new Academy tab: find courses by topic (scripting, building, modeling, animation, game design and more) and level',

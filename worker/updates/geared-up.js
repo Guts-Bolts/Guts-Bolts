@@ -1,5 +1,5 @@
 export default {
-  id: 'geared-up', name: 'Geared Up', version: '0.7.10', time: 1794370000, tag: 'Website',
+  id: 'geared-up', name: 'Geared Up', version: '0.8.0', time: 1794370000, tag: 'Website',
   summary: 'A new app icon: a grey gear with a white G and a red B.',
   items: [
     'The Player and Studio use the new gear icon on Windows, Mac and Linux',

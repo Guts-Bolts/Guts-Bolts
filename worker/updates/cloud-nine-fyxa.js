@@ -1,5 +1,5 @@
 export default {
-  id: 'cloud-nine-fyxa', name: 'Cloud Nine', time: 1794325702, tag: 'Studio',
+  id: 'cloud-nine-fyxa', name: 'Cloud Nine', version: '0.8.0', time: 1794325702, tag: 'Studio',
   summary: 'Fyxa can now run on Guts&Bolts\' servers if your computer can\'t run an AI.',
   items: [
     'New "Guts&Bolts cloud" choice in Fyxa\'s settings, next to Ollama and Claude',

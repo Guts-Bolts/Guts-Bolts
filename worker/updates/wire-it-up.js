@@ -1,5 +1,5 @@
 export default {
-  id: 'wire-it-up', name: 'Wire It Up', time: 1794366860, tag: 'Studio',
+  id: 'wire-it-up', name: 'Wire It Up', version: '0.8.0', time: 1794366860, tag: 'Studio',
   summary: 'The Visual Scripting board got a proper node editor: a minimap, box select, and lines you can grab and move.',
   items: [
     'The blocks board in Visual Scripting now runs on imnodes, a free node editor made for this kind of thing',

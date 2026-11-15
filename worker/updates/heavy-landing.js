@@ -1,5 +1,5 @@
 export default {
-  id: 'heavy-landing', name: 'Heavy Landing', version: '0.7.10', time: 1794248252, tag: 'Engine',
+  id: 'heavy-landing', name: 'Heavy Landing', version: '0.8.0', time: 1794248252, tag: 'Engine',
   summary: 'Gravity is now as strong as Roblox, so jumps are quick and snappy instead of floaty.',
   items: [
     'Gravity is now 98.1, which is Roblox\'s 196.2 at our half size. A jump goes just as high but is over in about half a second, like Roblox',

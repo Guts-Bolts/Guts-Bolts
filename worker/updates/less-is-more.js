@@ -1,5 +1,5 @@
 export default {
-  id: 'less-is-more', name: 'Less Is More', time: 1794453520, tag: 'Studio',
+  id: 'less-is-more', name: 'Less Is More', version: '0.8.0', time: 1794453520, tag: 'Studio',
   summary: 'Studio got a calmer Simple layout, a Roblox-style Properties window with no sliders, and a Search box that finds any tool.',
   items: [
     'Simple layout (now the default): each ribbon tab shows the everyday buttons, and the rest wait behind a More button',

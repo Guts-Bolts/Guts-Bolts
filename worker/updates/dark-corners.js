@@ -1,5 +1,5 @@
 export default {
-  id: 'dark-corners', name: 'Dark Corners', time: 1794541946, tag: 'Engine',
+  id: 'dark-corners', name: 'Dark Corners', version: '0.8.0', time: 1794541946, tag: 'Engine',
   summary: 'Corners, creases and the spots where things touch are shaded in a new, more true-to-life way (GTAO), on every graphics level.',
   items: [
     'The soft shading in corners now works out how much open sky each spot can really see, instead of guessing with random test points',

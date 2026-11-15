@@ -1,5 +1,5 @@
 export default {
-  id: 'open-easel', name: 'Open Easel', time: 1794435000, tag: 'Website',
+  id: 'open-easel', name: 'Open Easel', version: '0.8.0', time: 1794435000, tag: 'Website',
   summary: 'Art is its own part of Guts&Bolts now: post drawings, pixel art, comics and renders, and fave the best ones.',
   items: [
     'A new Art tab: a gallery sorted by newest, best this week or most faved, with categories, tags and search',

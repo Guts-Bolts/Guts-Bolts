@@ -1,5 +1,5 @@
 export default {
-  id: 'off-switch-included', name: 'Off Switch Included', time: 1794266480, tag: 'Website',
+  id: 'off-switch-included', name: 'Off Switch Included', version: '0.8.0', time: 1794266480, tag: 'Website',
   summary: 'A new "Fyxa and your uploads" box in Settings, and the Terms now say plainly how the AI may use what you make.',
   items: [
     'Public things you make may help train Fyxa, the Guts&Bolts AI, unless you untick it in Settings',

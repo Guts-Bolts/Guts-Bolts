@@ -1,5 +1,5 @@
 export default {
-  id: 'night-owl', name: 'Night Owl', time: 1794556483, tag: 'Player',
+  id: 'night-owl', name: 'Night Owl', version: '0.8.0', time: 1794556483, tag: 'Player',
   summary: 'Can\'t wait for the next release? Turn on Nightly test builds and get the newest code as soon as it\'s added.',
   items: [
     'New in Settings > Updates: a "Nightly test builds" switch. It\'s off unless you turn it on',

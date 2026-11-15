@@ -1,5 +1,5 @@
 export default {
-  id: 'elephant-memory', name: 'Elephant Memory', time: 1794270560, tag: 'Website',
+  id: 'elephant-memory', name: 'Elephant Memory', version: '0.8.0', time: 1794270560, tag: 'Website',
   summary: 'Fyxa AI can keep your conversations and notes you choose to save.',
   items: [
     'The server can now keep your Fyxa conversations and saved notes, only for your account',

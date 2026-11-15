@@ -1,5 +1,5 @@
 export default {
-  id: 'blacklist-blues', name: 'Blacklist Blues', time: 1794324000, tag: 'Website',
+  id: 'blacklist-blues', name: 'Blacklist Blues', version: '0.8.0', time: 1794324000, tag: 'Website',
   summary: 'Ban lists: ban someone once and they stay out of all your games.',
   items: [
     'Make ban lists in Create > Ban lists, and tick which of your games use each one',

@@ -1,5 +1,5 @@
 export default {
-  id: 'stretch-break', name: 'Stretch Break', time: 1793836000, tag: 'Player',
+  id: 'stretch-break', name: 'Stretch Break', version: '0.8.0', time: 1793836000, tag: 'Player',
   summary: 'An optional reminder that tells you how long you\'ve been playing and suggests a rest.',
   items: [
     'New Settings > Break Reminder: Off (the default), or after 30 minutes, 45 minutes, 1 hour, 1.5 hours or 2 hours',

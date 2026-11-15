@@ -1,5 +1,5 @@
 export default {
-  id: 'going-going-gone', name: 'Going, Going, Gone', time: 1794269977, tag: 'Website',
+  id: 'going-going-gone', name: 'Going, Going, Gone', version: '0.8.0', time: 1794269977, tag: 'Website',
   summary: 'Auctions that end soonest now show up first.',
   items: [
     'The live auctions on the front page and the Auctions page are sorted by which one ends first',

@@ -1,5 +1,5 @@
 export default {
-  id: 'running-start', name: 'Running Start', version: '0.7.10', time: 1793811693, tag: 'Engine',
+  id: 'running-start', name: 'Running Start', version: '0.8.0', time: 1793811693, tag: 'Engine',
   summary: 'Characters move more like Roblox ones: snappy on the ground, easy to steer in the air, and a fling or a jump off a moving train carries your momentum.',
   items: [
     'Characters now get up to WalkSpeed in a blink and stop just as quickly, instead of starting and stopping in a single frame',

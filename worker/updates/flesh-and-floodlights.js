@@ -1,5 +1,5 @@
 export default {
-  id: 'flesh-and-floodlights', name: 'Flesh and Floodlights', time: 1794333900, tag: 'Engine',
+  id: 'flesh-and-floodlights', name: 'Flesh and Floodlights', version: '0.8.0', time: 1794333900, tag: 'Engine',
   summary: 'Bundles get real bones, hats and capes wobble and flap, gore gets a lot meaner, things break into pieces, and lamps finally cast shadows.',
   items: [
     'Bundles can carry their own bones now, and arms and legs can bend at the elbow and knee (tick "Arms and legs bend at the elbows and knees" when you make one in Studio)',

@@ -1,5 +1,5 @@
 export default {
-  id: 'some-assembly-required', name: 'Some Assembly Required', time: 1793820653, tag: 'Studio',
+  id: 'some-assembly-required', name: 'Some Assembly Required', version: '0.8.0', time: 1793820653, tag: 'Studio',
   summary: 'Studio\'s AI can now make whole games, not just one part at a time: maps, terrain, screen UI, game systems and the mood.',
   items: [
     'New build AI tool: the Assistant (and AI apps on your computer) can build up to 500 parts in one go, like a whole house, arena or staircase, grouped in a Model. It checks everything first and warns about parts stuck inside each other or floating loose.',

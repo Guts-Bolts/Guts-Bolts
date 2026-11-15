@@ -1,5 +1,5 @@
 export default {
-  id: 'pocket-check', name: 'Pocket Check', time: 1794358659, tag: 'Studio',
+  id: 'pocket-check', name: 'Pocket Check', version: '0.8.0', time: 1794358659, tag: 'Studio',
   summary: 'Studio can now show how your game will run on a cheap phone, and let you playtest it that way.',
   items: [
     'New in the Test menu: Test like a phone...',

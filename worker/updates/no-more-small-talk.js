@@ -1,5 +1,5 @@
 export default {
-  id: 'no-more-small-talk', name: 'No More Small Talk', time: 1794248548, tag: 'Studio',
+  id: 'no-more-small-talk', name: 'No More Small Talk', version: '0.8.0', time: 1794248548, tag: 'Studio',
   summary: 'Studio\'s AI tools now speak the newest MCP rules (July 28, 2026), and older AI apps still work.',
   items: [
     'AI apps no longer need a "hello" handshake before using Studio\'s tools: every request just says which rules it uses',

@@ -1,5 +1,5 @@
 export default {
-  id: 'satin-finish', name: 'Satin Finish', time: 1794454254, tag: 'Website',
+  id: 'satin-finish', name: 'Satin Finish', version: '0.8.0', time: 1794454254, tag: 'Website',
   summary: 'The whole website got a makeover: softer, rounder, calmer, with a dark mode switch and new fonts everywhere.',
   items: [
     'Rounded boxes with soft shadows instead of hard borders and shiny 2011 buttons',

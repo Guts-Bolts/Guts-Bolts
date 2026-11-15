@@ -1,5 +1,5 @@
 export default {
-  id: 'sweat-snow-and-ricochets', name: 'Sweat, Snow and Ricochets', time: 1794349150, tag: 'Engine',
+  id: 'sweat-snow-and-ricochets', name: 'Sweat, Snow and Ricochets', version: '0.8.0', time: 1794349150, tag: 'Engine',
   summary: 'The engine feels a lot more real: real recorded sounds, bodies that limp and get tired, bullets that drop and bounce, fire that spreads and footprints in the snow.',
   items: [
     'Real recorded sound effects (free CC0 recordings, credited in assets/sounds/real) instead of made-up ones: hits on metal, wood, glass, stone and flesh, breaking glass, footsteps, splashes, fire, panting and bullet whizzes. Each has a few takes, picked at random, so the same hit never sounds exactly the same twice',

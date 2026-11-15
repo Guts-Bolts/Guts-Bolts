@@ -1,5 +1,5 @@
 export default {
-  id: 'mirrors-mist-and-rolling-barrels', name: 'Mirrors, Mist and Rolling Barrels', time: 1794414248, tag: 'Engine',
+  id: 'mirrors-mist-and-rolling-barrels', name: 'Mirrors, Mist and Rolling Barrels', version: '0.8.0', time: 1794414248, tag: 'Engine',
   summary: 'Shiny things mirror the world, fog can lie low like real mist, round parts finally roll, and the air pushes light things about.',
   items: [
     'Shiny parts now mirror the world around them, not just the sky: metal, glass, ice, marble and rain-soaked floors show the buildings, players and lights next to them (like Unreal\'s screen-space reflections)',

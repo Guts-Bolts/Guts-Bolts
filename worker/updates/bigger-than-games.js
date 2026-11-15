@@ -1,5 +1,5 @@
 export default {
-  id: 'bigger-than-games', name: 'Bigger Than Games', time: 1794270244, tag: 'Website',
+  id: 'bigger-than-games', name: 'Bigger Than Games', version: '0.8.0', time: 1794270244, tag: 'Website',
   summary: 'Guts&Bolts is a platform now, and games are one part of it: a new Home, a Games section, and a bold new look.',
   items: [
     'Home is for the whole site: your avatar, Bolts, friends and feed, plus a card for every part of Guts&Bolts',

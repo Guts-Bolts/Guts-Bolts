@@ -1,5 +1,5 @@
 export default {
-  id: 'clipboard-commons', name: 'Clipboard Commons', time: 1794454000, tag: 'Website',
+  id: 'clipboard-commons', name: 'Clipboard Commons', version: '0.8.0', time: 1794454000, tag: 'Website',
   summary: 'G&B Paste is here: share code, crash logs and settings with one link.',
   items: [
     'A new Paste tab: paste up to 100 KB of text, pick its language, and get a link to share',

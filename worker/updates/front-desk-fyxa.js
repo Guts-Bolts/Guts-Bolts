@@ -1,5 +1,5 @@
 export default {
-  id: 'front-desk-fyxa', name: 'Front Desk Fyxa', time: 1794325547, tag: 'Studio',
+  id: 'front-desk-fyxa', name: 'Front Desk Fyxa', version: '0.8.0', time: 1794325547, tag: 'Studio',
   summary: 'Fyxa can now look after your game\'s page, not just build the game.',
   items: [
     'Ask Fyxa how your game is doing: plays, sales and Bolts from the last 30 days',
