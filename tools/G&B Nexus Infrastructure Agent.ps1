@@ -23,6 +23,8 @@ $DevicePath = Join-Path $Root 'device-id'
 $script:PairingCode = $null
 $script:PairingCreatedAt = $null
 $script:LastNetworkSample = $null
+$script:OllamaInventory = $null
+$script:OllamaInventoryAt = [DateTime]::MinValue
 
 function Ensure-Root {
   if (-not (Test-Path -LiteralPath $Root)) { New-Item -ItemType Directory -Path $Root -Force | Out-Null }
@@ -47,7 +49,7 @@ function Save-DeviceId([string]$Id) {
   [IO.File]::WriteAllText($DevicePath, $Id, ([Text.UTF8Encoding]::new($false)))
 }
 function Send-Json($Socket, $Value) {
-  $bytes = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $Value -Depth 6 -Compress))
+  $bytes = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $Value -Depth 24 -Compress))
   if ($bytes.Length -gt 400 * 1024) { throw 'Agent message exceeded its size limit.' }
   $Socket.SendAsync([ArraySegment[byte]]::new($bytes), [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
 }
@@ -71,10 +73,11 @@ function Get-GpuMetrics {
   } catch { return @{} }
 }
 function Get-OllamaInventory {
+  if ($script:OllamaInventory -and ([DateTime]::UtcNow - $script:OllamaInventoryAt).TotalSeconds -lt 120) { return $script:OllamaInventory }
   $models = @(); $toolModels = @()
   try {
     $result = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/tags' -Method Get -TimeoutSec 3
-    $models = @($result.models | ForEach-Object { [string]$_.name } | Where-Object { $_ -match '^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$' } | Select-Object -Unique -First 32)
+    $models = @($result.models | ForEach-Object { [string]$_.name } | Where-Object { $_ -match '^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$' } | Select-Object -Unique -First 16)
     foreach ($name in $models) {
       try {
         $detail = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/show' -Method Post -ContentType 'application/json' `
@@ -84,7 +87,9 @@ function Get-OllamaInventory {
       } catch { }
     }
   } catch { }
-  return @{ models = $models; toolModels = $toolModels }
+  $script:OllamaInventory = @{ models = $models; toolModels = $toolModels }
+  $script:OllamaInventoryAt = [DateTime]::UtcNow
+  return $script:OllamaInventory
 }
 function Invoke-OllamaInference($Socket, $Message) {
   try {
