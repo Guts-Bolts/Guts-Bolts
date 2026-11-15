@@ -13,7 +13,7 @@ for checking the licence and provenance of each selected file at import time.
 | Kenney Audio | CC0 1.0 on the individual Kenney packs | Interface clicks, menu feedback, digital blips, restrained impacts | https://kenney.nl/assets/interface-sounds ; https://kenney.nl/assets/ui-audio ; https://kenney.nl/assets/digital-audio ; https://kenney.nl/assets/impact-sounds |
 | Kaino SFX | CC0 1.0 | Nature/weather, ambience beds, footsteps, doors, household sounds, vehicles, gentle interface feedback | https://kaino.dev/library/sfx |
 | Lots of Sounds | CC0 1.0 for catalog recordings | Birds, wind, rain, water, room tone, machinery and everyday Foley | https://www.lotsofsounds.com/sounds |
-| SpritePilot | CC0 1.0 | Interface clicks, footsteps, item pickups and ambient loops | https://spritepilot.com/free-game-assets/sound-effects |
+| SpritePilot | CC0 1.0 | Interface clicks, footsteps, movement, water, and ambient loops | https://spritepilot.com/free-game-assets/sound-effects (150 sounds; OGG-only ZIP: https://spritepilot.com/free-assets/sound-effects/spritepilot-sound-effects-ogg.zip?v=2qulu) |
 
 ## Import policy
 
