@@ -1,6 +1,6 @@
 # Fyxa core sessions and memory
 
-**Implementation status:** The initial account-scoped session metadata and explicit memory CRUD operations are implemented in the G&B Durable Object. This is not yet a chat inference endpoint, RAG index, autonomous task runner, or model-training pipeline.
+**Implementation status:** Account-scoped session metadata and explicit memory CRUD operations are implemented in the G&B Durable Object. Fyxa Studio now also has request/response inference providers, including G&B Home AI through paired Nexus machines running local Ollama. The session and memory records are not yet connected to those inference requests. This is not yet a persistent conversation service, RAG index, autonomous task runner, or model-training pipeline.
 
 ## Design boundaries
 
@@ -11,7 +11,13 @@
 - Training and reference eligibility continue to be governed independently by the existing Fyxa AI data controls.
 - Memory audit records contain event metadata and resource IDs, not memory text.
 - Session deletion removes memories explicitly linked to that session. Other memories remain until separately deleted.
-- This first increment stores conversation metadata only. Message persistence and provider inference are deliberately separate follow-up work.
+- The session and memory layer stores metadata and explicit memory records. It does not currently persist the messages sent to or returned by an inference provider.
+
+## Current inference boundary
+
+Fyxa Studio supports direct Ollama, Claude, Cloudflare Workers AI, and G&B Home AI. G&B Home AI sends a signed-in Studio request through the Worker and the Nexus Durable Object to an authenticated machine with the requested Ollama model installed.
+
+This is a bounded request/response relay, not a general provider-neutral runtime for every G&B product surface. It does not automatically create or retrieve a session, persist conversation messages, retrieve account memories, or authorize access to project files. Home inference is also constrained by online Nexus capacity, model availability, per-node concurrency, and request limits; it is not literally unlimited compute.
 
 ## Signed API operations
 
@@ -81,16 +87,16 @@ The Durable Object SQLite database contains:
 
 Indexes support account-scoped recency listing and project/type filtering. No media, embeddings, model artifacts, or large document payloads are stored in these tables.
 
-## Remaining work before production chat
+## Remaining work for persistent, cross-surface Fyxa conversations
 
-1. Add provider-neutral inference behind a server-only adapter; provider credentials must never be sent to clients.
-2. Add message storage with strict role ownership. Clients may submit user messages; assistant/tool messages must be written only by trusted server-side inference and tool orchestration.
-3. Add request limits, per-account quotas, cancellation, timeouts, and bounded response sizes.
-4. Add explicit project membership/visibility checks before project context or files are retrieved. An opaque project ID alone is not authorization.
+1. Add a provider-neutral inference adapter behind a server-only boundary so Studio, Player, and supported website surfaces can use the same runtime without exposing provider credentials.
+2. Connect inference to account-scoped sessions and add message persistence with strict role ownership. Clients may submit user messages; assistant/tool messages must be written only by trusted server-side inference and tool orchestration.
+3. Add cancellation, timeouts, bounded response sizes, per-account quotas, and concurrency controls across providers.
+4. Add explicit project membership and visibility checks before project context or files are retrieved. An opaque project ID alone is not authorization.
 5. Add retrieval with source-level permission checks and citations. Do not retrieve private content merely because an account has enabled reference indexing.
 6. Add memory retrieval/ranking and a retention policy. The current CRUD layer does not automatically infer, summarize, or retrieve memories.
-7. Add tests for provider failures, authorization, prompt injection boundaries, deletion propagation, and concurrency.
-8. Purge sessions, memories, and memory audit rows when an account is deleted.\n9. Keep model training as a separate pipeline with its existing explicit eligibility and rights-review gates.
+7. Add tests for provider failures, authorization, prompt-injection boundaries, deletion propagation, and concurrency.
+8. Keep model training as a separate pipeline with its existing explicit eligibility, rights-review, opt-out, and deletion gates.
 
 ## Test coverage
 
