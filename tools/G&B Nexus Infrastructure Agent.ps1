@@ -23,6 +23,8 @@ $DevicePath = Join-Path $Root 'device-id'
 $script:PairingCode = $null
 $script:PairingCreatedAt = $null
 $script:LastNetworkSample = $null
+$script:OllamaInventory = $null
+$script:OllamaInventoryAt = [DateTime]::MinValue
 
 function Ensure-Root {
   if (-not (Test-Path -LiteralPath $Root)) { New-Item -ItemType Directory -Path $Root -Force | Out-Null }
@@ -47,8 +49,8 @@ function Save-DeviceId([string]$Id) {
   [IO.File]::WriteAllText($DevicePath, $Id, ([Text.UTF8Encoding]::new($false)))
 }
 function Send-Json($Socket, $Value) {
-  $bytes = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $Value -Depth 6 -Compress))
-  if ($bytes.Length -gt 16384) { throw 'Agent message exceeded its size limit.' }
+  $bytes = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $Value -Depth 24 -Compress))
+  if ($bytes.Length -gt 400 * 1024) { throw 'Agent message exceeded its size limit.' }
   $Socket.SendAsync([ArraySegment[byte]]::new($bytes), [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
 }
 function New-PairingCode {
@@ -70,6 +72,40 @@ function Get-GpuMetrics {
     return @{ gpuPercent = [double]$p[0]; gpuTemperatureC = [double]$p[1]; gpuMemoryUsedMB = [double]$p[2]; gpuMemoryTotalMB = [double]$p[3] }
   } catch { return @{} }
 }
+function Get-OllamaInventory {
+  if ($script:OllamaInventory -and ([DateTime]::UtcNow - $script:OllamaInventoryAt).TotalSeconds -lt 120) { return $script:OllamaInventory }
+  $models = @(); $toolModels = @()
+  try {
+    $result = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/tags' -Method Get -TimeoutSec 3
+    $models = @($result.models | ForEach-Object { [string]$_.name } | Where-Object { $_ -match '^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$' } | Select-Object -Unique -First 16)
+    foreach ($name in $models) {
+      try {
+        $detail = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/show' -Method Post -ContentType 'application/json' `
+          -Body (ConvertTo-Json -InputObject @{ model = $name } -Compress) -TimeoutSec 3
+        $caps = @($detail.capabilities | ForEach-Object { [string]$_ })
+        if ($caps -contains 'completion' -and $caps -contains 'tools') { $toolModels += $name }
+      } catch { }
+    }
+  } catch { }
+  $script:OllamaInventory = @{ models = $models; toolModels = $toolModels }
+  $script:OllamaInventoryAt = [DateTime]::UtcNow
+  return $script:OllamaInventory
+}
+function Invoke-OllamaInference($Socket, $Message) {
+  try {
+    $model = [string]$Message.model
+    if ($model -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$') { throw 'Invalid model name.' }
+    $body = @{ model = $model; stream = $false; messages = @($Message.messages); options = @{ num_predict = 2048 } }
+    if ($Message.tools) { $body.tools = @($Message.tools) }
+    $response = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/chat' -Method Post -ContentType 'application/json' `
+      -Body (ConvertTo-Json -InputObject $body -Depth 24 -Compress) -TimeoutSec 85
+    if (-not $response.message -or $response.message.role -ne 'assistant') { throw 'Ollama returned an invalid assistant message.' }
+    Send-Json $Socket @{ t = 'node.infer.result'; requestId = [string]$Message.requestId; message = $response.message }
+  } catch {
+    $detail = [string]$_.Exception.Message
+    Send-Json $Socket @{ t = 'node.infer.error'; requestId = [string]$Message.requestId; error = $detail.Substring(0, [math]::Min(220, $detail.Length)) }
+  }
+}
 function Get-NodeStatus {
   $os = Get-CimInstance Win32_OperatingSystem
   $cpu = Get-CimInstance Win32_Processor
@@ -78,6 +114,7 @@ function Get-NodeStatus {
   $used = [math]::Max(0, $total - [double]$os.FreePhysicalMemory / 1024)
   $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID = 'C:'" | Select-Object -First 1
   $caps = @('telemetry')
+  $ollama = Get-OllamaInventory
   $gpu = Get-GpuMetrics
   if ($gpu.Count -gt 0) { $caps += 'gpu' }
   if (Get-Process -Name 'ollama','vllm' -ErrorAction SilentlyContinue | Select-Object -First 1) { $caps += 'ai-inference' }
@@ -95,6 +132,8 @@ function Get-NodeStatus {
     diskTotalGB = if ($disk) { [math]::Round([double]$disk.Size / 1GB, 1) } else { $null }
     agentVersion = $AgentVersion
     capabilities = $caps
+    models = @($ollama.models)
+    toolModels = @($ollama.toolModels)
     services = @()
   }
   foreach ($key in $gpu.Keys) { $result[$key] = $gpu[$key] }
@@ -114,6 +153,7 @@ function Handle-NodeMessage($Socket, $Message) {
       Write-Host 'Connected to the G&B Nexus infrastructure relay.' -ForegroundColor Green
       Send-Json $Socket @{ t = 'node.status'; status = (Get-NodeStatus) }
     }
+    'node.infer' { Invoke-OllamaInference $Socket $Message }
     'device.rejected' {
       Remove-Item -LiteralPath $TokenPath,$DevicePath -Force -ErrorAction SilentlyContinue
       throw 'This machine credential was revoked or rejected. Reconnect to generate a new pairing code.'
@@ -153,8 +193,15 @@ function Connect-Node {
       if ([object]::ReferenceEquals($completed, $receive)) {
         $frame = $receive.GetAwaiter().GetResult()
         if ($frame.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close) { break }
-        if (-not $frame.EndOfMessage) { throw 'Unexpected fragmented relay message.' }
-        $message = [Text.Encoding]::UTF8.GetString($buffer, 0, $frame.Count) | ConvertFrom-Json
+        $stream = [IO.MemoryStream]::new()
+        try {
+          do {
+            $stream.Write($buffer, 0, $frame.Count)
+            if ($stream.Length -gt 400 * 1024) { throw 'Relay message exceeded its size limit.' }
+            if (-not $frame.EndOfMessage) { $frame = $socket.ReceiveAsync($segment, [Threading.CancellationToken]::None).GetAwaiter().GetResult() }
+          } while (-not $frame.EndOfMessage)
+          $message = [Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
+        } finally { $stream.Dispose() }
         Handle-NodeMessage $socket $message
         $receive = $socket.ReceiveAsync($segment, [Threading.CancellationToken]::None)
       } else {
@@ -177,7 +224,7 @@ if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 }
 Ensure-Root
 Write-Host 'G&B Nexus Infrastructure Agent ' $AgentVersion
-Write-Host 'Read-only telemetry mode. No remote shell or command execution is available.'
+Write-Host 'Telemetry and narrowly scoped local Ollama inference relay. No shell or arbitrary command execution.'
 while ($true) {
   try { Connect-Node }
   catch { Write-Warning $_.Exception.Message }
