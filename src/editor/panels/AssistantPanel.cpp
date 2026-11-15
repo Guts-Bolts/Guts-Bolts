@@ -1786,13 +1786,16 @@ void AssistantPanel::requestNext() {
     const json nativeTools = FyxaToolSelection::selectNative(AiTools::mcpTools(), m_activeRequestText, m_discoveredToolNames, 24);
     const json localTools = fyxaAgentTools();
     const json externalTools = FyxaToolSelection::selectExternal(externalMcpTools(), m_activeRequestText, m_discoveredToolNames, 12);
-    const bool cloud = m_provider == "cloud";   // Guts&Bolts cloud (worker/fyxa-cloud.js): Ollama's shape, sent to our server
+    const bool cloud = m_provider == "cloud";   // Cloudflare Workers AI
+    const bool home = m_provider == "home";     // Paired Nexus machines running local Ollama
     const std::string payload = [&]() {
-        if (cloud) {
+        if (cloud || home) {
             json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
-            for (const auto& message : m_messages) messages.push_back(message);
-            return Online::signedRequest("fyxacloud.chat", {{"messages", messages},
-                                         {"tools", ollamaTools(nativeTools, localTools, externalTools)}}).dump();
+            const size_t firstMessage = home && m_messages.size() > 79 ? m_messages.size() - 79 : 0;
+            for (size_t i = firstMessage; i < m_messages.size(); ++i) messages.push_back(m_messages[i]);
+            json args = {{"messages", messages}, {"tools", ollamaTools(nativeTools, localTools, externalTools)}};
+            if (home) args["model"] = m_ollamaModel;
+            return Online::signedRequest(home ? "fyxacloud.homeChat" : "fyxacloud.chat", args).dump();
         }
         if (m_provider == "ollama") {
             json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
@@ -1830,12 +1833,12 @@ void AssistantPanel::requestNext() {
     const bool ollama = m_provider == "ollama";
     std::string host = ollama ? m_ollamaHost : "wss://api.anthropic.com";
     int port = ollama ? m_ollamaPort : 443;
-    if (cloud && (!Online::serverHostPort(host, port) || !Net::isWebAddress(host))) {
-        m_lines.push_back({Line::Error, "Fyxa's cloud only works with the gutsandbolts.net server. Fyxa on your own computer (Ollama) works anywhere."});
+    if ((cloud || home) && (!Online::serverHostPort(host, port) || !Net::isWebAddress(host))) {
+        m_lines.push_back({Line::Error, "G&B cloud and G&B Home AI require the gutsandbolts.net server. Direct Ollama works on your own network."});
         return;
     }
-    const std::string path = ollama ? "/api/chat" : cloud ? "/api" : "/v1/messages";
-    const std::string headers = ollama || cloud ? std::string() :
+    const std::string path = ollama ? "/api/chat" : (cloud || home) ? "/api" : "/v1/messages";
+    const std::string headers = ollama || cloud || home ? std::string() :
         "x-api-key: " + m_apiKey + "\r\nanthropic-version: 2023-06-01\r\n" +
         (m_model != "claude-haiku-4-5" ? "anthropic-beta: server-side-fallback-2026-07-01\r\n" : "");
     const auto cancel = m_agentCancel;
@@ -1848,7 +1851,7 @@ void AssistantPanel::requestNext() {
 }
 
 void AssistantPanel::handleReply(int status, const std::string& body, const std::string& error) {
-    if (m_provider == "ollama" || m_provider == "cloud") handleOllamaReply(status, body, error);
+    if (m_provider == "ollama" || m_provider == "cloud" || m_provider == "home") handleOllamaReply(status, body, error);
     else handleClaudeReply(status, body, error);
 }
 
@@ -1939,9 +1942,11 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
     json j = json::parse(body, nullptr, false);
     if (status != 200 || !j.is_object() || !j.contains("message") || !j["message"].is_object()) {
         std::string why = j.is_object() ? j.value("error", error) : error;
-        if (m_provider == "cloud")   // the server's own words (daily limit, switched off...)
-            m_lines.push_back({Line::Error, "Fyxa's cloud: " + (why.empty() ? std::string("no answer") + (status ? " (" + std::to_string(status) + ")" : std::string()) + "." : why)});
-        else
+        if (m_provider == "cloud" || m_provider == "home") {
+            const std::string providerName = m_provider == "home" ? "G&B Home AI" : "Fyxa's cloud";
+            m_lines.push_back({Line::Error, providerName + ": " +
+                (why.empty() ? std::string("no answer") + (status ? " (" + std::to_string(status) + ")" : std::string()) + "." : why)});
+        } else
             m_lines.push_back({Line::Error, "Couldn't reach the Ollama server" +
                 (status ? " (" + std::to_string(status) + ")" : std::string()) + (why.empty() ? "." : ": " + why)});
         while (!m_messages.empty() && m_messages.back().value("role", "") == "user") m_messages.erase(m_messages.size() - 1);
@@ -2184,11 +2189,12 @@ void AssistantPanel::render(bool* open) {
             ImGui::EndPopup();
         }
         ImGui::Separator();
-        const char* providers[] = {"Ollama (your own GPU, free)", "Claude (Anthropic)", "Guts&Bolts cloud (daily limit)"};
-        int provider = m_provider == "claude" ? 1 : m_provider == "cloud" ? 2 : 0;
-        if (ImGui::Combo("AI provider", &provider, providers, 3)) {
-            m_provider = provider == 0 ? "ollama" : provider == 1 ? "claude" : "cloud";
+        const char* providers[] = {"Ollama (this computer)", "Claude (Anthropic)", "Guts&Bolts cloud (daily limit)", "G&B Home AI (G&B servers)"};
+        int provider = m_provider == "claude" ? 1 : m_provider == "cloud" ? 2 : m_provider == "home" ? 3 : 0;
+        if (ImGui::Combo("AI provider", &provider, providers, 4)) {
+            m_provider = provider == 0 ? "ollama" : provider == 1 ? "claude" : provider == 2 ? "cloud" : "home";
             if (m_provider == "cloud") refreshCloudUsage();
+            else if (m_provider == "home") refreshHomeModels();
             m_messages = json::array();
             m_lines.clear();
             save();
@@ -2203,6 +2209,34 @@ void AssistantPanel::render(bool* open) {
                 ImGui::TextWrapped("%s", m_cloudUsage.value("error", std::string("Couldn't check your daily limit.")).c_str());
             if (ImGui::SmallButton("Check my daily limit")) refreshCloudUsage();
             ImGui::TextDisabled("One step = one answer from the AI. A task that uses tools takes a few.");
+        } else if (m_provider == "home") {
+            if (m_homeModelsStatus.empty()) refreshHomeModels();
+            ImGui::TextWrapped("Fyxa sends requests through G&B Nexus to G&B's online home-compute machines. The selected model must already be installed in Ollama on one of those machines.");
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputTextWithHint("Nexus model", "qwen3:8b", &m_ollamaModel)) save();
+            if (ImGui::BeginCombo("Available models", m_ollamaModel.c_str())) {
+                if (m_homeModels.is_array()) {
+                    for (const auto& model : m_homeModels) {
+                        const std::string name = model.value("name", std::string());
+                        if (name.empty()) continue;
+                        const bool selected = name == m_ollamaModel;
+                        std::string label = name + " (" + std::to_string(model.value("onlineNodes", 0)) + " machine(s)";
+                        if (model.value("toolCapableNodes", 0) > 0)
+                            label += ", " + std::to_string(model.value("toolCapableNodes", 0)) + " tool-capable";
+                        label += ")";
+                        if (ImGui::Selectable(label.c_str(), selected)) {
+                            m_ollamaModel = name;
+                            save();
+                        }
+                        if (selected) ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Refresh models")) refreshHomeModels();
+            if (!m_homeModelsStatus.empty()) ImGui::TextWrapped("%s", m_homeModelsStatus.c_str());
+            ImGui::TextDisabled("Nexus runs one inference request per machine at a time. The agent must be online with Ollama running.");
         } else if (m_provider == "ollama") {
             ImGui::TextWrapped("Fyxa connects directly to an Ollama server. The default address is local to this computer; install and start Ollama, then pull a model that supports tool calling.");
             ImGui::SetNextItemWidth(-1);
@@ -2523,6 +2557,28 @@ void AssistantPanel::submitLearningFeedback(int rating, const std::string& reaso
             m_learningFeedbackSubmitted = r.value("ok", false) && r.value("saved", false);
             m_learningFeedbackFailed = !m_learningFeedbackSubmitted;
         });
+}
+
+// Available Ollama models across currently online Nexus machines.
+void AssistantPanel::refreshHomeModels() {
+    if (!Online::configured()) {
+        m_homeModels = json::array();
+        m_homeModelsStatus = "Not connected to a Guts&Bolts server.";
+        return;
+    }
+    m_homeModelsStatus = "Checking online Nexus machines...";
+    Online::request("fyxacloud.homeModels", json::object(), [this](const json& r) {
+        if (!r.value("ok", false)) {
+            m_homeModels = json::array();
+            m_homeModelsStatus = r.value("error", std::string("Couldn't retrieve Nexus models."));
+            return;
+        }
+        m_homeModels = r.value("models", json::array());
+        if (!m_homeModels.is_array()) m_homeModels = json::array();
+        m_homeModelsStatus = m_homeModels.empty()
+            ? "No online Nexus machines currently report installed Ollama models."
+            : std::to_string(m_homeModels.size()) + " model(s) available across online Nexus machines.";
+    });
 }
 
 // How many cloud steps are left today (worker/fyxa-cloud.js fyxacloud.usage).
