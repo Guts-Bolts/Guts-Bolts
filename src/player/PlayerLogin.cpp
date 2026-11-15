@@ -164,8 +164,11 @@ static void drawTermsWindow(bool& open) {
                                "once per ban.");
         head("What you make");
         ImGui::TextUnformatted("Stays yours. Uploading lets Guts&Bolts store and show it (and others use it, if you make it public).");
-        ImGui::TextUnformatted("Unless you turn it off in Settings on the website, your public uploads may also help train Fyxa, "
-                               "the Guts&Bolts AI (not yet: nothing is trained today). Private things, messages and chat never are.");
+        ImGui::TextUnformatted("Unless you turn it off in Settings on the website, limited Fyxa quality metadata is collected: "
+                               "the provider and model, a broad topic, and which Studio tools succeeded or failed. You can rate "
+                               "responses too. Prompts, answers, tool arguments and results, screenshots and project files are not "
+                               "sent through this feature. This does not train model weights. Eligible public uploads may be "
+                               "considered for future training after rights review. Private things, messages and chat are excluded.");
         head("Chat, safety and moderation");
         ImGui::TextUnformatted("Automated safety screening may review public creator submissions, profile text, game updates, "
                                "comments, forums, group posts, translated in-game chat, party chat, private messages and supported "
