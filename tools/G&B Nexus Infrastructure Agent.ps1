@@ -77,11 +77,11 @@ function Get-OllamaInventory {
   $models = @(); $toolModels = @()
   try {
     $result = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/tags' -Method Get -TimeoutSec 3
-    $models = @($result.models | ForEach-Object { [string]$_.name } | Where-Object { $_ -match '^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$' } | Select-Object -Unique -First 16)
+    $models = @($result.models | ForEach-Object { [string]$_.name } | Where-Object { $_ -match '^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$' } | Select-Object -Unique -First 8)
     foreach ($name in $models) {
       try {
         $detail = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/show' -Method Post -ContentType 'application/json' `
-          -Body (ConvertTo-Json -InputObject @{ model = $name } -Compress) -TimeoutSec 3
+          -Body (ConvertTo-Json -InputObject @{ model = $name } -Compress) -TimeoutSec 2
         $caps = @($detail.capabilities | ForEach-Object { [string]$_ })
         if ($caps -contains 'completion' -and $caps -contains 'tools') { $toolModels += $name }
       } catch { }
