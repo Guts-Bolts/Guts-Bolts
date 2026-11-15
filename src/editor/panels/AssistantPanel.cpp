@@ -1710,8 +1710,11 @@ void AssistantPanel::send(const std::string& text) {
         }
     }
     m_turnLineStartIndex = m_lines.size();
+    ++m_learningGeneration;
     m_learningSignalId.clear();
     m_learningFeedbackSubmitted = false;
+    m_learningFeedbackPending = false;
+    m_learningFeedbackFailed = false;
     m_lines.push_back({Line::You, text});
     m_messages.push_back({{"role", "user"}, {"content", text}});
     std::string normalized = text;
@@ -2390,7 +2393,9 @@ void AssistantPanel::render(bool* open) {
     if (m_scrollDown) { ImGui::SetScrollHereY(1.0f); m_scrollDown = false; }
     ImGui::EndChild();
 
-    if (!m_learningSignalId.empty() && !m_learningFeedbackSubmitted) {
+    if (!m_learningSignalId.empty() && !m_learningFeedbackSubmitted && !m_learningFeedbackPending) {
+        if (m_learningFeedbackFailed)
+            ImGui::TextColored(ImVec4(1, 0.65f, 0.35f, 1), "Feedback could not be saved. You can try again.");
         ImGui::TextDisabled("Help Fyxa improve this response:");
         if (ImGui::SmallButton("Helpful")) submitLearningFeedback(1, "helpful");
         ImGui::SameLine();
@@ -2404,6 +2409,8 @@ void AssistantPanel::render(bool* open) {
         if (ImGui::SmallButton("Unsafe")) submitLearningFeedback(-1, "unsafe");
         ImGui::SameLine();
         if (ImGui::SmallButton("Other")) submitLearningFeedback(-1, "other");
+    } else if (m_learningFeedbackPending) {
+        ImGui::TextDisabled("Sending feedback...");
     } else if (m_learningFeedbackSubmitted) {
         ImGui::TextDisabled("Feedback saved. Thank you.");
     }
@@ -2472,23 +2479,30 @@ void AssistantPanel::recordLearningSignal() {
 
     const std::string model = m_provider == "ollama" ? m_ollamaModel :
         m_provider == "claude" ? m_model : "cloud-default";
+    const unsigned long long generation = m_learningGeneration;
     Online::request("ai.learning.capture", {{"provider", m_provider}, {"model", model},
-        {"category", category}, {"tools", tools}}, [this](const json& r) {
+        {"category", category}, {"tools", tools}}, [this, generation](const json& r) {
+        if (generation != m_learningGeneration) return;
         if (!r.value("ok", false) || !r.value("recorded", false)) return;
         m_learningSignalId = r.value("signalId", std::string());
         m_learningFeedbackSubmitted = false;
+        m_learningFeedbackPending = false;
+        m_learningFeedbackFailed = false;
     });
 }
 
 void AssistantPanel::submitLearningFeedback(int rating, const std::string& reason) {
     if (m_learningSignalId.empty() || m_learningFeedbackSubmitted) return;
     const std::string id = m_learningSignalId;
+    m_learningFeedbackPending = true;
+    m_learningFeedbackFailed = false;
     Online::request("ai.learning.feedback", {{"signalId", id}, {"rating", rating}, {"reason", reason}},
         [this, id](const json& r) {
             if (m_learningSignalId != id) return;
+            m_learningFeedbackPending = false;
             m_learningFeedbackSubmitted = r.value("ok", false) && r.value("saved", false);
+            m_learningFeedbackFailed = !m_learningFeedbackSubmitted;
         });
-    m_learningFeedbackSubmitted = true;
 }
 
 // How many cloud steps are left today (worker/fyxa-cloud.js fyxacloud.usage).
