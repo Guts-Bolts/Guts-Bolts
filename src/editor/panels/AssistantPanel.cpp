@@ -1709,6 +1709,9 @@ void AssistantPanel::send(const std::string& text) {
                 "Multiple active tasks were found in saved data. Pause all but one task before Fyxa can continue task-bound work."});
         }
     }
+    m_turnLineStartIndex = m_lines.size();
+    m_learningSignalId.clear();
+    m_learningFeedbackSubmitted = false;
     m_lines.push_back({Line::You, text});
     m_messages.push_back({{"role", "user"}, {"content", text}});
     std::string normalized = text;
@@ -1863,9 +1866,9 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
             m_lines.push_back({Line::Assistant, b["text"].get<std::string>()});
 
     const std::string stop = j.value("stop_reason", "");
-    if (stop == "refusal") { m_lines.push_back({Line::Note, "The assistant declined that request."}); return; }
-    if (stop == "max_tokens") { m_lines.push_back({Line::Note, "That answer hit the length limit. Say \"continue\" for more."}); return; }
-    if (stop != "tool_use") return;
+    if (stop == "refusal") { m_lines.push_back({Line::Note, "The assistant declined that request."}); recordLearningSignal(); return; }
+    if (stop == "max_tokens") { m_lines.push_back({Line::Note, "That answer hit the length limit. Say \"continue\" for more."}); recordLearningSignal(); return; }
+    if (stop != "tool_use") { recordLearningSignal(); return; }
     if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
 
     json results = json::array();
@@ -1947,7 +1950,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
     if (!answer.empty()) m_lines.push_back({Line::Assistant, answer});
 
     const json calls = message.value("tool_calls", json::array());
-    if (!calls.is_array() || calls.empty()) return;
+    if (!calls.is_array() || calls.empty()) { recordLearningSignal(); return; }
     if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
 
     for (const auto& call : calls) {
@@ -2387,6 +2390,24 @@ void AssistantPanel::render(bool* open) {
     if (m_scrollDown) { ImGui::SetScrollHereY(1.0f); m_scrollDown = false; }
     ImGui::EndChild();
 
+    if (!m_learningSignalId.empty() && !m_learningFeedbackSubmitted) {
+        ImGui::TextDisabled("Help Fyxa improve this response:");
+        if (ImGui::SmallButton("Helpful")) submitLearningFeedback(1, "helpful");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Incorrect")) submitLearningFeedback(-1, "incorrect");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Incomplete")) submitLearningFeedback(-1, "incomplete");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Irrelevant")) submitLearningFeedback(-1, "irrelevant");
+        if (ImGui::SmallButton("Tool failed")) submitLearningFeedback(-1, "tool_failure");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Unsafe")) submitLearningFeedback(-1, "unsafe");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Other")) submitLearningFeedback(-1, "other");
+    } else if (m_learningFeedbackSubmitted) {
+        ImGui::TextDisabled("Feedback saved. Thank you.");
+    }
+
     const bool configured = m_provider == "cloud" ? Online::configured()
                           : m_provider == "ollama" ? (!m_ollamaHost.empty() && !m_ollamaModel.empty() && m_ollamaPort > 0)
                                                     : !m_apiKey.empty();
@@ -2414,6 +2435,62 @@ void AssistantPanel::render(bool* open) {
                                                                   "Add your Anthropic API key in Assistant settings.");
     ImGui::End();
 }
+// Store only low-risk quality metadata. Prompts, answers, tool arguments, tool output,
+// screenshots, file contents, and project names never leave this device through this path.
+void AssistantPanel::recordLearningSignal() {
+    if (!Online::online() || Online::isGuest() || m_activeRequestText.empty()) return;
+    json tools = json::array();
+    for (size_t i = m_turnLineStartIndex; i < m_lines.size(); ++i) {
+        const Line& line = m_lines[i];
+        if (line.kind != Line::Tool && line.kind != Line::Error) continue;
+        const size_t end = line.text.find_first_of(" :");
+        const std::string name = line.text.substr(0, end);
+        if (name.empty()) continue;
+        const bool looksLikeTool = name.rfind("fyxa_", 0) == 0 || name.rfind("mcp__", 0) == 0 ||
+            name.find('_') != std::string::npos || name.find('.') != std::string::npos;
+        if (!looksLikeTool) continue;
+        tools.push_back({{"name", name}, {"outcome", line.kind == Line::Error ? "failure" : "success"}});
+    }
+
+    std::string lowerRequest = m_activeRequestText;
+    for (char& ch : lowerRequest) ch = (char)std::tolower((unsigned char)ch);
+    const std::vector<std::pair<std::string, std::vector<std::string>>> categories = {
+        {"scripting", {"script", "lua", "luau", "function", "code", "api"}},
+        {"physics", {"physics", "collision", "rigidbody", "constraint", "force"}},
+        {"networking", {"remoteevent", "network", "server", "client", "replication"}},
+        {"ui", {"gui", "interface", "button", "screen", "widget"}},
+        {"asset_creation", {"model", "mesh", "texture", "shirt", "pants", "asset"}},
+        {"debugging", {"error", "bug", "crash", "debug", "broken", "fix"}},
+        {"gameplay", {"gameplay", "level", "map", "enemy", "player", "round"}}
+    };
+    std::string category = "general";
+    for (const auto& item : categories) {
+        if (std::any_of(item.second.begin(), item.second.end(), [&](const std::string& word) {
+            return lowerRequest.find(word) != std::string::npos;
+        })) { category = item.first; break; }
+    }
+
+    const std::string model = m_provider == "ollama" ? m_ollamaModel :
+        m_provider == "claude" ? m_model : "cloud-default";
+    Online::request("ai.learning.capture", {{"provider", m_provider}, {"model", model},
+        {"category", category}, {"tools", tools}}, [this](const json& r) {
+        if (!r.value("ok", false) || !r.value("recorded", false)) return;
+        m_learningSignalId = r.value("signalId", std::string());
+        m_learningFeedbackSubmitted = false;
+    });
+}
+
+void AssistantPanel::submitLearningFeedback(int rating, const std::string& reason) {
+    if (m_learningSignalId.empty() || m_learningFeedbackSubmitted) return;
+    const std::string id = m_learningSignalId;
+    Online::request("ai.learning.feedback", {{"signalId", id}, {"rating", rating}, {"reason", reason}},
+        [this, id](const json& r) {
+            if (m_learningSignalId != id) return;
+            m_learningFeedbackSubmitted = r.value("ok", false) && r.value("saved", false);
+        });
+    m_learningFeedbackSubmitted = true;
+}
+
 // How many cloud steps are left today (worker/fyxa-cloud.js fyxacloud.usage).
 void AssistantPanel::refreshCloudUsage() {
     if (!Online::configured()) { m_cloudUsage = {{"ok", false}, {"error", "Not connected to a Guts&Bolts server."}}; return; }
