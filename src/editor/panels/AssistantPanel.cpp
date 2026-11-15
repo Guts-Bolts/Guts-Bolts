@@ -2463,7 +2463,7 @@ void AssistantPanel::render(bool* open) {
     ImGui::End();
 }
 // Store only low-risk quality metadata. Prompts, answers, tool arguments, tool output,
- // screenshots, file contents, and project names never leave this device through this path.
+// screenshots, file contents, and project names never leave this device through this path.
 void AssistantPanel::recordLearningSignal() {
     if (!Online::online() || Online::isGuest() || m_activeRequestText.empty()) return;
     json tools = json::array();
