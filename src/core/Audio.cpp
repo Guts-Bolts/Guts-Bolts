@@ -215,14 +215,41 @@ Samples decode(const unsigned char* data, size_t size) {
     ma_decoder dec;
     if (ma_decoder_init_memory(data, size, &cfg, &dec) != MA_SUCCESS) return out;
     float chunk[4096];
-    ma_uint64 got = 0;
-    while (ma_decoder_read_pcm_frames(&dec, chunk, 4096, &got) == MA_SUCCESS && got > 0)
-        out.insert(out.end(), chunk, chunk + got);
+    for (;;) {
+        ma_uint64 got = 0;
+        const ma_result result = ma_decoder_read_pcm_frames(&dec, chunk, 4096, &got);
+        // miniaudio may return MA_AT_END together with the final partial block.
+        // Keep those frames before leaving; dropping them cuts tails and can make
+        // otherwise valid effects sound abruptly truncated.
+        if (got > 0) out.insert(out.end(), chunk, chunk + got);
+        if (result != MA_SUCCESS || got == 0) break;
+    }
     ma_decoder_uninit(&dec);
-    // Even out the loudness (so a quiet recording isn't lost next to the made-up sounds).
+
+    // Remove any DC offset before measuring level. Peak-only normalization made
+    // quiet recordings as loud as sharp transients and could exaggerate hiss.
+    if (out.empty()) return out;
+    double mean = 0.0;
+    for (float v : out) mean += v;
+    mean /= static_cast<double>(out.size());
+
+    double energy = 0.0;
     float peak = 0.0f;
-    for (float v : out) peak = std::max(peak, std::fabs(v));
-    if (peak > 0.01f) for (float& v : out) v *= 0.8f / peak;
+    for (float& v : out) {
+        v -= static_cast<float>(mean);
+        energy += static_cast<double>(v) * v;
+        peak = std::max(peak, std::fabs(v));
+    }
+
+    const float rms = static_cast<float>(std::sqrt(energy / out.size()));
+    if (rms > 1e-5f) {
+        // A restrained RMS target makes recordings more consistent without
+        // flattening their transients. Gain limits prevent near-silent source
+        // files from being amplified into noise.
+        float gain = std::clamp(0.16f / rms, 0.35f, 2.0f);
+        if (peak * gain > 0.82f) gain = 0.82f / peak;
+        for (float& v : out) v *= gain;
+    }
     return out;
 }
 // Real recordings come in takes ("hit_metal_1", "hit_metal_2"...): asking for "hit_metal"

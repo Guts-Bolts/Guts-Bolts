@@ -3,7 +3,8 @@
 Recorded sounds the engine uses for hits, breaking, footsteps, fire, breathing,
 splashes, thunder and bullets going past. All of them are **CC0** (public domain: free to
 use, change and share, no credit needed). We still say where they came from,
-because it's nice. They were cut shorter, made mono and saved as Ogg.
+because it's nice. Existing recordings were cut shorter, made mono and saved as Ogg;
+the Kenney interface subset below is preserved as its original Ogg files.
 
 | Files | Pack | By | Where |
 |---|---|---|---|
@@ -22,6 +23,13 @@ because it's nice. They were cut shorter, made mono and saved as Ogg.
 | `quake_rumble` | Earthquake and Open Sesame | mieki256 | https://opengameart.org/content/earthquake-and-open-sesame |
 | `storm_wind` | Wind Whoosh Loop | SketchMan3 | https://opengameart.org/content/wind-whoosh-loop |
 | `whiz_*` | Swishes Sound Pack | artisticdude | https://opengameart.org/content/swishes-sound-pack |
+| `click_1`, `open_1`, `close_1`, `toggle_1`, `notification_1` | Interface Sounds 1.0 (original OGG files; CC0-1.0) | Kenney | https://kenney.nl/assets/interface-sounds |
+
+The five Kenney files are mapped as follows: `click_1.ogg` = `click_001.ogg`,
+`open_1.ogg` = `open_001.ogg`, `close_1.ogg` = `close_001.ogg`,
+`toggle_1.ogg` = `toggle_001.ogg`, and `notification_1.ogg` = `bong_001.ogg`.
+The upstream pack's CC0 notice is included in its source repository's review record:
+https://github.com/hipdiscovery/Free-Sound-Effects/blob/master/docs/SOURCES.md
 
 Adding one: drop a short mono `.ogg` named `<sound>_<n>.ogg` in this folder (all the
 `_<n>` takes of a sound are picked from at random) and list it here. CMake bakes every
