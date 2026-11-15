@@ -269,7 +269,7 @@ async function route(request, env, ctx) {
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
     const supabaseHealthPath = url.pathname === '/api/supabase/health' || url.pathname === '/api/supabase/live';
     const supabaseActivityPath = /^\/api\/activity\/(auctions|forum)$/.test(url.pathname);
-    const kind = picture ? 'picture' : (url.pathname === '/ws' || url.pathname === '/ws/remote' || url.pathname === '/ws/infrastructure') ? 'ws' : url.pathname === '/api' || url.pathname === '/api/remote' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath || stripePath ? 'api' : mcp ? 'mcp' : '';
+    const kind = picture ? 'picture' : (url.pathname === '/ws' || url.pathname === '/ws/remote' || url.pathname === '/ws/infrastructure') ? 'ws' : url.pathname === '/api' || url.pathname === '/api/remote' || url.pathname === '/api/infrastructure' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath || stripePath ? 'api' : mcp ? 'mcp' : '';
     let info = null;
     if (kind) {
       info = await check(request, env, url, kind);
