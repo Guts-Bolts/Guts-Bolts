@@ -67,4 +67,4 @@ The agent stores its credential under `%LOCALAPPDATA%\GutsAndBolts\NexusAgent`. 
 - GPU metrics are optional. Unsupported or unavailable GPU telemetry is displayed as unavailable, not zero.
 - Capability labels are agent observations, not proof that a workload is installed, configured, or ready for production.
 - Do not expose the agent's pairing code or local DPAPI credential.
-- This agent is telemetry-only. It does not accept remote commands. Workload orchestration will require a separately reviewed, narrowly scoped command protocol with per-action authorization, expiry, acknowledgements, and audit records.
+- The agent accepts only authenticated telemetry and narrowly scoped Ollama inference requests. It does not accept shell commands, arbitrary process execution, filesystem operations, or general remote-control commands. Any future workload orchestration requires a separately reviewed protocol with per-action authorization, expiry, acknowledgements, and audit records.
