@@ -113,6 +113,19 @@ export function installFyxaCloud(Cls) {
     }
     if (me.userId <= 0) return fail('Sign up to use Fyxa in the cloud. (Fyxa on your own computer with Ollama works without an account.)');
     if (name === 'fyxacloud.usage') return okay(this.fyxaCloudUsage(me, t));
+    if (name === 'fyxacloud.homeChat') {
+      if (!this.env.INFRA_CONTROL) return fail('G&B Home AI is not configured on this server.');
+      if (!Array.isArray(args.messages) || !args.messages.length || args.messages.length > 80)
+        return fail('Send a conversation containing 1–80 messages.');
+      if (JSON.stringify(args).length > 300 * 1024) return fail('This conversation is too large for G&B Home AI.');
+      const model = typeof args.model === 'string' ? args.model : '';
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model)) return fail('Choose a valid installed Ollama model name.');
+      const tools = (Array.isArray(args.tools) ? args.tools : []).filter((x) => x && x.function && x.function.name).slice(0, 64)
+        .map((x) => ({ type: 'function', function: { name: String(x.function.name).slice(0, 128),
+          description: String(x.function.description || '').slice(0, 4000),
+          parameters: x.function.parameters && typeof x.function.parameters === 'object' ? x.function.parameters : { type: 'object', properties: {} } } }));
+      return okay({ fyxaHome: { account: me.id, model, messages: args.messages, tools } });
+    }
     if (name !== 'fyxacloud.chat') return fail('Unknown request.');
     const u = this.fyxaCloudUsage(me, t);
     if (u.off) return fail('Fyxa in the cloud is switched off right now. Fyxa on your own computer (Ollama) still works.');
@@ -134,6 +147,18 @@ export function installFyxaCloud(Cls) {
   };
 
   // The second half of fyxacloud.chat: ask Workers AI (fetch() calls this, like translate()).
+  P.fyxaHomeAnswer = async function (answer) {
+    const job = answer && answer.fyxaHome;
+    if (!job || !this.env.INFRA_CONTROL) return fail('G&B Home AI is unavailable.');
+    try {
+      const result = await this.env.INFRA_CONTROL.getByName('registry').infer(job);
+      if (!result || !result.ok) return fail(result && result.body && result.body.error || 'No Nexus inference machine is available.');
+      return okay({ message: result.message });
+    } catch {
+      return fail('G&B Home AI could not reach the Nexus inference relay.');
+    }
+  };
+
   P.fyxaCloudAnswer = async function (answer) {
     const job = answer.fyxaCloud;
     const t = Math.floor(Date.now() / 1000);
