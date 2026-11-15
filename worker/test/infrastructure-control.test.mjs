@@ -89,6 +89,16 @@ test('Nexus allows only one active inference per node', async () => {
   assert.equal((await pending).body.ok, true);
 });
 
+test('Nexus lists only models reported by online, non-revoked machines', () => {
+  const { object } = makeNode({ models: ['qwen3:8b', 'llama3.2:3b'], toolModels: ['qwen3:8b'] });
+  const result = object.listInferenceModels();
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.models, [
+    { name: 'llama3.2:3b', onlineNodes: 1, toolCapableNodes: 0 },
+    { name: 'qwen3:8b', onlineNodes: 1, toolCapableNodes: 1 },
+  ]);
+});
+
 test('Nexus rejects malformed conversation roles before dispatch', async () => {
   const { object, sent } = makeNode();
   const result = await object.infer({ ...job, messages: [{ role: 'system-shell', content: 'run command' }] });
