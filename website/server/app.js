@@ -11,7 +11,7 @@ function say(text, kind = '') {
   message.className = 'notice' + (kind ? ' ' + kind : '');
 }
 async function api(action) {
-  const auth = await signedRequest('staff.database.stats', {});
+  const auth = await signedRequest('staff.check', {});
   const response = await fetch('/api/remote', {
     method: 'POST',
     credentials: 'same-origin',
@@ -72,7 +72,7 @@ async function refresh() {
   } catch (error) {
     $('connection').textContent = 'Access denied';
     $('connection').className = 'pill offline';
-    say(error.message + ' Sign in to the official Guts & Bolts account in the Player, then reload this page.', 'error');
+    say(error.message + ' Sign in to the official Guts & Bolts account on this website, in this same browser (the Player app doesn\'t count), then reload this page.', 'error');
   }
 }
 async function command(name, args = {}, confirmText = '') {

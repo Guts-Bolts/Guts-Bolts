@@ -123,14 +123,17 @@ async function handleRemoteControl(request, env, url) {
   const official = String(env.OFFICIAL || '').toLowerCase();
   if (!auth || typeof auth !== 'object' || Array.isArray(auth) ||
       Object.keys(auth).sort().join(',') !== 'account,args,nonce,op,sig,time' ||
-      auth.op !== 'staff.database.stats' ||
+      auth.op !== 'staff.check' ||
       typeof auth.account !== 'string' || auth.account.toLowerCase() !== official ||
       !auth.args || typeof auth.args !== 'object' || Array.isArray(auth.args) || Object.keys(auth.args).length !== 0) {
     return reply({ ok: false, error: 'Only the official Guts&Bolts account can manage the home server.' }, 401);
   }
   // Verify the signed, nonce-protected Guts&Bolts account request on the authoritative server.
   const verified = await serverAsk(env, auth);
-  if (!verified || !verified.ok) return reply({ ok: false, error: 'Staff authentication failed. Sign in again.' }, 401);
+  if (!verified || !verified.ok) {
+    const why = verified && typeof verified.error === 'string' ? ' (' + verified.error.slice(0, 160) + ')' : '';
+    return reply({ ok: false, error: 'Staff sign-in check failed' + why + '.' }, 401);
+  }
   const action = body.action;
   if (!action || typeof action !== 'object' || Array.isArray(action)) return reply({ ok: false, error: 'Bad action.' }, 400);
   const stub = env.REMOTE_CONTROL.getByName('home');

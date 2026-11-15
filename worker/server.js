@@ -3251,6 +3251,11 @@ export class GbServerObject extends DurableObject {
       if (this.env.SUPABASE_URL && this.env.SUPABASE_SECRET_KEY) out.supabase = { numbers: true };
       return okay(out);
     }
+    // Just "is this account staff?" (the home server page, worker/index.js, signs in with this).
+    if (name === 'staff.check') {
+      if (!this.isStaff(me)) return fail('Only staff can do this.');
+      return okay({ staff: true, official: this.isOfficial(me) });
+    }
     if (name === 'staff.database.stats') {
       if (!this.isStaff(me)) return fail('Only staff can view database diagnostics.');
       return okay({ database: this.databaseDiagnostics() });

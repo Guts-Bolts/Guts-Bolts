@@ -134,10 +134,12 @@ test('the Lyreto gateway: link with a code, messages both ways, signatures check
   };
   assert.match((await signed({ op: 'bridge.link', args: { code, channel: 'ch1', name: 'general' } }, 'wrong-secret-0123456789')).error, /signature/);
   assert.match((await signed({ op: 'bridge.link', args: { code, channel: 'ch1', name: 'general' } }, SECRET, 1)).error, /time/);
-  const linked = await signed({ op: 'bridge.link', args: { code, channel: 'ch1', name: 'general' } });
+  // (Both sends use the same time, so the repeat is byte-for-byte the same request even across a second boundary.)
+  const linkTime = Math.floor(Date.now() / 1000);
+  const linked = await signed({ op: 'bridge.link', args: { code, channel: 'ch1', name: 'general' } }, SECRET, linkTime);
   assert.ok(linked.ok, linked.error);
   assert.equal(linked.chat, group);
-  assert.match((await signed({ op: 'bridge.link', args: { code, channel: 'ch1', name: 'general' } })).error, /Already done/, 'the same request can\'t be sent twice');
+  assert.match((await signed({ op: 'bridge.link', args: { code, channel: 'ch1', name: 'general' } }, SECRET, linkTime)).error, /Already done/, 'the same request can\'t be sent twice');
   assert.match((await signed({ op: 'bridge.link', args: { code, channel: 'ch1', name: 'general', n: 2 } })).error, /wrong or too old/, 'a code works once');
   assert.equal(s.call(bob, 'chat.inbox', {}).chats[0].bridge.name, 'general');
 
