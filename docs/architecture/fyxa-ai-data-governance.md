@@ -1,6 +1,6 @@
 # Fyxa AI data governance and training architecture
 
-**Status:** Proposed architecture; documentation only. No production behavior, database schema, consent flow, or training pipeline is implemented by this document.
+**Status:** Architecture and rollout requirements. Account preferences, per-asset eligibility, audit history, and limited response-quality telemetry are implemented. A staff-only, bounded game-source screening preview is also implemented. Dataset export, frozen manifests, age safeguards, model training, evaluation, and release controls remain unimplemented.
 
 **Scope:** Define how Guts & Bolts may make eligible community content available to Fyxa AI while preserving user rights, privacy, account controls, and traceable model provenance.
 
