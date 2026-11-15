@@ -1941,9 +1941,11 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
     json j = json::parse(body, nullptr, false);
     if (status != 200 || !j.is_object() || !j.contains("message") || !j["message"].is_object()) {
         std::string why = j.is_object() ? j.value("error", error) : error;
-        if (m_provider == "cloud")   // the server's own words (daily limit, switched off...)
-            m_lines.push_back({Line::Error, "Fyxa's cloud: " + (why.empty() ? std::string("no answer") + (status ? " (" + std::to_string(status) + ")" : std::string()) + "." : why)});
-        else
+        if (m_provider == "cloud" || m_provider == "home") {
+            const std::string providerName = m_provider == "home" ? "G&B Home AI" : "Fyxa's cloud";
+            m_lines.push_back({Line::Error, providerName + ": " +
+                (why.empty() ? std::string("no answer") + (status ? " (" + std::to_string(status) + ")" : std::string()) + "." : why)});
+        } else
             m_lines.push_back({Line::Error, "Couldn't reach the Ollama server" +
                 (status ? " (" + std::to_string(status) + ")" : std::string()) + (why.empty() ? "." : ": " + why)});
         while (!m_messages.empty() && m_messages.back().value("role", "") == "user") m_messages.erase(m_messages.size() - 1);
