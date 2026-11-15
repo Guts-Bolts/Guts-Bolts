@@ -42,6 +42,10 @@ The existing `/api/remote` and `/ws/remote` system remains responsible for the l
 
 The Worker configuration adds the `INFRA_CONTROL` Durable Object binding and migration `v3`. Deploy the Worker using the repository's normal Wrangler release process so Cloudflare creates the new SQLite-backed Durable Object class. No new secrets or external database credentials are required for this milestone.
 
+### Updating an already paired machine
+
+Existing Nexus agents must be updated to version `0.2.0` to advertise Ollama models and accept scoped inference requests. Download the updated agent from the deployed repository revision, stop the old process, replace the script, and restart it as the same Windows user. The existing DPAPI-protected pairing credential is reused; pairing again is not required.
+
 ## Pair a Windows machine
 
 1. Sign in to the official G&B owner account in the same browser profile that will open the console.
