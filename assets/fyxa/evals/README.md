@@ -7,6 +7,7 @@ This directory contains source-grounded evaluation cases for Fyxa's Guts & Bolts
 ## Data rules
 
 - Every expected fact must be supported by the listed repository source.
+- The seed knowledge manifest contains only first-party repository documentation and implementation files and labels them `reference_only`.
 - Prefer executable engine help, implementation, and current engine documentation over assumptions based on Roblox.
 - Treat compatibility as granular: supported, partial, missing, or unverified. Never infer full parity from a familiar API name.
 - Keep the expected answer focused on what the source proves. The model may add clearly labelled inference, but must not present inference as engine behavior.
@@ -46,4 +47,4 @@ The initial set is deliberately small. Expand it from real, anonymized failure m
 
 ## Validation
 
-Run `python tools/validate_fyxa_eval.py` from the repository root. The validator checks JSONL syntax, required fields, unique IDs, allowed tool-intent labels, and that every cited source path exists.
+Run `python tools/validate_fyxa_eval.py` from the repository root. The validator checks JSONL syntax, required fields, unique IDs, allowed tool-intent labels, the first-party/reference-only source manifest, and that every cited source path exists.
