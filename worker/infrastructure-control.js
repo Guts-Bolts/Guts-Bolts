@@ -260,8 +260,8 @@ export class InfrastructureObject extends DurableObject {
       try { status = JSON.parse(row.status || '{}'); } catch { return false; }
       return Array.isArray(status.models) && status.models.includes(job.model);
     }).sort((a, b) => {
-      const aa = this.nodes.get(a.id), bb = this.nodes.get(b.id);
-      return (Number(aa.status?.cpuPercent) || 0) - (Number(bb.status?.cpuPercent) || 0);
+      const load = (row) => { try { const status = JSON.parse(row.status || '{}'); return (Number(status.cpuPercent) || 0) + (Number(status.gpuPercent) || 0) * 0.25; } catch { return 1000; } };
+      return load(a) - load(b);
     });
     if (!candidates.length) return fail('No online Nexus machine currently reports the requested Ollama model. Check that Ollama is running and the model is installed.', 503);
     const nodeId = candidates[0].id, connection = this.nodes.get(nodeId), requestId = randomHex(16);
