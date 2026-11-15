@@ -1,5 +1,5 @@
 # G&B Nexus Infrastructure Agent
-# Windows PowerShell 5.1+. Read-only machine telemetry; no shell or remote command execution.
+# Windows PowerShell 5.1+. Telemetry and scoped local Ollama inference; no shell or arbitrary command execution.
 # Run as a normal, non-elevated Windows user.
 
 param(
