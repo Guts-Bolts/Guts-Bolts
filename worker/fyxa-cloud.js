@@ -113,6 +113,10 @@ export function installFyxaCloud(Cls) {
     }
     if (me.userId <= 0) return fail('Sign up to use Fyxa in the cloud. (Fyxa on your own computer with Ollama works without an account.)');
     if (name === 'fyxacloud.usage') return okay(this.fyxaCloudUsage(me, t));
+    if (name === 'fyxacloud.homeModels') {
+      if (!this.env.INFRA_CONTROL) return fail('G&B Home AI is not configured on this server.');
+      return okay({ fyxaHome: { modelsOnly: true } });
+    }
     if (name === 'fyxacloud.homeChat') {
       if (!this.env.INFRA_CONTROL) return fail('G&B Home AI is not configured on this server.');
       if (!Array.isArray(args.messages) || !args.messages.length || args.messages.length > 80)
@@ -151,7 +155,13 @@ export function installFyxaCloud(Cls) {
     const job = answer && answer.fyxaHome;
     if (!job || !this.env.INFRA_CONTROL) return fail('G&B Home AI is unavailable.');
     try {
-      const result = await this.env.INFRA_CONTROL.getByName('registry').infer(job);
+      const relay = this.env.INFRA_CONTROL.getByName('registry');
+      if (job.modelsOnly) {
+        const result = await relay.listInferenceModels();
+        if (!result || !result.ok) return fail('Nexus could not list its available models.');
+        return okay({ models: Array.isArray(result.models) ? result.models : [] });
+      }
+      const result = await relay.infer(job);
       if (!result || !result.body || !result.body.ok) return fail(result && result.body && result.body.error || 'No Nexus inference machine is available.');
       return okay({ message: result.body.message });
     } catch {
