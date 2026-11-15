@@ -287,6 +287,27 @@ export class InfrastructureObject extends DurableObject {
     });
   }
 
+  listInferenceModels() {
+    const t = now(), rows = [...this.sql.exec('SELECT id, status, last_seen, revoked FROM infra_devices')];
+    const models = new Map();
+    for (const row of rows) {
+      const connection = this.nodes.get(row.id);
+      if (row.revoked || !connection || !connection.authed || t - row.last_seen >= 45) continue;
+      let status = {};
+      try { status = JSON.parse(row.status || '{}'); } catch { continue; }
+      if (!Array.isArray(status.models)) continue;
+      const toolModels = new Set(Array.isArray(status.toolModels) ? status.toolModels : []);
+      for (const name of status.models) {
+        if (typeof name !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(name)) continue;
+        const entry = models.get(name) || { name, onlineNodes: 0, toolCapableNodes: 0 };
+        entry.onlineNodes++;
+        if (toolModels.has(name)) entry.toolCapableNodes++;
+        models.set(name, entry);
+      }
+    }
+    return { ok: true, models: [...models.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+  }
+
   async control(actor, body, ip = 'unknown') {
     actor = typeof actor === 'string' ? actor.toLowerCase() : '';
     if (!isHex(actor) || actor !== String(this.env.OFFICIAL || '').toLowerCase())
