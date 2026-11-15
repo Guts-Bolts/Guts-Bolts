@@ -153,3 +153,5 @@ footer { padding: 18px 3px; color: #7f8e9c; font-size: 11px; line-height: 1.7; }
 .infra-pair { margin-top: 18px; }
 @media (max-width: 680px) { .device-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 380px) { .device-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .device-head { flex-direction: column; } }
+
+body:not(.owner-ready) .panel, body:not(.owner-ready) footer { display: none; }
