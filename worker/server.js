@@ -5394,6 +5394,7 @@ export class GbServerObject extends DurableObject {
     this.sql.exec('DELETE FROM ai_memories WHERE account_id = ?', u.id);
     this.sql.exec('DELETE FROM ai_sessions WHERE account_id = ?', u.id);
     this.sql.exec('DELETE FROM ai_memory_audit WHERE account_id = ?', u.id);
+    this.sql.exec('DELETE FROM ai_learning_signals WHERE account_id = ?', u.id);
     this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
       (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
       VALUES (?, 0, 0, ?, ?, 'account_deleted', ?, ?)`, u.id, FYXA_AI_POLICY_VERSION, FYXA_AI_NOTICE_VERSION, t, t);
