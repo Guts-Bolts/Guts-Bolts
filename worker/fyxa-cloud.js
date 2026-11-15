@@ -152,8 +152,8 @@ export function installFyxaCloud(Cls) {
     if (!job || !this.env.INFRA_CONTROL) return fail('G&B Home AI is unavailable.');
     try {
       const result = await this.env.INFRA_CONTROL.getByName('registry').infer(job);
-      if (!result || !result.ok) return fail(result && result.body && result.body.error || 'No Nexus inference machine is available.');
-      return okay({ message: result.message });
+      if (!result || !result.body || !result.body.ok) return fail(result && result.body && result.body.error || 'No Nexus inference machine is available.');
+      return okay({ message: result.body.message });
     } catch {
       return fail('G&B Home AI could not reach the Nexus inference relay.');
     }
