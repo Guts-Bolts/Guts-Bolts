@@ -235,6 +235,7 @@ function renderInfrastructure(result) {
 async function refreshInfrastructure() {
   try {
     const result = await infraApi({ action: 'list' });
+    document.body.classList.add('owner-ready');
     renderInfrastructure(result);
   } catch (error) {
     say(error.message + ' Sign in to the official owner account in this browser, then reload.', 'error');
