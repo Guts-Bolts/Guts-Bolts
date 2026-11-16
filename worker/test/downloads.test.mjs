@@ -12,11 +12,27 @@ const claims = (ref = 'refs/heads/main', extra = {}) => ({
   workflow_ref: workflow + '@' + ref,
   ...extra,
 });
+const sysfixClaims = (extra = {}) => ({
+  repository: 'Guts-Bolts/Sysfix-Releases',
+  repository_id: '1158723688',
+  event_name: 'workflow_dispatch',
+  ref: 'refs/heads/main',
+  workflow_ref: 'Guts-Bolts/Sysfix-Releases/.github/workflows/publish-r2.yml@refs/heads/main',
+  ...extra,
+});
 
 test('download publishing accepts only the designated release workflow on main or version tags', () => {
   assert.equal(isTrustedReleaseClaims(claims()), true);
   assert.equal(isTrustedReleaseClaims(claims('refs/tags/v1.2.3')), true);
   assert.equal(isTrustedReleaseClaims(claims('refs/heads/feature/test')), false);
+});
+
+test('Sysfix release mirror accepts only its manual publisher workflow on main', () => {
+  assert.equal(isTrustedReleaseClaims(sysfixClaims()), true);
+  assert.equal(isTrustedReleaseClaims(sysfixClaims({ event_name: 'push' })), false);
+  assert.equal(isTrustedReleaseClaims(sysfixClaims({ repository_id: '1' })), false);
+  assert.equal(isTrustedReleaseClaims(sysfixClaims({ workflow_ref: 'Guts-Bolts/Sysfix-Releases/.github/workflows/other.yml@refs/heads/main' })), false);
+  assert.equal(isTrustedReleaseClaims(sysfixClaims({ ref: 'refs/heads/feature' })), false);
 });
 
 test('download publishing rejects tokens from other workflows and event types', () => {
