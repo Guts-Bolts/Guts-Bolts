@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isTrustedReleaseClaims, limitUploadStream, normalizeReleaseManifest } from '../downloads.js';
+import { canPublishProductUpload, isTrustedReleaseClaims, limitUploadStream, normalizeReleaseManifest } from '../downloads.js';
 
 const REPO = 'Guts-Bolts/Guts-Bolts';
 const workflow = REPO + '/.github/workflows/build.yml';
@@ -12,11 +12,36 @@ const claims = (ref = 'refs/heads/main', extra = {}) => ({
   workflow_ref: workflow + '@' + ref,
   ...extra,
 });
+const sysfixClaims = (extra = {}) => ({
+  repository: 'Guts-Bolts/Sysfix-Releases',
+  repository_id: '1158723688',
+  event_name: 'workflow_dispatch',
+  ref: 'refs/heads/main',
+  workflow_ref: 'Guts-Bolts/Sysfix-Releases/.github/workflows/publish-r2.yml@refs/heads/main',
+  ...extra,
+});
 
 test('download publishing accepts only the designated release workflow on main or version tags', () => {
   assert.equal(isTrustedReleaseClaims(claims()), true);
   assert.equal(isTrustedReleaseClaims(claims('refs/tags/v1.2.3')), true);
   assert.equal(isTrustedReleaseClaims(claims('refs/heads/feature/test')), false);
+});
+
+test('Sysfix release mirror accepts only its designated publisher workflow on main', () => {
+  assert.equal(isTrustedReleaseClaims(sysfixClaims()), true);
+  assert.equal(isTrustedReleaseClaims(sysfixClaims({ event_name: 'push' })), true);
+  assert.equal(isTrustedReleaseClaims(sysfixClaims({ repository_id: '1' })), false);
+  assert.equal(isTrustedReleaseClaims(sysfixClaims({ workflow_ref: 'Guts-Bolts/Sysfix-Releases/.github/workflows/other.yml@refs/heads/main' })), false);
+  assert.equal(isTrustedReleaseClaims(sysfixClaims({ ref: 'refs/heads/feature' })), false);
+});
+
+test('product upload publishers are confined to their own download namespace', () => {
+  const sysfix = sysfixClaims();
+  assert.equal(canPublishProductUpload(sysfix, 'sysfix', false), true);
+  assert.equal(canPublishProductUpload(sysfix, '', false), false);
+  assert.equal(canPublishProductUpload(sysfix, 'sysfix', true), false);
+  assert.equal(canPublishProductUpload(claims(), '', false), true);
+  assert.equal(canPublishProductUpload(claims(), 'sysfix', false), false);
 });
 
 test('download publishing rejects tokens from other workflows and event types', () => {

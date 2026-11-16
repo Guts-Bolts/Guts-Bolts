@@ -3,8 +3,11 @@
 //
 //   GET  /download/latest.json         the newest version and its files (the apps' update check)
 //   GET  /download/<file>              the newest copy of that file
-//   PUT  /download/upload/<file>?version=X   (the release workflow, with its GitHub token)
-//   POST /download/publish             (the release workflow) {version, name, notes, files}
+//   PUT  /download/upload/<file>?version=X   (the G&B release workflow, with its GitHub token)
+//   PUT  /download/upload/<file>?version=X&product=sysfix   (the Sysfix release mirror)
+//   GET  /download/products/sysfix/<version>/<file>        (a mirrored Sysfix release asset)
+//   GET  /download/products/sysfix/latest/<file>           (the newest mirrored Sysfix asset)
+//   POST /download/publish             (the G&B release workflow) {version, name, notes, files}
 //
 // Nightly test builds (the Player's opt-in "Nightly" channel) live apart from the
 // releases, so a test build can never replace or block the normal download:
@@ -30,17 +33,37 @@ function json(obj, status = 200) {
 const REPO = 'Guts-Bolts/Guts-Bolts';
 const ISSUER = 'https://token.actions.githubusercontent.com';
 const AUDIENCE = 'gutsandbolts.net';
-const REPOSITORY_ID = '1266919304';
-const RELEASE_WORKFLOW = REPO + '/.github/workflows/build.yml';
+const RELEASE_PUBLISHERS = {
+  [REPO]: {
+    repositoryId: '1266919304',
+    workflow: REPO + '/.github/workflows/build.yml',
+    events: ['push'],
+    refs: (ref) => ref === 'refs/heads/main' || (ref.startsWith('refs/tags/v') && /^[0-9]/.test(ref.slice('refs/tags/v'.length))),
+  },
+  'Guts-Bolts/Sysfix-Releases': {
+    repositoryId: '1158723688',
+    workflow: 'Guts-Bolts/Sysfix-Releases/.github/workflows/publish-r2.yml',
+    events: ['push', 'workflow_dispatch'],
+    refs: (ref) => ref === 'refs/heads/main',
+  },
+};
 
-// Only the repository's designated release workflow may publish downloads. A valid
+// Only explicitly designated release workflows may publish downloads. A valid
 // GitHub OIDC signature alone is not enough: other workflows can also request tokens.
 export function isTrustedReleaseClaims(claims) {
-  if (!claims || claims.repository !== REPO || claims.repository_id !== REPOSITORY_ID || claims.event_name !== 'push') return false;
+  if (!claims || typeof claims.repository !== 'string') return false;
+  const policy = RELEASE_PUBLISHERS[claims.repository];
+  if (!policy || claims.repository_id !== policy.repositoryId || !policy.events.includes(claims.event_name)) return false;
   const ref = claims.ref || '';
-  const versionTag = ref.startsWith('refs/tags/v') && /^[0-9]/.test(ref.slice('refs/tags/v'.length));
-  if (!(ref === 'refs/heads/main' || versionTag)) return false;
-  return claims.workflow_ref === RELEASE_WORKFLOW + '@' + ref;
+  if (!policy.refs(ref)) return false;
+  return claims.workflow_ref === policy.workflow + '@' + ref;
+}
+
+// A Sysfix publisher may write only to the Sysfix product namespace, never to
+// the Engine's top-level downloads or nightly channel.
+export function canPublishProductUpload(claims, product, nightly = false) {
+  if (claims?.repository === 'Guts-Bolts/Sysfix-Releases') return product === 'sysfix' && !nightly;
+  return product === '';
 }
 export function limitUploadStream(stream, maxBytes) {
   if (!stream) throw new TypeError('A release upload body is required.');
@@ -215,11 +238,11 @@ function uploadLength(request) {
 }
 
 // After a version's file is saved, it also becomes the newest copy people download.
-async function copyToLatest(env, versionKey, name, meta, toLatest = true) {
+async function copyToLatest(env, versionKey, name, meta, toLatest = true, latestKey = 'latest/' + name) {
   const stored = await env.DOWNLOADS.get(versionKey);
   if (!stored) return json({ ok: false, error: 'The release upload could not be verified.' }, 500);
   if (!toLatest) return json({ ok: true, size: stored.size });   // nightly files stay in nightly/
-  await env.DOWNLOADS.put('latest/' + name, knownLength(stored.body, stored.size), meta);
+  await env.DOWNLOADS.put(latestKey, knownLength(stored.body, stored.size), meta);
   return json({ ok: true, size: stored.size });
 }
 
@@ -230,7 +253,7 @@ async function copyToLatest(env, versionKey, name, meta, toLatest = true) {
 //   POST upload/<file>/finish?version=X&uploadId=U       { parts: [...] } -> { ok, size }
 // Every piece but the last must be the same size (split -b does that).
 export const MAX_RELEASE_PARTS = 40;
-export async function handleMultipartStep(request, env, url, step, name, versionKey, meta, toLatest = true) {
+export async function handleMultipartStep(request, env, url, step, name, versionKey, meta, toLatest = true, latestKey = 'latest/' + name) {
   if (step === 'start' && request.method === 'POST') {
     const upload = await env.DOWNLOADS.createMultipartUpload(versionKey, meta);
     return json({ ok: true, uploadId: upload.uploadId });
@@ -255,7 +278,7 @@ export async function handleMultipartStep(request, env, url, step, name, version
       return json({ ok: false, error: 'Bad part list.' }, 400);
     }
     await upload.complete(parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag })));
-    return copyToLatest(env, versionKey, name, meta, toLatest);
+    return copyToLatest(env, versionKey, name, meta, toLatest, latestKey);
   }
   return json({ ok: false, error: 'Bad upload.' }, 400);
 }
@@ -291,10 +314,14 @@ export async function handleDownload(request, env, url) {
     const [name, step = ''] = rest.slice('upload/'.length).split('/');
     const version = (url.searchParams.get('version') || '').replace(/^v/, '');
     const commit = url.searchParams.get('commit') || '';
+    const product = url.searchParams.get('product') || '';
+    if (!canPublishProductUpload(claims, product, nightly)) return json({ ok: false, error: 'This workflow cannot publish to that download channel.' }, 403);
     if (!FILE.test(name) || (nightly ? !COMMIT.test(commit) : !/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version))) return json({ ok: false, error: 'Bad upload.' }, 400);
     const meta = { httpMetadata: { contentType: 'application/octet-stream', contentDisposition: 'attachment; filename="' + name + '"' } };
-    const versionKey = nightly ? nightlyKey(commit, name) : version + '/' + name;
-    if (step) return handleMultipartStep(request, env, url, step, name, versionKey, meta, !nightly);
+    const productPrefix = product ? 'products/' + product + '/' : '';
+    const versionKey = nightly ? nightlyKey(commit, name) : productPrefix + version + '/' + name;
+    const latestKey = product ? productPrefix + 'latest/' + name : 'latest/' + name;
+    if (step) return handleMultipartStep(request, env, url, step, name, versionKey, meta, !nightly, latestKey);
     if (request.method !== 'PUT') return json({ ok: false, error: 'Bad upload.' }, 400);
     const length = uploadLength(request);
     if (length.error) return length.error;
@@ -302,10 +329,10 @@ export async function handleDownload(request, env, url) {
       await env.DOWNLOADS.put(versionKey, knownLength(limitUploadStream(request.body, MAX_RELEASE_FILE), length.value), meta);
     } catch (error) {
       if (error instanceof RangeError) return json({ ok: false, error: 'Release file is too large.' }, 413);
-      if (error && error.code === 'EMPTY_UPLOAD') return json({ ok: false, error: 'Empty file.' }, 400);
+      if (error && error.code === 'EMPTY_UPLOAD') return json({ ok: false, error: 'Release upload is empty.' }, 400);
       throw error;
     }
-    return copyToLatest(env, versionKey, name, meta, !nightly);
+    return copyToLatest(env, versionKey, name, meta, !nightly, latestKey);
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') return json({ ok: false, error: 'Use GET.' }, 405);
   if (rest === 'latest.json') {
@@ -317,6 +344,18 @@ export async function handleDownload(request, env, url) {
     const obj = await env.DOWNLOADS.get('nightly.json');
     if (!obj) return json({ ok: false, error: 'No nightly build yet.' }, 404);
     return new Response(obj.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } });
+  }
+  const productFile = /^products\/(sysfix)\/(latest|[0-9][0-9A-Za-z.-]{0,30})\/([^/]+)$/.exec(rest);
+  if (productFile) {
+    if (!FILE.test(productFile[3])) return new Response('Not found.', { status: 404 });
+    const productObject = await env.DOWNLOADS.get('products/' + productFile[1] + '/' + productFile[2] + '/' + productFile[3]);
+    if (!productObject) return new Response('That download isn\'t there yet.', { status: 404 });
+    const productHeaders = new Headers();
+    productObject.writeHttpMetadata(productHeaders);
+    productHeaders.set('etag', productObject.httpEtag);
+    productHeaders.set('content-length', String(productObject.size));
+    productHeaders.set('cache-control', 'public, max-age=300');
+    return new Response(request.method === 'HEAD' ? null : productObject.body, { headers: productHeaders });
   }
   const nightlyFile = /^nightly\/([0-9a-f]{40})\/([^/]+)$/.exec(rest);
   if (nightlyFile && !FILE.test(nightlyFile[2])) return new Response('Not found.', { status: 404 });
