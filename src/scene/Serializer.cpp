@@ -72,6 +72,7 @@ const char* kindName(NodeKind k) {
         case NodeKind::Prompt:       return "Prompt";
         case NodeKind::Highlight:    return "Highlight";
         case NodeKind::IKControl:    return "IKControl";
+        case NodeKind::SurfaceAppearance: return "SurfaceAppearance";
         case NodeKind::Trail:        return "Trail";
         case NodeKind::Beam:         return "Beam";
         case NodeKind::SoundGroup:   return "SoundGroup";
@@ -105,6 +106,7 @@ NodeKind kindFrom(const std::string& s) {
     if (s == "Prompt")       return NodeKind::Prompt;
     if (s == "Highlight")    return NodeKind::Highlight;
     if (s == "IKControl")    return NodeKind::IKControl;
+    if (s == "SurfaceAppearance") return NodeKind::SurfaceAppearance;
     if (s == "Trail")        return NodeKind::Trail;
     if (s == "Beam")         return NodeKind::Beam;
     if (s == "SoundGroup")   return NodeKind::SoundGroup;
@@ -1037,7 +1039,7 @@ json toJson(const SceneNode& n) {
     if (n.isEffect()) j["effect"] = Serializer::effectToJson(n.effect, n.enabled, n.kind == NodeKind::Beam);
     if (n.isPostEffect()) j["post"] = Serializer::postEffectToJson(n.post, n.enabled);
     if (n.isSky()) j["sky"] = Serializer::skyToJson(n.sky);
-    if (n.isMaterialVariant()) j["variant"] = Serializer::variantToJson(n.variant);
+    if (n.isMaterialVariant() || n.isSurfaceAppearance()) j["variant"] = Serializer::variantToJson(n.variant);
     if (n.isParticles()) j["particles"] = Serializer::particleToJson(n.particle, n.enabled);
     if (n.locked)   j["locked"]   = true;
     if (!n.tags.empty()) j["tags"] = n.tags;
@@ -1349,7 +1351,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     if (auto f = j.find("soundFx"); f != j.end() && f->is_object() && n->isSoundEffect()) Serializer::soundFromJson(*n, *f);
     if (auto e = j.find("post"); n->isPostEffect() && e != j.end() && e->is_object()) Serializer::postEffectFromJson(*e, n->post, n->enabled);
     if (auto e = j.find("sky"); n->isSky() && e != j.end() && e->is_object()) Serializer::skyFromJson(*e, n->sky);
-    if (auto e = j.find("variant"); n->isMaterialVariant() && e != j.end() && e->is_object()) Serializer::variantFromJson(*e, n->variant);
+    if (auto e = j.find("variant"); (n->isMaterialVariant() || n->isSurfaceAppearance()) && e != j.end() && e->is_object()) Serializer::variantFromJson(*e, n->variant);
     if (auto e = j.find("particles"); e != j.end() && e->is_object() && n->isParticles()) Serializer::particleFromJson(*e, n->particle, n->enabled);
     n->locked        = get<bool>(j, "locked", false);
     if (auto t = j.find("tags"); t != j.end() && t->is_array())

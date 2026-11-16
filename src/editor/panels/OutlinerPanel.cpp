@@ -283,7 +283,7 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
         {"Sound", {"SoundGroup", "ReverbSoundEffect", "EchoSoundEffect", "EqualizerSoundEffect", "DistortionSoundEffect",
                    "PitchShiftSoundEffect", "ChorusSoundEffect", "CompressorSoundEffect", "FlangeSoundEffect", "TremoloSoundEffect"}},
         {"Sky & Screen Effects", {"Sky", "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect"}},
-        {"Materials", {"MaterialVariant"}},
+        {"Materials", {"MaterialVariant", "SurfaceAppearance"}},
         {"Particles", {"ParticleEmitter", "Fire", "Smoke", "Sparkles"}},
         {"Water", {"Water", "WaterSource", "FluidVolume", "FluidSystem", "FluidEmitter"}},
         {"Constraints", {"Attachment", "Bone", "HingeConstraint", "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint",
@@ -508,6 +508,7 @@ std::string className(const SceneNode& n) {
         case NodeKind::Prompt:     return "ProximityPrompt";
         case NodeKind::Highlight:  return "Highlight";
         case NodeKind::IKControl:  return "IKControl";
+        case NodeKind::SurfaceAppearance: return "SurfaceAppearance";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n.post.type];
         case NodeKind::Sky:        return "Sky";
         case NodeKind::MaterialVariant: return "MaterialVariant";

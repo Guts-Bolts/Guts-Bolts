@@ -7,6 +7,7 @@ namespace MaterialUi {
 
 // Base material, the four pictures (with a Choose... button each), size and the sliders.
 // True if anything changed.
-bool edit(MaterialVariantProps& v);
+// surface: a SurfaceAppearance's (no BaseMaterial or StudsPerTile: it follows the mesh's UVs).
+bool edit(MaterialVariantProps& v, bool surface = false);
 
 } // namespace MaterialUi

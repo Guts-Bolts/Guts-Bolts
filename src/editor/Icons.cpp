@@ -617,6 +617,7 @@ Id forNode(const SceneNode& n) {
         case NodeKind::Prompt:     return Id::Prompt;
         case NodeKind::Highlight:  return Id::Highlight;
         case NodeKind::IKControl:  return Id::Attachment;
+        case NodeKind::SurfaceAppearance: return Id::Lighting;
         case NodeKind::PostEffect:
         case NodeKind::Sky:
         case NodeKind::MaterialVariant: return Id::Lighting;

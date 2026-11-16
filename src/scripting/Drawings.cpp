@@ -272,6 +272,33 @@ function AssetService:PromptPublishImageAsync(player, image, options)
         task.wait(0.1)
     end
 end
+-- A SurfaceAppearance from pictures: each of ColorMap, NormalMap, RoughnessMap and MetalnessMap
+-- may be an EditableImage (or Content.fromObject of one), a Library picture's ID (a number,
+-- "gb:123" or "rbxassetid://123") or a file, mixed as you like. Nothing is converted first.
+local surfaceKeys = { "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap" }
+function AssetService:CreateSurfaceAppearanceAsync(content)
+    if type(content) ~= "table" or getmetatable(content) == EditableImage then
+        error("CreateSurfaceAppearanceAsync({ ColorMap = ..., NormalMap = ..., RoughnessMap = ..., MetalnessMap = ... }) needs a table", 2)
+    end
+    for k in pairs(content) do
+        if not table.find(surfaceKeys, k) then
+            error("CreateSurfaceAppearanceAsync: " .. tostring(k) .. " isn't one of ColorMap, NormalMap, RoughnessMap, MetalnessMap", 2)
+        end
+    end
+    local sa = Instance.new("SurfaceAppearance")
+    for _, k in ipairs(surfaceKeys) do
+        local v = content[k]
+        if type(v) == "table" and getmetatable(v) == EditableImage then v = v.ContentId end
+        if v ~= nil then
+            if type(v) ~= "string" and type(v) ~= "number" then
+                sa:Destroy()
+                error("CreateSurfaceAppearanceAsync: " .. k .. " should be an EditableImage, a picture's ID or Content", 2)
+            end
+            sa[k] = v
+        end
+    end
+    return sa
+end
 function AssetService:IsA(c) return c == "AssetService" or c == "Instance" end
 setmetatable(AssetService, {
     __tostring = function() return "AssetService" end,

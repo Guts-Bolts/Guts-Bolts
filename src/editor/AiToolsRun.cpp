@@ -61,6 +61,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
         case NodeKind::IKControl: return "IKControl";
+        case NodeKind::SurfaceAppearance: return "SurfaceAppearance";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
         case NodeKind::Sky:       return "Sky";
         case NodeKind::MaterialVariant: return "MaterialVariant";
@@ -216,7 +217,7 @@ const char* const kLuaProperties[] = {
     "Responsiveness", "RigidityEnabled", "ReactionForceEnabled", "ReactionTorqueEnabled", "ApplyAtCenterOfMass",
     "RelativeTo", "Mode", "AlignType", "PrimaryAxisOnly", "ForceLimitMode", "ForceLimitsEnabled",
     "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart", "BreakForce", "Broken",
-    "MaterialVariant", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "OrmMap", "StudsPerTile",
+    "MaterialVariant", "SurfaceAppearance", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "OrmMap", "StudsPerTile",
     "Roughness", "Metalness", "Glow", "BoneType", "Target", "ChainLength", "Influence",
 };
 
@@ -2090,6 +2091,18 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     }
 
     if (name == "manage_game") return runPlatformTool(args);
+    if (name == "stress_test") {   // EditorStressTest.cpp
+        const json a = args.is_object() ? args : json::object();
+        const int device = stressDeviceIndex(a.value("device", std::string("cheap_phone")));
+        if (device < 0) return fail("INVALID_INPUT", "device is cheap_phone, mid_phone or old_laptop.", "Leave it out for a cheap phone.");
+        const std::string bg = a.value("background", std::string("normal"));
+        if (bg != "light" && bg != "normal" && bg != "heavy")
+            return fail("INVALID_INPUT", "background is light, normal or heavy.", "Leave it out for normal.");
+        if (m_playing) return fail("PLAYING", "Stop the playtest first: the stress test copies the game as it is in Studio.", "playtest stop, then stress_test.");
+        const json r = stressTest(device, bg == "light" ? 0 : bg == "normal" ? 1 : 2, a.value("crates", 500), a.value("seconds", 2.0f));
+        if (r.contains("error")) return fail("STRESS_TEST_FAILED", r.value("error", ""), "");
+        return done(r);
+    }
     if (name == "phone_check") {   // EditorPhoneTest.cpp
         const std::string device = args.is_object() ? args.value("device", std::string("cheap_phone")) : std::string("cheap_phone");
         if (device != "cheap_phone" && device != "mid_phone" && device != "old_laptop")

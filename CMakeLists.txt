@@ -930,6 +930,7 @@ set(EDITOR_SOURCES
     src/editor/EditorOnline.cpp
     src/editor/EditorPlatform.cpp
     src/editor/EditorPhoneTest.cpp
+    src/editor/EditorStressTest.cpp
     src/editor/EditorPluginPublish.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp
