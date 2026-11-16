@@ -58,6 +58,13 @@ export function isTrustedReleaseClaims(claims) {
   if (!policy.refs(ref)) return false;
   return claims.workflow_ref === policy.workflow + '@' + ref;
 }
+
+// A Sysfix publisher may write only to the Sysfix product namespace, never to
+// the Engine's top-level downloads or nightly channel.
+export function canPublishProductUpload(claims, product, nightly = false) {
+  if (claims?.repository === 'Guts-Bolts/Sysfix-Releases') return product === 'sysfix' && !nightly;
+  return product === '';
+}
 export function limitUploadStream(stream, maxBytes) {
   if (!stream) throw new TypeError('A release upload body is required.');
   const reader = stream.getReader();
@@ -309,7 +316,7 @@ export async function handleDownload(request, env, url) {
     const commit = url.searchParams.get('commit') || '';
     const product = url.searchParams.get('product') || '';
     const productPublisher = product === 'sysfix' && claims.repository === 'Guts-Bolts/Sysfix-Releases';
-    if (product && !productPublisher) return json({ ok: false, error: 'This workflow cannot publish that product.' }, 403);
+    if (!canPublishProductUpload(claims, product, nightly)) return json({ ok: false, error: 'This workflow cannot publish to that download channel.' }, 403);
     if (!FILE.test(name) || (nightly ? !COMMIT.test(commit) : !/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version))) return json({ ok: false, error: 'Bad upload.' }, 400);
     const meta = { httpMetadata: { contentType: 'application/octet-stream', contentDisposition: 'attachment; filename="' + name + '"' } };
     const productPrefix = product ? 'products/' + product + '/' : '';
