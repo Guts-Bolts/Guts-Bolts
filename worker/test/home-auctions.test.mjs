@@ -72,3 +72,11 @@ test('auction catalog discovery page features a live auction banner and refreshe
   assert.match(appSource, /if \(path\[0\] === 'catalog'\)[\s\S]*?hashParams\(\)\.get\('cat'\) !== 'auctions'/);
   assert.match(appSource, /section\.innerHTML = renderAuctionHomeSection\(r\.assets\)\.s/);
 });
+
+
+test('shared UI rendering strips standalone undefined placeholders from page and account markup', () => {
+  assert.ok(appSource.includes('function removeUndefinedPlaceholders(root)'));
+  assert.ok(appSource.includes('if (node.nodeValue.trim() === \'undefined\') remove.push(node);'));
+  assert.match(appSource, /function show\(content\)[\s\S]*?removeUndefinedPlaceholders\(view\)/);
+  assert.match(appSource, /function setMe\(m\)[\s\S]*?removeUndefinedPlaceholders\(box\)/);
+});
