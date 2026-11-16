@@ -3,8 +3,11 @@
 //
 //   GET  /download/latest.json         the newest version and its files (the apps' update check)
 //   GET  /download/<file>              the newest copy of that file
-//   PUT  /download/upload/<file>?version=X   (the release workflow, with its GitHub token)
-//   POST /download/publish             (the release workflow) {version, name, notes, files}
+//   PUT  /download/upload/<file>?version=X   (the G&B release workflow, with its GitHub token)
+//   PUT  /download/upload/<file>?version=X&product=sysfix   (the Sysfix release mirror)
+//   GET  /download/products/sysfix/<version>/<file>        (a mirrored Sysfix release asset)
+//   GET  /download/products/sysfix/latest/<file>           (the newest mirrored Sysfix asset)
+//   POST /download/publish             (the G&B release workflow) {version, name, notes, files}
 //
 // Nightly test builds (the Player's opt-in "Nightly" channel) live apart from the
 // releases, so a test build can never replace or block the normal download:
