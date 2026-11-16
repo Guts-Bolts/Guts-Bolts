@@ -56,7 +56,7 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //                Attachment): little pictures that fly out of it (see ParticleProps)
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
                       FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector, Particles, Camera,
-                      PostEffect, Sky, SoundGroup, SoundEffect, MaterialVariant, IKControl };
+                      PostEffect, Sky, SoundGroup, SoundEffect, MaterialVariant, IKControl, SurfaceAppearance };
 
 // A sound effect's settings (kind == SoundEffect; `enabled` is Enabled). Which numbers mean
 // what depends on the type: SoundFx::params(type) names them (DecayTime, Delay, Level...).
@@ -918,6 +918,11 @@ public:
     bool isPrompt() const { return kind == NodeKind::Prompt; }
     bool isHighlight() const { return kind == NodeKind::Highlight; }
     bool isIkControl() const { return kind == NodeKind::IKControl; }
+    // A SurfaceAppearance, like Roblox's: put it in a part (a MeshPart, usually) and its pictures
+    // (ColorMap, NormalMap, RoughnessMap, MetalnessMap; ours: OrmMap) are laid on the mesh by its
+    // own UVs. Kept in `variant` (its BaseMaterial and StudsPerTile mean nothing here). Scripts
+    // make them from pictures, EditableImages or both: AssetService:CreateSurfaceAppearanceAsync.
+    bool isSurfaceAppearance() const { return kind == NodeKind::SurfaceAppearance; }
     bool isClickDetector() const { return kind == NodeKind::ClickDetector; }
     bool isEffect() const { return kind == NodeKind::Trail || kind == NodeKind::Beam; }
     bool isPostEffect() const { return kind == NodeKind::PostEffect; }

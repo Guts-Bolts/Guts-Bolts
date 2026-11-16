@@ -35,6 +35,7 @@ const char* PropertiesPanel::className(const SceneNode* node) const {
            : node->kind == NodeKind::Prompt   ? "ProximityPrompt"
            : node->kind == NodeKind::Highlight ? "Highlight"
            : node->kind == NodeKind::IKControl ? "IKControl"
+           : node->kind == NodeKind::SurfaceAppearance ? "SurfaceAppearance"
            : node->kind == NodeKind::PostEffect ? kPostEffectClassNames[(int)node->post.type]
            : node->kind == NodeKind::Sky      ? "Sky"
            : node->kind == NodeKind::MaterialVariant ? "MaterialVariant"
@@ -681,6 +682,17 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         PG::Spacing();
         ImGui::PushTextWrapPos(0);
         PG::TextDisabled("Put it in MaterialService. A part shows it when its Material is the BaseMaterial and its MaterialVariant is this one's name.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    if (node->isSurfaceAppearance()) {
+        PG::SeparatorText("SurfaceAppearance");
+        MaterialUi::edit(node->variant, true);
+        PG::Spacing();
+        ImGui::PushTextWrapPos(0);
+        PG::TextDisabled("Put it in a part (a MeshPart, usually): its pictures go on the mesh by the mesh's own UVs, like a shirt. "
+                         "Scripts can make one from EditableImages and picture IDs: AssetService:CreateSurfaceAppearanceAsync.");
         ImGui::PopTextWrapPos();
         return;
     }

@@ -1490,8 +1490,12 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             w.setMat4("uModel", glm::mat4(1.0f));
             w.setMat3("uNormalMat", glm::mat3(1.0f));
             w.setBool("uWaveMesh", true);
-            w.setFloat("uWaveAmp", wb->swell);
-            w.setFloat("uChop", OceanWaves::chop(wb->swell));
+            {   // (a big swell is the same sea made bigger: OceanWaves::stretch)
+                const float s = OceanWaves::stretch(wb->swell), a = wb->swell > 0.0f ? wb->swell / s : 0.0f;
+                w.setFloat("uWaveAmp", a);
+                w.setFloat("uOcStretch", s);
+                w.setFloat("uChop", OceanWaves::chop(a));
+            }
             {   // (how far apart the surface's points are: the same sum as buildWaterMesh)
                 const glm::vec3 size = wb->max - wb->min;
                 w.setFloat("uCell", std::max({0.5f, size.x / 179.0f, size.z / 179.0f}));
@@ -1556,6 +1560,7 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             w.setMat3("uNormalMat", glm::transpose(glm::inverse(glm::mat3(it.model))));
             w.setBool("uWaveMesh", false);
             w.setFloat("uWaveAmp", 0.0f);
+            w.setFloat("uOcStretch", 1.0f);
             w.setFloat("uChop", 0.0f);
             w.setBool("uHasFlowMap", false);
             w.setBool("uHasDye", false);
@@ -1786,11 +1791,20 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         for (const auto& c : ms->children)
             if (c->isMaterialVariant()) variants.emplace(c->name, c.get());
     // A part's MaterialVariant: its pictures, if the part's Material is the variant's BaseMaterial.
+    // A SurfaceAppearance in the part wins (its pictures go on by the mesh's own UVs).
     auto useVariant = [&](const SceneNode* node) {
-        if (node->materialVariant.empty() || variants.empty()) return false;
-        auto v = variants.find(node->materialVariant);
-        if (v == variants.end() || v->second->variant.base != node->material) return false;
-        const MaterialVariantProps& p = v->second->variant;
+        const MaterialVariantProps* found = nullptr;
+        bool meshUV = false;
+        for (const auto& c : node->children)
+            if (c->isSurfaceAppearance()) { found = &c->variant; meshUV = true; break; }
+        if (!found) {
+            if (node->materialVariant.empty() || variants.empty()) return false;
+            auto v = variants.find(node->materialVariant);
+            if (v == variants.end() || v->second->variant.base != node->material) return false;
+            found = &v->second->variant;
+        }
+        const MaterialVariantProps& p = *found;
+        m_lit->setBool("uVMeshUV", meshUV);
         const std::string* pics[] = {&p.colorMap, &p.normalMap};
         const char* names[] = {"uVColor", "uVNormal"};
         glm::vec4 has(0.0f);

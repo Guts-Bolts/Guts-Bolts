@@ -1125,9 +1125,9 @@ void Player::sitHereStep(float dt, bool jump, Physics& physics) {
     // Sitting on something that moves (a boat, a train): ride along with it.
     if (m_groundId)
         if (SceneNode* g = m_scene->findById(m_groundId)) {
-            const glm::mat4 change = g->worldMatrix() * glm::inverse(m_groundPrevM);
-            m_sitSpot = glm::vec3(change * glm::vec4(m_sitSpot, 1.0f));
-            r->transform.rotation.y += glm::degrees(std::atan2(change[2][0], change[2][2]));
+            float turn = 0.0f;
+            m_sitSpot = CharacterFooting::carry(m_groundPrevM, g->worldMatrix(), m_sitSpot, &turn);
+            r->transform.rotation.y += turn;
             m_groundPrevM = g->worldMatrix();
         }
     // The hips on the floor, legs out in front (the feet would be under the floor).
@@ -1348,11 +1348,11 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     m_platformVel = glm::vec3(0.0f);
     if (m_groundId) {
         if (SceneNode* g = m_scene->findById(m_groundId)) {
-            glm::mat4 change = g->worldMatrix() * glm::inverse(m_groundPrevM);
-            glm::vec3 carried = glm::vec3(change * glm::vec4(pos, 1.0f));
+            float turn = 0.0f;
+            const glm::vec3 carried = CharacterFooting::carry(m_groundPrevM, g->worldMatrix(), pos, &turn);
             if (dt > 0.0f) m_platformVel = (carried - pos) / dt;
             pos = carried;
-            r->transform.rotation.y += glm::degrees(std::atan2(change[2][0], change[2][2]));
+            r->transform.rotation.y += turn;
         }
     }
 

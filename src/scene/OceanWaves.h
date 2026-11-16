@@ -61,6 +61,14 @@ inline constexpr float kPeakWave = 19.0f;
 // folds over itself.
 inline float chop(float amplitude) { return amplitude <= 0.0f ? 0.0f : 0.85f * std::min(1.0f, 0.8f / amplitude); }
 
+// A swell taller than 1 is the same sea made bigger in every direction (longer waves
+// as well as taller ones), not the same waves stretched upwards: stretched upwards, a
+// swell of 4 turned the short chop into tall needles four times too steep (a field of
+// white spikes). Real seas are like this too: bigger waves are longer. So the field is
+// read `stretch` times wider, and lifted by `stretch` times its height for a swell of
+// `amplitude / stretch` (at most 1).
+inline float stretch(float amplitude) { return std::max(1.0f, amplitude); }
+
 // One wave's starting size and timing: a complex number (re, im). `nx`, `nz` say which
 // wave of the band it is (how many crests fit across the square each way; negative =
 // the other way). The same numbers on every computer, for any grid size: a made-up

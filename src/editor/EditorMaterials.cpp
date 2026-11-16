@@ -44,11 +44,11 @@ std::string freeName(SceneNode* service, const std::string& want) {
 
 namespace MaterialUi {
 
-bool edit(MaterialVariantProps& v) {
+bool edit(MaterialVariantProps& v, bool surface) {
     bool changed = false;
     int base = (int)v.base;
-    if (ImGui::Combo("BaseMaterial", &base, kMaterialNames, kMaterialCount)) { v.base = (Material)base; changed = true; }
-    if (ImGui::IsItemHovered())
+    if (!surface && ImGui::Combo("BaseMaterial", &base, kMaterialNames, kMaterialCount)) { v.base = (Material)base; changed = true; }
+    if (!surface && ImGui::IsItemHovered())
         ImGui::SetTooltip("The built-in material it's made on: parts with this Material can use it,\nand they still weigh and grip like it.");
     struct Pic { const char* label; std::string* value; const char* tip; };
     const Pic pics[] = {
@@ -81,8 +81,8 @@ bool edit(MaterialVariantProps& v) {
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.tip);
         ImGui::PopID();
     }
-    if (ImGui::DragFloat("StudsPerTile", &v.studsPerTile, 0.1f, 0.1f, 1000.0f, "%.1f")) changed = true;
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("How big one copy of the pictures is on a part, in studs.");
+    if (!surface && ImGui::DragFloat("StudsPerTile", &v.studsPerTile, 0.1f, 0.1f, 1000.0f, "%.1f")) changed = true;
+    if (!surface && ImGui::IsItemHovered()) ImGui::SetTooltip("How big one copy of the pictures is on a part, in studs.");
     ImGui::BeginDisabled(!v.roughnessMap.empty());
     if (ImGui::SliderFloat("Roughness", &v.roughness, 0.0f, 1.0f)) changed = true;
     ImGui::EndDisabled();

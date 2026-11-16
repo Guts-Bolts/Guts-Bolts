@@ -165,10 +165,12 @@ void Field::update(float time) {
 
 glm::vec3 Field::offset(float x, float z, float amplitude, float edge) const {
     if (amplitude <= 0.0f) return glm::vec3(0.0f);
+    // (A big swell: the same sea, bigger. See stretch().)
+    const float s = stretch(amplitude), a = amplitude / s;
     glm::vec4 d(0.0f);
-    for (int b = 0; b < kCpuBands; ++b) d += read(m_disp[b].data(), kCpuN, x / kBand[b].length, z / kBand[b].length);
-    const float side = amplitude * chop(amplitude) * edge;
-    return glm::vec3(d.x * side, d.y * amplitude, d.z * side);
+    for (int b = 0; b < kCpuBands; ++b) d += read(m_disp[b].data(), kCpuN, x / (kBand[b].length * s), z / (kBand[b].length * s));
+    const float side = a * chop(a) * edge * s;
+    return glm::vec3(d.x * side, d.y * a * s, d.z * side);
 }
 
 float Field::heightAt(float x, float z, float amplitude, float edge) const {
