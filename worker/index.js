@@ -343,6 +343,12 @@ async function route(request, env, ctx) {
         return reply({ ok: false, error: 'Couldn\'t reach the Guts&Bolts server (' + (e && e.message || 'error') + '). Is it running?' });
       }
     }
+    // Give Sysfix a clean, shareable product URL while serving the static page file.
+    if (/^\/products\/sysfix\/?$/i.test(url.pathname)) {
+      const pageUrl = new URL('/products/sysfix.html', url.origin);
+      pageUrl.search = url.search;
+      return withAdsMeta(await env.ASSETS.fetch(new Request(pageUrl, request)), env);
+    }
     return withAdsMeta(await env.ASSETS.fetch(request), env);
 }
 
