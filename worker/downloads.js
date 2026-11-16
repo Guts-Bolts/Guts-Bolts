@@ -43,7 +43,7 @@ const RELEASE_PUBLISHERS = {
   'Guts-Bolts/Sysfix-Releases': {
     repositoryId: '1158723688',
     workflow: 'Guts-Bolts/Sysfix-Releases/.github/workflows/publish-r2.yml',
-    events: ['workflow_dispatch'],
+    events: ['push', 'workflow_dispatch'],
     refs: (ref) => ref === 'refs/heads/main',
   },
 };
