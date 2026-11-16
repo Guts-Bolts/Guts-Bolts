@@ -46,6 +46,7 @@ From then on, every change merged into `main` goes live on its own.
 ## Change it
 
 - Front page text: `index.html`. Pictures: `img/`.
+- Public product directory: `products.html` and `products.css`.
 - Site pages: `app/app.js` (one function per page), look: `app/app.css`.
 - The crypto (`app/gbcrypto.wasm`) is built by `tools/webcrypto/build.sh`. You only
   need to rebuild it if `tools/webcrypto/gbcrypto.c` changes.
