@@ -12,6 +12,16 @@ const claims = (ref = 'refs/heads/main', extra = {}) => ({
   workflow_ref: workflow + '@' + ref,
   ...extra,
 });
+
+const contentforgeClaims = (ref = 'refs/tags/v0.5.0', extra = {}) => ({
+  repository: 'Guts-Bolts/ContentForge',
+  repository_id: '1458913228',
+  event_name: 'push',
+  ref,
+  workflow_ref: 'Guts-Bolts/ContentForge/.github/workflows/release.yml@' + ref,
+  ...extra,
+});
+
 const sysfixClaims = (extra = {}) => ({
   repository: 'Guts-Bolts/Sysfix-Releases',
   repository_id: '1158723688',
@@ -35,11 +45,24 @@ test('Sysfix release mirror accepts only its designated publisher workflow on ma
   assert.equal(isTrustedReleaseClaims(sysfixClaims({ ref: 'refs/heads/feature' })), false);
 });
 
+test('ContentForge release mirror accepts only its tagged release workflow', () => {
+  assert.equal(isTrustedReleaseClaims(contentforgeClaims()), true);
+  assert.equal(isTrustedReleaseClaims(contentforgeClaims('refs/heads/main')), false);
+  assert.equal(isTrustedReleaseClaims(contentforgeClaims('refs/tags/vbeta')), false);
+  assert.equal(isTrustedReleaseClaims(contentforgeClaims('refs/tags/v0.5.0', { repository_id: '1' })), false);
+  assert.equal(isTrustedReleaseClaims(contentforgeClaims('refs/tags/v0.5.0', { workflow_ref: 'Guts-Bolts/ContentForge/.github/workflows/other.yml@refs/tags/v0.5.0' })), false);
+});
+
 test('product upload publishers are confined to their own download namespace', () => {
   const sysfix = sysfixClaims();
+  const contentforge = contentforgeClaims();
   assert.equal(canPublishProductUpload(sysfix, 'sysfix', false), true);
   assert.equal(canPublishProductUpload(sysfix, '', false), false);
   assert.equal(canPublishProductUpload(sysfix, 'sysfix', true), false);
+  assert.equal(canPublishProductUpload(contentforge, 'contentforge', false), true);
+  assert.equal(canPublishProductUpload(contentforge, '', false), false);
+  assert.equal(canPublishProductUpload(contentforge, 'sysfix', false), false);
+  assert.equal(canPublishProductUpload(contentforge, 'contentforge', true), false);
   assert.equal(canPublishProductUpload(claims(), '', false), true);
   assert.equal(canPublishProductUpload(claims(), 'sysfix', false), false);
 });
