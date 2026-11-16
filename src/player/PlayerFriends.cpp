@@ -144,7 +144,7 @@ void PlayerApp::playGame(const std::string& key, const std::string& title, Start
     m_playMsg = tries == 0 ? "Finding a server..." : "Starting a server...";
     // A game server machine may start the game for us (then we ask again in a moment).
     // If it takes too long, we host it ourselves like before.
-    constexpr int kMostTries = 12;
+    constexpr int kMostTries = 60;  // retry every ~2 seconds for up to two minutes
     Online::request("servers.play", {{"game", key}, {"dedicated", tries < kMostTries}}, [this, key, title, start, tries](const json& r) {
         m_busy = false;
         m_playMsg.clear();
@@ -167,7 +167,7 @@ void PlayerApp::playPrivate(const std::string& key, const std::string& title, St
     if (tries == 0) startLoadingScreen(key, title);
     m_busy = true;
     m_playMsg = "Starting your private server...";
-    constexpr int kMostTries = 12;
+    constexpr int kMostTries = 60;  // retry every ~2 seconds for up to two minutes
     json args = {{"game", key}, {"dedicated", tries < kMostTries}};
     if (!code.empty()) args["code"] = code;
     Online::request("servers.private", args, [this, key, title, start, tries](const json& r) {

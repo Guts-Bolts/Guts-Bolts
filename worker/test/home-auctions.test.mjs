@@ -64,3 +64,34 @@ test('in-app auction banner shows the starting bid until the first bid is placed
   assert.ok(appSource.includes("bidSummary.hasBids ? 'CURRENT HIGH BID' : 'STARTING BID'"));
   assert.ok(appSource.includes('bolts(bidSummary.amount)'));
 });
+
+
+test('auction catalog discovery page features a live auction banner and refreshes it', () => {
+  assert.ok(appSource.includes('id="liveAuctionsCatalog"'));
+  assert.ok(appSource.includes('renderAuctionHomeSection(list)'));
+  assert.match(appSource, /if \(path\[0\] === 'catalog'\)[\s\S]*?hashParams\(\)\.get\('cat'\) !== 'auctions'/);
+  assert.match(appSource, /section\.innerHTML = renderAuctionHomeSection\(r\.assets\)\.s/);
+});
+
+
+test('Games discovery homepage refreshes its live auction shelf', () => {
+  assert.ok(appSource.includes("const auctionBox = html`<div id=\"liveAuctions\">"));
+  assert.match(appSource, /if \(path\[0\] !== 'games' && path\[0\] !== 'item' && path\[0\] !== 'catalog'\) return;/);
+  assert.match(appSource, /if \(path\[0\] === 'games'\) \{[\s\S]*?const r = await pageCall\('list', \{ kind: 'clothing', auctions: true, sort: 'ending', limit: 12 \}\);[\s\S]*?const section = \$\('#liveAuctions'\);[\s\S]*?section\.innerHTML = renderAuctionHomeSection\(r\.assets\)\.s/);
+  assert.match(appSource, /setInterval\(refreshLiveAuctions, 12000\)/);
+  assert.match(appSource, /event === 'auctions'\) \{ refreshActivityFeeds\(\); refreshLiveAuctions\(\); \}/);
+});
+
+test('shared UI rendering strips standalone undefined placeholders from page and account markup', () => {
+  assert.ok(appSource.includes('function removeUndefinedPlaceholders(root)'));
+  assert.ok(appSource.includes('if (node.nodeValue.trim() === \'undefined\') remove.push(node);'));
+  assert.match(appSource, /function show\(content\)[\s\S]*?removeUndefinedPlaceholders\(view\)/);
+  assert.match(appSource, /function setMe\(m\)[\s\S]*?removeUndefinedPlaceholders\(box\)/);
+});
+
+test('undefined placeholder cleanup also observes asynchronous page DOM updates', () => {
+  assert.match(appSource, /const view = \$\('#view'\);[\s\S]*?new MutationObserver\(/);
+  assert.match(appSource, /undefinedTextObserver\.observe\(view, \{ childList: true, characterData: true, subtree: true \}\)/);
+  assert.match(appSource, /if \(record\.type === 'characterData'\) removeUndefinedPlaceholders\(record\.target\)/);
+  assert.match(appSource, /for \(const node of record\.addedNodes \|\| \[\]\) removeUndefinedPlaceholders\(node\)/);
+});

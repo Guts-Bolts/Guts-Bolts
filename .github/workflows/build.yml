@@ -47,7 +47,7 @@ jobs:
       - name: Parse server scripts without executing them
         shell: pwsh
         run: |
-          foreach ($path in @("tools/Remote Server Agent.ps1", "tools/Install-GutsAndBoltsServer.ps1")) {
+          foreach ($path in @("tools/Remote Server Agent.ps1", "tools/Install-GutsAndBoltsServer.ps1", "tools/G&B Nexus Infrastructure Agent.ps1")) {
             $source = Get-Content -LiteralPath $path -Raw
             [void][scriptblock]::Create($source)
           }

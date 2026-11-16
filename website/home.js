@@ -193,7 +193,8 @@
     root.classList.toggle('last-five-minutes', urgency.key === 'last-five-minutes');
     root.classList.toggle('last-minute', urgency.key === 'last-minute');
     const head = element('div', 'auction-promo-head');
-    head.appendChild(element('h2', '', 'LIVE AUCTIONS'));
+    head.appendChild(element('span', 'auction-promo-ribbon', 'AUCTION'));
+    head.appendChild(element('h2', '', 'LIVE BIDDING'));
     head.appendChild(element('span', 'auction-promo-position',
       (active.findIndex((item) => String(item.id) === featuredId) + 1) + ' / ' + active.length + ' FEATURED'));
     const previous = element('button', 'auction-promo-control', '‹');

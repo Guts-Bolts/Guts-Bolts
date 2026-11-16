@@ -1841,6 +1841,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (me.userId == 0) return fail("Sign up first.");
         json r = okay(); r["playtimes"] = nullptr; return r;
     }
+    // Just "is this account staff?" (the website's home server page signs in with this).
+    if (name == "staff.check") {
+        if (!isStaff(me)) return fail("Only staff can do this.");
+        json r = okay(); r["staff"] = true; r["official"] = isOfficial(me); return r;
+    }
     if (name == "admin.numbers") {
         if (!isStaff(me)) return fail("Only staff can see this.");
         long long online = 0, playing = 0, games = 0, items = 0;

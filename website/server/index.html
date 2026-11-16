@@ -5,19 +5,22 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="dark">
-  <title>Home Server · Guts &amp; Bolts</title>
+  <title>G&amp;B Nexus · Owner Console</title>
   <link rel="stylesheet" href="/server/style.css">
   <script type="module" src="/server/app.js"></script>
 </head>
-<body>
+<body class="auth-pending">
   <main class="shell">
     <header class="top">
-      <div><a class="back" href="/app/">Guts &amp; Bolts</a><h1>Home server</h1><p class="muted">Private remote management</p></div>
+      <div><a class="back" href="/app/">Guts &amp; Bolts</a><h1>G&amp;B Nexus</h1><p class="muted">Private owner infrastructure console</p></div>
       <span id="connection" class="pill unknown">Checking access</span>
     </header>
-    <p id="message" class="notice" role="status">Checking your Guts &amp; Bolts account…</p>
+    <p id="message" class="notice" role="status">Verifying owner access…</p>
+    <section class="panel"><div class="panel-head"><div><h2>Infrastructure overview</h2><p class="muted">Live inventory of machines paired to your owner account.</p></div><button id="infra-refresh" class="button secondary">Refresh fleet</button></div><div class="metrics"><div class="metric"><span>Registered machines</span><strong id="infra-total">—</strong><small id="infra-online-detail">Awaiting owner verification</small></div><div class="metric"><span>Online machines</span><strong id="infra-online">—</strong><small>Heartbeat within 45 seconds</small></div><div class="metric"><span>AI-capable nodes</span><strong id="infra-ai">—</strong><small>Agent capability declaration</small></div><div class="metric"><span>GPU-equipped nodes</span><strong id="infra-gpu">—</strong><small>GPU telemetry available</small></div></div></section>
+    <section class="panel"><div class="panel-head"><div><h2>Machine fleet</h2><p class="muted">Pair additional Windows machines using the G&amp;B Nexus agent.</p></div></div><div id="infra-devices" class="device-list"><p class="muted">No infrastructure inventory loaded.</p></div><div class="pair-row infra-pair"><input id="infra-pair-code" autocomplete="off" spellcheck="false" placeholder="64-character pairing code from the new machine"><button class="button" id="infra-pair">Pair machine</button></div><p class="muted small">Pairing codes expire after five minutes. The agent connects outbound over TLS and does not open an inbound port.</p></section>
+    <section class="panel"><div class="panel-head"><div><h2>Infrastructure audit</h2><p class="muted">Recent machine pairing, connection, and revocation events.</p></div></div><ul id="infra-audit" class="audit"><li class="muted">No infrastructure events loaded.</li></ul></section>
     <section class="panel">
-      <div class="panel-head"><div><h2>Server status</h2><p class="muted" id="last-seen">No heartbeat received</p></div><button id="refresh" class="button secondary">Refresh</button></div>
+      <div class="panel-head"><div><h2>Legacy dedicated game server</h2><p class="muted" id="last-seen">No heartbeat received</p></div><button id="refresh" class="button secondary">Refresh</button></div>
       <div class="metrics">
         <div class="metric"><span>CPU</span><strong id="cpu">—</strong></div>
         <div class="metric"><span>Memory</span><strong id="memory">—</strong><small id="memory-detail"></small></div>
@@ -26,7 +29,7 @@
       </div>
     </section>
     <section class="panel">
-      <h2>Server controls</h2>
+      <h2>Legacy game server controls</h2>
       <p class="muted">Commands are allowlisted. This dashboard has no terminal or arbitrary command execution.</p>
       <div class="actions">
         <button class="button" data-command="start">Start</button>
@@ -43,7 +46,7 @@
       <button class="button secondary" id="save-auto">Save recovery setting</button>
     </section>
     <section class="panel">
-      <div class="panel-head"><div><h2>Device pairing</h2><p class="muted">Pair only while you are physically at the home PC.</p></div></div>
+      <div class="panel-head"><div><h2>Legacy game server pairing</h2><p class="muted">Pair only while you are physically at the home PC.</p></div></div>
       <p class="muted">The PC agent displays a one-time 256-bit code. Paste it here. The code expires after five minutes and is never stored in plaintext by the relay.</p>
       <div class="pair-row"><input id="pair-code" autocomplete="off" spellcheck="false" placeholder="Paste the 64-character pairing code"><button class="button" id="pair">Pair PC</button></div>
       <button class="button danger" id="revoke">Revoke device access</button>

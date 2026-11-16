@@ -40,6 +40,14 @@ test('homepage uses an external module instead of inline scripts', () => {
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/i);
 });
 
+test('homepage puts the live auction promotion before the hero', () => {
+  const html = readFileSync(new URL('../../website/index.html', import.meta.url), 'utf8');
+  assert.ok(html.indexOf('id="auction-feature"') < html.indexOf('id="hero"'));
+  const home = readFileSync(new URL('../../website/home.js', import.meta.url), 'utf8');
+  assert.match(home, /auction-promo-ribbon/);
+  assert.match(home, /auctions: true/);
+});
+
 test('browser signing key persistence encrypts before writing to localStorage', () => {
   const source = readFileSync(new URL('../../website/app/gb.js', import.meta.url), 'utf8');
   assert.match(source, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/);

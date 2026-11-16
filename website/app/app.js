@@ -42,12 +42,42 @@ function html(strings, ...vals) {
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
+// A missing value should never become visible UI text. The HTML template renderer
+// already omits JavaScript undefined values; this also catches literal
+// "undefined" placeholders introduced by raw HTML or direct DOM updates.
+function removeUndefinedPlaceholders(root) {
+  if (!root) return;
+  if (root.nodeType === Node.TEXT_NODE) {
+    if (root.nodeValue.trim() === 'undefined') root.remove();
+    return;
+  }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const remove = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeValue.trim() === 'undefined') remove.push(node);
+  }
+  remove.forEach((node) => node.remove());
+}
+
 function show(content) {
   view.innerHTML = content.s;
+  removeUndefinedPlaceholders(view);
   view.querySelectorAll('.lang-slot:empty').forEach((slot) => slot.append(languagePicker()));
   setTimeout(() => upgradeItemPictures(), 0);   // (item renders on every page)
 }
 const view = $('#view');
+
+// Some UI is populated asynchronously after show() has rendered the page. Watch
+// later DOM insertions and text updates too, so those paths cannot reintroduce
+// the same visible JavaScript placeholder.
+const undefinedTextObserver = typeof MutationObserver === 'undefined' ? null : new MutationObserver((records) => {
+  for (const record of records) {
+    if (record.type === 'characterData') removeUndefinedPlaceholders(record.target);
+    for (const node of record.addedNodes || []) removeUndefinedPlaceholders(node);
+  }
+});
+if (undefinedTextObserver) undefinedTextObserver.observe(view, { childList: true, characterData: true, subtree: true });
+
 // Render fenced code blocks as inert, copyable code. Never interpret code as HTML or execute it.
 function richText(value) {
   const source = String(value ?? '');
@@ -538,6 +568,7 @@ function setMe(m) {
   } else {
     box.innerHTML = html`<a href="#/signup">Sign Up</a> | <a href="#/login">Login</a>`.s;
   }
+  removeUndefinedPlaceholders(box);
   showWarning();
 }
 
@@ -1770,7 +1801,7 @@ pages.catalog = async () => {
   const priceOf = (a) => auctionOpen(a) ? html`bid ${bolts(a.auction.need)}`
     : a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
     : a.offsale ? raw('<span class="muted">Off sale</span>') : a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>');
-  show(html`${publicPreview ? html`<div class="box info"><b>Public player preview</b><p class="small">Hidden, exclusive and staff-review items are excluded using the same visibility rules players receive.</p><a class="btn small" href="#/catalog">Return to staff catalog</a></div>` : me.staff ? html`<p><a class="btn small" href="${browseLink({ public: '1' })}">View as Player</a></p>` : ''}${browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
+  show(html`${cat === 'auctions' ? html`<div id="liveAuctionsCatalog">${renderAuctionHomeSection(list)}</div>` : ''}${publicPreview ? html`<div class="box info"><b>Public player preview</b><p class="small">Hidden, exclusive and staff-review items are excluded using the same visibility rules players receive.</p><a class="btn small" href="#/catalog">Return to staff catalog</a></div>` : me.staff ? html`<p><a class="btn small" href="${browseLink({ public: '1' })}">View as Player</a></p>` : ''}${browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
     shown: browseSlice(list).map((a) => browseCard(a, '#/item/' + a.id, priceOf(a))), total: list.length,
     sorts: [...BROWSE_SORTS.slice(0, 2), ['favorited', 'Most Favorited'], ...BROWSE_SORTS.slice(2)],
     filters: [{ title: 'Price', key: 'price', options: [['', 'Any Price'], ['free', 'Free'], ['1-100', '1 - 100'], ['101-1000', '101 - 1,000'], ['over', 'Over 1,000']] },
@@ -5669,13 +5700,23 @@ async function refreshActivityFeeds() {
 async function refreshLiveAuctions() {
   if (auctionRefreshBusy || document.visibilityState !== 'visible') return;
   const path = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/');
-  if (path[0] !== 'home' && path[0] !== 'item') return;
+  if (path[0] !== 'games' && path[0] !== 'item' && path[0] !== 'catalog') return;
   auctionRefreshBusy = true;
   try {
-    if (path[0] === 'home') {
+    if (path[0] === 'games') {
       const r = await pageCall('list', { kind: 'clothing', auctions: true, sort: 'ending', limit: 12 });
       const section = $('#liveAuctions');
       if (!r.ok || !section || (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home') !== 'home') return;
+      section.innerHTML = renderAuctionHomeSection(r.assets).s;
+      tickCountdowns();
+      upgradeItemPictures();
+      return;
+    }
+    if (path[0] === 'catalog') {
+      if (hashParams().get('cat') !== 'auctions') return;
+      const r = await pageCall('list', { kind: 'clothing', auctions: true, sort: 'ending', limit: 12 });
+      const section = $('#liveAuctionsCatalog');
+      if (!r.ok || !section || hashParams().get('cat') !== 'auctions') return;
       section.innerHTML = renderAuctionHomeSection(r.assets).s;
       tickCountdowns();
       upgradeItemPictures();

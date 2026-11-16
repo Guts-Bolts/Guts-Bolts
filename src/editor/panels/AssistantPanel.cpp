@@ -1709,6 +1709,12 @@ void AssistantPanel::send(const std::string& text) {
                 "Multiple active tasks were found in saved data. Pause all but one task before Fyxa can continue task-bound work."});
         }
     }
+    m_turnLineStartIndex = m_lines.size();
+    ++m_learningGeneration;
+    m_learningSignalId.clear();
+    m_learningFeedbackSubmitted = false;
+    m_learningFeedbackPending = false;
+    m_learningFeedbackFailed = false;
     m_lines.push_back({Line::You, text});
     m_messages.push_back({{"role", "user"}, {"content", text}});
     std::string normalized = text;
@@ -1746,6 +1752,7 @@ static std::string fyxaSystemGuide() {
         "You help with Studio and game creation, playing and understanding games, and Guts & Bolts "
         "platform features such as accounts, friends, inventory, marketplace, and community services. "
         "You are not a Linux system helper. Adapt to the user's current Guts & Bolts context. "
+        "TOOL-FIRST EXECUTION: When the user's request requires inspecting, searching, creating, editing, running, or otherwise acting on a resource, and a relevant tool is available, issue the structured tool call instead of narrating an intention. Never write that you are using, calling, or about to call a tool as a substitute for actually calling it. Never print a tool name or example arguments as though that were execution. Continue with additional tool calls when the task requires them. Report an action as completed only after the corresponding tool returns a successful result; if no suitable tool is available, state that clearly and offer the best supported alternative. " 
         "Use only tools actually provided in this conversation. Never claim you can inspect or change "
         "an account, game session, inventory, listing, friend relationship, or other platform resource "
         "unless a corresponding tool is available and its result confirms the action. If a capability "
@@ -1779,13 +1786,16 @@ void AssistantPanel::requestNext() {
     const json nativeTools = FyxaToolSelection::selectNative(AiTools::mcpTools(), m_activeRequestText, m_discoveredToolNames, 24);
     const json localTools = fyxaAgentTools();
     const json externalTools = FyxaToolSelection::selectExternal(externalMcpTools(), m_activeRequestText, m_discoveredToolNames, 12);
-    const bool cloud = m_provider == "cloud";   // Guts&Bolts cloud (worker/fyxa-cloud.js): Ollama's shape, sent to our server
+    const bool cloud = m_provider == "cloud";   // Cloudflare Workers AI
+    const bool home = m_provider == "home";     // Paired Nexus machines running local Ollama
     const std::string payload = [&]() {
-        if (cloud) {
+        if (cloud || home) {
             json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
-            for (const auto& message : m_messages) messages.push_back(message);
-            return Online::signedRequest("fyxacloud.chat", {{"messages", messages},
-                                         {"tools", ollamaTools(nativeTools, localTools, externalTools)}}).dump();
+            const size_t firstMessage = home && m_messages.size() > 79 ? m_messages.size() - 79 : 0;
+            for (size_t i = firstMessage; i < m_messages.size(); ++i) messages.push_back(m_messages[i]);
+            json args = {{"messages", messages}, {"tools", ollamaTools(nativeTools, localTools, externalTools)}};
+            if (home) args["model"] = m_ollamaModel;
+            return Online::signedRequest(home ? "fyxacloud.homeChat" : "fyxacloud.chat", args).dump();
         }
         if (m_provider == "ollama") {
             json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
@@ -1823,12 +1833,12 @@ void AssistantPanel::requestNext() {
     const bool ollama = m_provider == "ollama";
     std::string host = ollama ? m_ollamaHost : "wss://api.anthropic.com";
     int port = ollama ? m_ollamaPort : 443;
-    if (cloud && (!Online::serverHostPort(host, port) || !Net::isWebAddress(host))) {
-        m_lines.push_back({Line::Error, "Fyxa's cloud only works with the gutsandbolts.net server. Fyxa on your own computer (Ollama) works anywhere."});
+    if ((cloud || home) && (!Online::serverHostPort(host, port) || !Net::isWebAddress(host))) {
+        m_lines.push_back({Line::Error, "G&B cloud and G&B Home AI require the gutsandbolts.net server. Direct Ollama works on your own network."});
         return;
     }
-    const std::string path = ollama ? "/api/chat" : cloud ? "/api" : "/v1/messages";
-    const std::string headers = ollama || cloud ? std::string() :
+    const std::string path = ollama ? "/api/chat" : (cloud || home) ? "/api" : "/v1/messages";
+    const std::string headers = ollama || cloud || home ? std::string() :
         "x-api-key: " + m_apiKey + "\r\nanthropic-version: 2023-06-01\r\n" +
         (m_model != "claude-haiku-4-5" ? "anthropic-beta: server-side-fallback-2026-07-01\r\n" : "");
     const auto cancel = m_agentCancel;
@@ -1841,7 +1851,7 @@ void AssistantPanel::requestNext() {
 }
 
 void AssistantPanel::handleReply(int status, const std::string& body, const std::string& error) {
-    if (m_provider == "ollama" || m_provider == "cloud") handleOllamaReply(status, body, error);
+    if (m_provider == "ollama" || m_provider == "cloud" || m_provider == "home") handleOllamaReply(status, body, error);
     else handleClaudeReply(status, body, error);
 }
 
@@ -1863,9 +1873,9 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
             m_lines.push_back({Line::Assistant, b["text"].get<std::string>()});
 
     const std::string stop = j.value("stop_reason", "");
-    if (stop == "refusal") { m_lines.push_back({Line::Note, "The assistant declined that request."}); return; }
-    if (stop == "max_tokens") { m_lines.push_back({Line::Note, "That answer hit the length limit. Say \"continue\" for more."}); return; }
-    if (stop != "tool_use") return;
+    if (stop == "refusal") { m_lines.push_back({Line::Note, "The assistant declined that request."}); recordLearningSignal(); return; }
+    if (stop == "max_tokens") { m_lines.push_back({Line::Note, "That answer hit the length limit. Say \"continue\" for more."}); recordLearningSignal(); return; }
+    if (stop != "tool_use") { recordLearningSignal(); return; }
     if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
 
     json results = json::array();
@@ -1932,9 +1942,11 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
     json j = json::parse(body, nullptr, false);
     if (status != 200 || !j.is_object() || !j.contains("message") || !j["message"].is_object()) {
         std::string why = j.is_object() ? j.value("error", error) : error;
-        if (m_provider == "cloud")   // the server's own words (daily limit, switched off...)
-            m_lines.push_back({Line::Error, "Fyxa's cloud: " + (why.empty() ? std::string("no answer") + (status ? " (" + std::to_string(status) + ")" : std::string()) + "." : why)});
-        else
+        if (m_provider == "cloud" || m_provider == "home") {
+            const std::string providerName = m_provider == "home" ? "G&B Home AI" : "Fyxa's cloud";
+            m_lines.push_back({Line::Error, providerName + ": " +
+                (why.empty() ? std::string("no answer") + (status ? " (" + std::to_string(status) + ")" : std::string()) + "." : why)});
+        } else
             m_lines.push_back({Line::Error, "Couldn't reach the Ollama server" +
                 (status ? " (" + std::to_string(status) + ")" : std::string()) + (why.empty() ? "." : ": " + why)});
         while (!m_messages.empty() && m_messages.back().value("role", "") == "user") m_messages.erase(m_messages.size() - 1);
@@ -1947,7 +1959,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
     if (!answer.empty()) m_lines.push_back({Line::Assistant, answer});
 
     const json calls = message.value("tool_calls", json::array());
-    if (!calls.is_array() || calls.empty()) return;
+    if (!calls.is_array() || calls.empty()) { recordLearningSignal(); return; }
     if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
 
     for (const auto& call : calls) {
@@ -2013,6 +2025,143 @@ void AssistantPanel::render(bool* open) {
         if (ImGui::SmallButton("Turn off##bypassbanner")) m_editor.setFyxaBypass(false);
     }
 
+    if (ImGui::BeginTabBar("##fyxa-tabs")) {
+        if (ImGui::BeginTabItem("Chat")) {
+    if (m_externalApprovalPending && !m_externalQueue.empty()) {
+        const ExternalCall& pendingCall = m_externalQueue.front();
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "External MCP action requires approval");
+        ImGui::TextWrapped("Fyxa wants to call: %s", pendingCall.name.c_str());
+        const json safeArguments = redactMcpArguments(pendingCall.args);
+        const std::string argumentText = safeArguments.dump(2);
+        ImGui::TextWrapped("Arguments:");
+        ImGui::BeginChild("##mcpapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
+        ImGui::TextUnformatted(argumentText.c_str());
+        ImGui::EndChild();
+        ImGui::TextWrapped("This action runs on the connected service. It may read, modify, or delete remote data and cannot necessarily be undone from Studio.");
+        if (ImGui::Button("Approve this action")) {
+            appendMcpAudit("approval", pendingCall.name, pendingCall.args,
+                           "approved-by-user", pendingCall.idempotencyKey);
+            m_externalApprovalGranted = true;
+            m_externalApprovalPending = false;
+            startNextExternalCall();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Deny")) {
+            ExternalCall denied = std::move(m_externalQueue.front());
+            m_externalQueue.pop_front();
+            appendMcpAudit("approval", denied.name, denied.args, "denied-by-user", denied.idempotencyKey);
+            const std::string message = "The user denied this external MCP action.";
+            m_lines.push_back({Line::Note, message});
+            if (denied.claude) {
+                m_deferredClaudeResults.push_back({{"type", "tool_result"}, {"tool_use_id", denied.id},
+                    {"content", message}, {"is_error", true}});
+            } else {
+                m_deferredOllamaMessages.push_back({{"role", "tool"}, {"name", denied.name},
+                    {"content", message}});
+            }
+            m_externalApprovalPending = false;
+            startNextExternalCall();
+        }
+    }
+
+    if (m_relay.approvalPending()) {
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "Connected app action requires approval");
+        ImGui::TextWrapped("App: %s", m_relay.pendingApp().c_str());
+        ImGui::TextWrapped("Tool: %s", m_relay.pendingTool().c_str());
+        ImGui::TextWrapped("Arguments (sensitive fields redacted):");
+        ImGui::BeginChild("##relayapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
+        ImGui::TextUnformatted(m_relay.pendingArguments().c_str());
+        ImGui::EndChild();
+        ImGui::TextWrapped("The connected app is requesting a Studio tool call. Review the arguments before allowing it.");
+        if (ImGui::Button("Approve connected-app action"))
+            m_relay.resolveApproval(true, m_editor, m_mcp);
+        ImGui::SameLine();
+        if (ImGui::Button("Deny connected-app action"))
+            m_relay.resolveApproval(false, m_editor, m_mcp);
+    }
+
+    const float footer = ImGui::GetFrameHeightWithSpacing() * 3.2f;
+    ImGui::BeginChild("##chat", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+    if (m_lines.empty())
+        ImGui::TextWrapped("I'm Fyxa, the AI agent for Guts&Bolts. I'm designed to help across the platform, including games, Studio, accounts, social features, inventory, and the marketplace. In this Studio session, I can use the native Studio tools and any connected MCP tools that you approve. Studio changes remain available in AI Activity for review and undo.");
+    for (const Line& line : m_lines) {
+        ImGui::PushTextWrapPos(0.0f);
+        switch (line.kind) {
+            case Line::You:       ImGui::TextColored(ImVec4(0.55f, 0.8f, 1, 1), "You:"); ImGui::TextUnformatted(line.text.c_str()); break;
+            case Line::Assistant: ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.45f, 1), "Fyxa:"); ImGui::TextUnformatted(line.text.c_str()); break;
+            case Line::Tool:      ImGui::TextDisabled("  > %s", line.text.c_str()); break;
+            case Line::Note:      ImGui::TextColored(ImVec4(1, 0.85f, 0.4f, 1), "%s", line.text.c_str()); break;
+            case Line::Error:     ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", line.text.c_str()); break;
+        }
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+    }
+    if (busy) ImGui::TextDisabled("Working%s", std::string((size_t)((int)(ImGui::GetTime() * 3) % 4), '.').c_str());
+    if (m_scrollDown) { ImGui::SetScrollHereY(1.0f); m_scrollDown = false; }
+    ImGui::EndChild();
+
+    if (!m_learningSignalId.empty() && !m_learningFeedbackSubmitted && !m_learningFeedbackPending) {
+        if (m_learningFeedbackFailed)
+            ImGui::TextColored(ImVec4(1, 0.65f, 0.35f, 1), "Feedback could not be saved. You can try again.");
+        ImGui::TextDisabled("Help Fyxa improve this response:");
+        if (ImGui::SmallButton("Helpful")) submitLearningFeedback(1, "helpful");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Incorrect")) submitLearningFeedback(-1, "incorrect");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Incomplete")) submitLearningFeedback(-1, "incomplete");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Irrelevant")) submitLearningFeedback(-1, "irrelevant");
+        if (ImGui::SmallButton("Tool failed")) submitLearningFeedback(-1, "tool_failure");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Unsafe")) submitLearningFeedback(-1, "unsafe");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Other")) submitLearningFeedback(-1, "other");
+    } else if (m_learningFeedbackPending) {
+        ImGui::TextDisabled("Sending feedback...");
+    } else if (m_learningFeedbackSubmitted) {
+        ImGui::TextDisabled("Feedback saved. Thank you.");
+    }
+
+    const bool configured = m_provider == "cloud" ? Online::configured()
+                          : m_provider == "ollama" ? (!m_ollamaHost.empty() && !m_ollamaModel.empty() && m_ollamaPort > 0)
+                                                    : !m_apiKey.empty();
+    ImGui::BeginDisabled(!configured);
+    ImGui::SetNextItemWidth(-1);
+    bool enter = ImGui::InputTextMultiline("##ask", &m_input, ImVec2(-1, ImGui::GetFrameHeight() * 1.9f),
+                                           ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue);
+    if (busy) {
+        if (agentBusy && ImGui::Button("Stop")) {
+            m_stopAsked = true;
+            if (m_agentCancel) m_agentCancel->store(true);
+        }
+    } else if ((enter || ImGui::Button("Send (Enter)")) && !m_input.empty()) {
+        send(m_input);
+        m_input.clear();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("New chat") && !busy) {
+        ++m_learningGeneration;
+        m_learningSignalId.clear();
+        m_learningFeedbackSubmitted = false;
+        m_learningFeedbackPending = false;
+        m_learningFeedbackFailed = false;
+        m_activeRequestText.clear();
+        m_discoveredToolNames.clear();
+        m_messages = json::array();
+        m_lines.clear();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(m_editor.aiHasChanges() ? "Review its changes" : "AI Activity")) m_editor.showAiActivity();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everything Fyxa did and changed. Undo all of it in one click.");
+    if (!configured) ImGui::TextDisabled(m_provider == "cloud" ? "Sign in to a Guts&Bolts server to use Fyxa's cloud." :
+                                         m_provider == "ollama" ? "Configure the Ollama server and model in Assistant settings." :
+                                                                  "Add your Anthropic API key in Assistant settings.");
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Settings")) {
     if (ImGui::CollapsingHeader("Fyxa settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Bypass permissions mode: for people who want Fyxa to just get on with it. Off every time
         // Studio starts, and turning it on asks once more, so it is never on by accident.
@@ -2040,11 +2189,12 @@ void AssistantPanel::render(bool* open) {
             ImGui::EndPopup();
         }
         ImGui::Separator();
-        const char* providers[] = {"Ollama (your own GPU, free)", "Claude (Anthropic)", "Guts&Bolts cloud (daily limit)"};
-        int provider = m_provider == "claude" ? 1 : m_provider == "cloud" ? 2 : 0;
-        if (ImGui::Combo("AI provider", &provider, providers, 3)) {
-            m_provider = provider == 0 ? "ollama" : provider == 1 ? "claude" : "cloud";
+        const char* providers[] = {"Ollama (this computer)", "Claude (Anthropic)", "Guts&Bolts cloud (daily limit)", "G&B Home AI (G&B servers)"};
+        int provider = m_provider == "claude" ? 1 : m_provider == "cloud" ? 2 : m_provider == "home" ? 3 : 0;
+        if (ImGui::Combo("AI provider", &provider, providers, 4)) {
+            m_provider = provider == 0 ? "ollama" : provider == 1 ? "claude" : provider == 2 ? "cloud" : "home";
             if (m_provider == "cloud") refreshCloudUsage();
+            else if (m_provider == "home") refreshHomeModels();
             m_messages = json::array();
             m_lines.clear();
             save();
@@ -2059,6 +2209,34 @@ void AssistantPanel::render(bool* open) {
                 ImGui::TextWrapped("%s", m_cloudUsage.value("error", std::string("Couldn't check your daily limit.")).c_str());
             if (ImGui::SmallButton("Check my daily limit")) refreshCloudUsage();
             ImGui::TextDisabled("One step = one answer from the AI. A task that uses tools takes a few.");
+        } else if (m_provider == "home") {
+            if (m_homeModelsStatus.empty()) refreshHomeModels();
+            ImGui::TextWrapped("Fyxa sends requests through G&B Nexus to G&B's online home-compute machines. The selected model must already be installed in Ollama on one of those machines.");
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputTextWithHint("Nexus model", "qwen3:8b", &m_ollamaModel)) save();
+            if (ImGui::BeginCombo("Available models", m_ollamaModel.c_str())) {
+                if (m_homeModels.is_array()) {
+                    for (const auto& model : m_homeModels) {
+                        const std::string name = model.value("name", std::string());
+                        if (name.empty()) continue;
+                        const bool selected = name == m_ollamaModel;
+                        std::string label = name + " (" + std::to_string(model.value("onlineNodes", 0)) + " machine(s)";
+                        if (model.value("toolCapableNodes", 0) > 0)
+                            label += ", " + std::to_string(model.value("toolCapableNodes", 0)) + " tool-capable";
+                        label += ")";
+                        if (ImGui::Selectable(label.c_str(), selected)) {
+                            m_ollamaModel = name;
+                            save();
+                        }
+                        if (selected) ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Refresh models")) refreshHomeModels();
+            if (!m_homeModelsStatus.empty()) ImGui::TextWrapped("%s", m_homeModelsStatus.c_str());
+            ImGui::TextDisabled("Nexus runs one inference request per machine at a time. The agent must be online with Ollama running.");
         } else if (m_provider == "ollama") {
             ImGui::TextWrapped("Fyxa connects directly to an Ollama server. The default address is local to this computer; install and start Ollama, then pull a model that supports tool calling.");
             ImGui::SetNextItemWidth(-1);
@@ -2265,44 +2443,6 @@ void AssistantPanel::render(bool* open) {
         ImGui::EndDisabled();
     }
 
-    if (m_externalApprovalPending && !m_externalQueue.empty()) {
-        const ExternalCall& pendingCall = m_externalQueue.front();
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "External MCP action requires approval");
-        ImGui::TextWrapped("Fyxa wants to call: %s", pendingCall.name.c_str());
-        const json safeArguments = redactMcpArguments(pendingCall.args);
-        const std::string argumentText = safeArguments.dump(2);
-        ImGui::TextWrapped("Arguments:");
-        ImGui::BeginChild("##mcpapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
-        ImGui::TextUnformatted(argumentText.c_str());
-        ImGui::EndChild();
-        ImGui::TextWrapped("This action runs on the connected service. It may read, modify, or delete remote data and cannot necessarily be undone from Studio.");
-        if (ImGui::Button("Approve this action")) {
-            appendMcpAudit("approval", pendingCall.name, pendingCall.args,
-                           "approved-by-user", pendingCall.idempotencyKey);
-            m_externalApprovalGranted = true;
-            m_externalApprovalPending = false;
-            startNextExternalCall();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Deny")) {
-            ExternalCall denied = std::move(m_externalQueue.front());
-            m_externalQueue.pop_front();
-            appendMcpAudit("approval", denied.name, denied.args, "denied-by-user", denied.idempotencyKey);
-            const std::string message = "The user denied this external MCP action.";
-            m_lines.push_back({Line::Note, message});
-            if (denied.claude) {
-                m_deferredClaudeResults.push_back({{"type", "tool_result"}, {"tool_use_id", denied.id},
-                    {"content", message}, {"is_error", true}});
-            } else {
-                m_deferredOllamaMessages.push_back({{"role", "tool"}, {"name", denied.name},
-                    {"content", message}});
-            }
-            m_externalApprovalPending = false;
-            startNextExternalCall();
-        }
-    }
-
     if (ImGui::CollapsingHeader("Connect AI apps to Studio (MCP)")) {
         ImGui::TextWrapped("This exposes Studio's tools to other AI apps on this computer. It is an MCP server, not an outbound MCP client.");
         bool on = m_mcp.running();
@@ -2350,70 +2490,97 @@ void AssistantPanel::render(bool* open) {
         }
     }
 
-    if (m_relay.approvalPending()) {
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "Connected app action requires approval");
-        ImGui::TextWrapped("App: %s", m_relay.pendingApp().c_str());
-        ImGui::TextWrapped("Tool: %s", m_relay.pendingTool().c_str());
-        ImGui::TextWrapped("Arguments (sensitive fields redacted):");
-        ImGui::BeginChild("##relayapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
-        ImGui::TextUnformatted(m_relay.pendingArguments().c_str());
-        ImGui::EndChild();
-        ImGui::TextWrapped("The connected app is requesting a Studio tool call. Review the arguments before allowing it.");
-        if (ImGui::Button("Approve connected-app action"))
-            m_relay.resolveApproval(true, m_editor, m_mcp);
-        ImGui::SameLine();
-        if (ImGui::Button("Deny connected-app action"))
-            m_relay.resolveApproval(false, m_editor, m_mcp);
-    }
-
-    const float footer = ImGui::GetFrameHeightWithSpacing() * 3.2f;
-    ImGui::BeginChild("##chat", ImVec2(0, -footer), ImGuiChildFlags_Borders);
-    if (m_lines.empty())
-        ImGui::TextWrapped("I'm Fyxa, the AI agent for Guts&Bolts. I'm designed to help across the platform, including games, Studio, accounts, social features, inventory, and the marketplace. In this Studio session, I can use the native Studio tools and any connected MCP tools that you approve. Studio changes remain available in AI Activity for review and undo.");
-    for (const Line& line : m_lines) {
-        ImGui::PushTextWrapPos(0.0f);
-        switch (line.kind) {
-            case Line::You:       ImGui::TextColored(ImVec4(0.55f, 0.8f, 1, 1), "You:"); ImGui::TextUnformatted(line.text.c_str()); break;
-            case Line::Assistant: ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.45f, 1), "Fyxa:"); ImGui::TextUnformatted(line.text.c_str()); break;
-            case Line::Tool:      ImGui::TextDisabled("  > %s", line.text.c_str()); break;
-            case Line::Note:      ImGui::TextColored(ImVec4(1, 0.85f, 0.4f, 1), "%s", line.text.c_str()); break;
-            case Line::Error:     ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", line.text.c_str()); break;
+            ImGui::EndTabItem();
         }
-        ImGui::PopTextWrapPos();
-        ImGui::Spacing();
+        ImGui::EndTabBar();
     }
-    if (busy) ImGui::TextDisabled("Working%s", std::string((size_t)((int)(ImGui::GetTime() * 3) % 4), '.').c_str());
-    if (m_scrollDown) { ImGui::SetScrollHereY(1.0f); m_scrollDown = false; }
-    ImGui::EndChild();
-
-    const bool configured = m_provider == "cloud" ? Online::configured()
-                          : m_provider == "ollama" ? (!m_ollamaHost.empty() && !m_ollamaModel.empty() && m_ollamaPort > 0)
-                                                    : !m_apiKey.empty();
-    ImGui::BeginDisabled(!configured);
-    ImGui::SetNextItemWidth(-1);
-    bool enter = ImGui::InputTextMultiline("##ask", &m_input, ImVec2(-1, ImGui::GetFrameHeight() * 1.9f),
-                                           ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue);
-    if (busy) {
-        if (agentBusy && ImGui::Button("Stop")) {
-            m_stopAsked = true;
-            if (m_agentCancel) m_agentCancel->store(true);
-        }
-    } else if ((enter || ImGui::Button("Send (Enter)")) && !m_input.empty()) {
-        send(m_input);
-        m_input.clear();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("New chat") && !busy) { m_messages = json::array(); m_lines.clear(); }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button(m_editor.aiHasChanges() ? "Review its changes" : "AI Activity")) m_editor.showAiActivity();
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everything Fyxa did and changed. Undo all of it in one click.");
-    if (!configured) ImGui::TextDisabled(m_provider == "cloud" ? "Sign in to a Guts&Bolts server to use Fyxa's cloud." :
-                                         m_provider == "ollama" ? "Configure the Ollama server and model in Assistant settings." :
-                                                                  "Add your Anthropic API key in Assistant settings.");
     ImGui::End();
 }
+// Store only low-risk quality metadata. Prompts, answers, tool arguments, tool output,
+// screenshots, file contents, and project names never leave this device through this path.
+void AssistantPanel::recordLearningSignal() {
+    if (!Online::online() || Online::isGuest() || m_activeRequestText.empty()) return;
+    json tools = json::array();
+    for (size_t i = m_turnLineStartIndex; i < m_lines.size(); ++i) {
+        const Line& line = m_lines[i];
+        if (line.kind != Line::Tool && line.kind != Line::Error) continue;
+        const size_t end = line.text.find_first_of(" :");
+        const std::string name = line.text.substr(0, end);
+        if (name.empty()) continue;
+        const bool looksLikeTool = name.rfind("fyxa_", 0) == 0 || name.rfind("mcp__", 0) == 0 ||
+            name.find('_') != std::string::npos || name.find('.') != std::string::npos;
+        if (!looksLikeTool) continue;
+        tools.push_back({{"name", name}, {"outcome", line.kind == Line::Error ? "failure" : "success"}});
+    }
+
+    std::string lowerRequest = m_activeRequestText;
+    for (char& ch : lowerRequest) ch = (char)std::tolower((unsigned char)ch);
+    const std::vector<std::pair<std::string, std::vector<std::string>>> categories = {
+        {"scripting", {"script", "lua", "luau", "function", "code", "api"}},
+        {"physics", {"physics", "collision", "rigidbody", "constraint", "force"}},
+        {"networking", {"remoteevent", "network", "server", "client", "replication"}},
+        {"ui", {"gui", "interface", "button", "screen", "widget"}},
+        {"asset_creation", {"model", "mesh", "texture", "shirt", "pants", "asset"}},
+        {"debugging", {"error", "bug", "crash", "debug", "broken", "fix"}},
+        {"gameplay", {"gameplay", "level", "map", "enemy", "player", "round"}}
+    };
+    std::string category = "general";
+    for (const auto& item : categories) {
+        if (std::any_of(item.second.begin(), item.second.end(), [&](const std::string& word) {
+            return lowerRequest.find(word) != std::string::npos;
+        })) { category = item.first; break; }
+    }
+
+    const std::string model = m_provider == "ollama" ? m_ollamaModel :
+        m_provider == "claude" ? m_model : "cloud-default";
+    const unsigned long long generation = m_learningGeneration;
+    Online::request("ai.learning.capture", {{"provider", m_provider}, {"model", model},
+        {"category", category}, {"tools", tools}}, [this, generation](const json& r) {
+        if (generation != m_learningGeneration) return;
+        if (!r.value("ok", false) || !r.value("recorded", false)) return;
+        m_learningSignalId = r.value("signalId", std::string());
+        m_learningFeedbackSubmitted = false;
+        m_learningFeedbackPending = false;
+        m_learningFeedbackFailed = false;
+    });
+}
+
+void AssistantPanel::submitLearningFeedback(int rating, const std::string& reason) {
+    if (m_learningSignalId.empty() || m_learningFeedbackSubmitted) return;
+    const std::string id = m_learningSignalId;
+    m_learningFeedbackPending = true;
+    m_learningFeedbackFailed = false;
+    Online::request("ai.learning.feedback", {{"signalId", id}, {"rating", rating}, {"reason", reason}},
+        [this, id](const json& r) {
+            if (m_learningSignalId != id) return;
+            m_learningFeedbackPending = false;
+            m_learningFeedbackSubmitted = r.value("ok", false) && r.value("saved", false);
+            m_learningFeedbackFailed = !m_learningFeedbackSubmitted;
+        });
+}
+
+// Available Ollama models across currently online Nexus machines.
+void AssistantPanel::refreshHomeModels() {
+    if (!Online::configured()) {
+        m_homeModels = json::array();
+        m_homeModelsStatus = "Not connected to a Guts&Bolts server.";
+        return;
+    }
+    m_homeModelsStatus = "Checking online Nexus machines...";
+    Online::request("fyxacloud.homeModels", json::object(), [this](const json& r) {
+        if (!r.value("ok", false)) {
+            m_homeModels = json::array();
+            m_homeModelsStatus = r.value("error", std::string("Couldn't retrieve Nexus models."));
+            return;
+        }
+        m_homeModels = r.value("models", json::array());
+        if (!m_homeModels.is_array()) m_homeModels = json::array();
+        m_homeModelsStatus = m_homeModels.empty()
+            ? "No online Nexus machines currently report installed Ollama models."
+            : std::to_string(m_homeModels.size()) + " model(s) available across online Nexus machines.";
+    });
+}
+
 // How many cloud steps are left today (worker/fyxa-cloud.js fyxacloud.usage).
 void AssistantPanel::refreshCloudUsage() {
     if (!Online::configured()) { m_cloudUsage = {{"ok", false}, {"error", "Not connected to a Guts&Bolts server."}}; return; }
