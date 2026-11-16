@@ -98,6 +98,9 @@ body .content .welcome.portal-hero { color: #fff; border-color: #5a080c; backgro
 .product-communities .product-icon { background: var(--gold); }
 .product-chat .product-icon { background: var(--blue-dark); }
 .product-fyxa .product-icon { background: #3a3f4a; }
+.product-sysfix .product-icon { background: #16a34a; }       /* the download apps (products.js APPS) */
+.product-contentforge .product-icon { background: #7c5cff; }
+.product-group .small { float: right; text-transform: none; }
 .product-card.is-soon, .product-card.is-studio { border-style: dashed; }
 
 /* Phones: everything in one column, smaller banner type. */

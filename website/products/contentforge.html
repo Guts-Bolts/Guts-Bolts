@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ContentForge | Guts&amp;Bolts</title>
+<meta name="description" content="ContentForge turns an idea into a short video with AI that runs on your own Windows PC: it writes the script, reads it out, makes the scenes and adds captions. Free, from Guts&amp;Bolts.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ContentForge: from an idea to a video, on your own PC">
+<meta property="og:description" content="A free AI video maker from Guts&amp;Bolts. Script, voice, scenes and captions, all made on your own computer.">
+<meta property="og:url" content="https://gutsandbolts.net/products/ContentForge">
+<link rel="canonical" href="https://gutsandbolts.net/products/ContentForge">
+<link rel="icon" href="/img/icon.png">
+<link rel="stylesheet" href="/fonts/font.css">
+<link rel="stylesheet" href="/products/product.css">
+<script src="/theme.js"></script>
+</head>
+<body class="p-contentforge">
+<header class="topbar">
+  <div class="wrap">
+    <a class="logo" href="/"><img src="/img/logo.png" alt="Guts &amp; Bolts" width="720" height="242"></a>
+    <span class="acct"><a href="/app/#/signup">Sign Up</a> | <a href="/app/#/login">Login</a></span>
+  </div>
+</header>
+<nav class="mainnav" aria-label="Main">
+  <div class="wrap">
+    <a href="/app/">Home</a><a href="/products" aria-current="page">Products</a><a href="/app/#/games">Games</a><a href="/app/#/updates">Updates</a><a href="/app/#/support">Help</a>
+    <a class="nav-cta" href="#download">Get ContentForge</a>
+  </div>
+</nav>
+
+<main>
+  <section class="hero hero-split">
+    <div>
+      <span class="kicker"><a href="/products" style="color:inherit">Products</a> &rsaquo; Video maker</span>
+      <h1>ContentForge<br><em>Idea in, video out.</em></h1>
+      <p>Give it a topic. ContentForge writes a script, reads it out loud, makes the scenes, adds captions and music, and hands you a finished short video. The AI all runs on your own PC, and nothing gets posted until you post it.</p>
+      <div class="btns">
+        <a class="btn white" href="#download">Download</a>
+        <a class="btn ghost" href="#how">How it works</a>
+      </div>
+      <ul class="chips" style="margin-top:18px"><li class="chip">Windows 10 / 11</li><li class="chip">Free</li><li class="chip">Early test version</li><li class="chip">Fyxa inside</li></ul>
+    </div>
+    <div class="window" aria-hidden="true">
+      <div class="bar"><i></i><i></i><i></i><span>ContentForge</span></div>
+      <div class="flow"><b>IDEA</b><span></span><b>SCRIPT</b><span></span><b>VOICE</b><span></span><b>VIDEO</b></div>
+      <div class="vid"><i>&#9654;</i></div>
+    </div>
+  </section>
+
+  <nav class="sub-nav" aria-label="On this page">
+    <a href="#how">How it works</a><a href="#fyxa">Fyxa</a><a href="#need">What you need</a><a href="#start">How to start</a><a href="#download">Download</a><a href="#faq">Questions</a>
+  </nav>
+
+  <section class="box" id="how">
+    <h2>How it works</h2>
+    <p class="lead">Five steps, and you can check and change everything in between.</p>
+    <div class="cards">
+      <div class="card"><span class="num">1</span><h3>Pick a topic</h3><p>Type one in, or let it collect ideas from news feeds you choose.</p></div>
+      <div class="card"><span class="num">2</span><h3>Get a script</h3><p>A local AI (Ollama) writes the narration, a hook, captions, hashtags and notes on what to fact-check.</p></div>
+      <div class="card"><span class="num">3</span><h3>Fix it up</h3><p>Read it, change anything you like, and mark it as checked.</p></div>
+      <div class="card"><span class="num">4</span><h3>Make the video</h3><p>Piper reads it out, the scenes get made, and captions, music and sound effects line up with the voice.</p></div>
+      <div class="card"><span class="num">5</span><h3>Post it yourself</h3><p>You get an MP4 and a captions file. ContentForge never posts anything for you.</p></div>
+    </div>
+  </section>
+
+  <div class="two">
+    <section class="box" id="fyxa">
+      <h2>Fyxa, your creative helper</h2>
+      <p class="lead">Fyxa lives inside ContentForge too. Ask it for a creative plan, a script or a scene-by-scene storyboard.</p>
+      <ul class="ticks">
+        <li>Everything it writes is a draft until you say it's good</li>
+        <li>Every change keeps the old version, so you can compare</li>
+        <li>Checks finished videos (size, length, sound) and can make a better version from your notes</li>
+        <li>It can look at your project but can't change or post anything by itself</li>
+      </ul>
+    </section>
+    <section class="box" id="video-ai">
+      <h2>AI video, if your PC can</h2>
+      <p class="lead">Without extras, ContentForge makes moving title-card scenes. With a strong NVIDIA card it can make real AI video clips too.</p>
+      <ul class="ticks">
+        <li>Uses ComfyUI and the Wan 2.1 model (about 10 GB download)</li>
+        <li>Works from about 8 GB of video memory. 12 GB or more is better</li>
+        <li>Optional AI sound effects and exact word timing, also on your PC</li>
+      </ul>
+    </section>
+  </div>
+
+  <section class="box" id="need">
+    <h2>What you need</h2>
+    <p class="lead">ContentForge doesn't come with these, because they're big and made by other people. The setup steps show where to get each one.</p>
+    <dl class="req">
+      <div><dt>Windows</dt><dd>Windows 10 or 11, 64-bit</dd></div>
+      <div><dt>Python</dt><dd>3.11 or newer</dd></div>
+      <div><dt>Ollama</dt><dd>Writes the scripts. Free from ollama.com, plus a model like <code>qwen3:4b</code></dd></div>
+      <div><dt>FFmpeg</dt><dd>Puts the video together</dd></div>
+      <div><dt>Piper</dt><dd>The voice, plus a voice file you're allowed to use</dd></div>
+      <div><dt>NVIDIA card</dt><dd>Only for AI video clips (8 GB+ of video memory)</dd></div>
+    </dl>
+  </section>
+
+  <section class="box" id="start">
+    <h2>How to start</h2>
+    <ol class="steps">
+      <li><h3>Download and unzip</h3><p>Get the ZIP below and unzip it into a folder you can write to.</p></li>
+      <li><h3>Run the setup</h3><p>Open PowerShell in that folder and run:</p>
+        <div class="cmd"><code>Set-ExecutionPolicy -Scope Process Bypass; .\setup.ps1</code><button type="button" data-copy="Set-ExecutionPolicy -Scope Process Bypass; .\setup.ps1">Copy</button></div></li>
+      <li><h3>Get a writing model</h3><p>With Ollama running, download a model and put its name in the <code>.env</code> file as <code>OLLAMA_MODEL</code>:</p>
+        <div class="cmd"><code>ollama pull qwen3:4b</code><button type="button" data-copy="ollama pull qwen3:4b">Copy</button></div></li>
+      <li><h3>Start it</h3><p>Double-click <code>start.bat</code>, then open <a href="http://127.0.0.1:8787" rel="nofollow">127.0.0.1:8787</a> in your browser.</p></li>
+    </ol>
+    <p class="note"><b>Keep it on your PC.</b> The ContentForge dashboard has no password, so don't open it up to the internet.</p>
+  </section>
+
+  <section class="box" id="download">
+    <span class="kicker">ContentForge for Windows</span>
+    <h2>Download</h2>
+    <p class="lead" data-release-text>ContentForge is still being tested, so there's no download yet. When the first version is out, it shows up right here.</p>
+    <div class="downloads">
+      <a class="dl off" data-release-check="/download/products/contentforge/latest/ContentForge-Windows.zip" href="/download/products/contentforge/latest/ContentForge-Windows.zip" aria-disabled="true">
+        <span class="pkg">ZIP</span><span><b>Windows 10 / 11</b><small data-release-label>Not out yet</small></span></a>
+    </div>
+    <p class="small muted" style="margin-top:12px" data-release-sums hidden>Check the file with the <a href="/download/products/contentforge/latest/SHA256SUMS.txt">SHA-256 checksums</a>.</p>
+  </section>
+
+  <section class="box" id="faq">
+    <h2>Questions</h2>
+    <details><summary>Does it post to YouTube or TikTok?</summary><p>No. It makes the video and you post it yourself. That way nothing goes out that you haven't watched.</p></details>
+    <details><summary>Is it really all on my PC?</summary><p>Yes. The AI runs on your computer. It only goes online to download its parts during setup, and to read the news feeds you pick.</p></details>
+    <details><summary>Can I trust the facts in the script?</summary><p>Not on their own. The AI can get things wrong, so ContentForge lists what to check. Look things up yourself before you post.</p></details>
+    <details><summary>Does it work on Mac or Linux?</summary><p>Windows is the one we support. Linux may work if you set the paths up yourself.</p></details>
+    <details><summary>Is it finished?</summary><p>Not yet. It's an early test version: things can break, and some parts (like stock footage or posting) aren't there.</p></details>
+    <details><summary>Where do I report a bug?</summary><p>On the <a href="/app/#/support">Guts&amp;Bolts help page</a>.</p></details>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <a href="/products">All products</a> | <a href="/products/Sysfix">Sysfix</a> | <a href="/app/#/support">Help</a>
+  <br><br>ContentForge is made by Guts&amp;Bolts.
+</footer>
+<script src="/products/product.js"></script>
+</body>
+</html>

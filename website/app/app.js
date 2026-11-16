@@ -19,7 +19,7 @@ import { pastePages } from './paste.js';   // G&B Paste's pages
 import { academyPages } from './academy.js';   // G&B Academy's pages
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
-import { GROUPS, productOf, productById, activeLink } from './products.js';
+import { GROUPS, APPS, productOf, productById, activeLink } from './products.js';
 import { placeAds } from './ads.js';
 
 // --- small helpers ------------------------------------------------------------
@@ -824,6 +824,11 @@ pages.home = async () => {
       <p class="small muted">One account for all of it: your friends, Bolts and Boltworks Club work everywhere.</p>
       ${built.map((g) => html`<h3 class="product-group">${g.name}${g.later.length ? html` <span class="small muted">· on the way: ${g.later.join(', ')}</span>` : ''}</h3>
         <div class="product-grid">${g.products.map(productById).filter(Boolean).map(productCard)}</div>`)}
+      <h3 class="product-group">Apps to download <a class="small" href="/products">All products &raquo;</a></h3>
+      <div class="product-grid">${APPS.map((a) => html`<a class="product-card product-${a.id} is-app" href="${a.href}">
+        <span class="product-icon" aria-hidden="true">${a.name.slice(0, 1)}</span>
+        <span class="product-text"><b>${a.name}</b> <span class="soon-tag">${a.platform}</span>${a.stage === 'test' ? html` <span class="soon-tag">Test</span>` : ''}
+          <span>${a.blurb}</span></span></a>`)}</div>
       ${coming.length ? html`<h3 class="product-group">On the way</h3><ul class="product-later">${coming.map((g) =>
         html`<li><b>${g.name}</b>: ${g.later.join(', ')}</li>`)}</ul>` : ''}</div>`;
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;

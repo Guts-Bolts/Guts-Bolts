@@ -4,135 +4,161 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Products | Guts&amp;Bolts</title>
-<meta name="description" content="Explore software built by Guts&amp;Bolts: ContentForge, Sysfix for Linux, and the Guts&amp;Bolts game engine and Studio.">
+<meta name="description" content="Everything Guts&amp;Bolts makes: the Guts&amp;Bolts game engine and Studio, Sysfix for Linux and ContentForge for making videos on your own PC.">
 <meta property="og:title" content="Products | Guts&amp;Bolts">
-<meta property="og:description" content="Tools for making, creating, and keeping your systems running. Explore the Guts&amp;Bolts product lineup.">
-<link rel="icon" href="img/icon.png">
-<link rel="stylesheet" href="fonts/font.css">
-<link rel="stylesheet" href="products.css">
+<meta property="og:description" content="Make games, make videos, keep your Linux PC healthy. Everything Guts&amp;Bolts makes, in one place.">
+<meta property="og:image" content="/img/engine-boom.jpg">
+<link rel="canonical" href="https://gutsandbolts.net/products">
+<link rel="icon" href="/img/icon.png">
+<link rel="stylesheet" href="/fonts/font.css">
+<link rel="stylesheet" href="/products/product.css">
+<script src="/theme.js"></script>
 </head>
 <body>
-<header class="site-header">
-  <div class="header-inner">
-    <a class="brand" href="./" aria-label="Guts and Bolts home"><img src="img/logo.png" alt="Guts &amp; Bolts"></a>
-    <nav aria-label="Main navigation">
-      <a href="./">Home</a>
-      <a class="active" href="products.html" aria-current="page">Products</a>
-      <a href="app/#/games">Games</a>
-      <a href="app/#/updates">Updates</a>
-    </nav>
-    <a class="header-cta" href="app/">Open G&amp;B</a>
+<header class="topbar">
+  <div class="wrap">
+    <a class="logo" href="/"><img src="/img/logo.png" alt="Guts &amp; Bolts" width="720" height="242"></a>
+    <span class="acct"><a href="/app/#/signup">Sign Up</a> | <a href="/app/#/login">Login</a></span>
   </div>
 </header>
+<nav class="mainnav" aria-label="Main">
+  <div class="wrap">
+    <a href="/app/">Home</a><a href="/products" aria-current="page">Products</a><a href="/app/#/games">Games</a><a href="/app/#/updates">Updates</a><a href="/app/#/support">Help</a>
+    <a class="nav-cta" href="/#download">Get G&amp;B</a>
+  </div>
+</nav>
 
 <main>
-  <section class="intro">
-    <p class="eyebrow">THE GUTS &amp; BOLTS PRODUCT LINEUP</p>
-    <h1>More than a game engine.</h1>
-    <p class="intro-copy">We build software for creators, developers, and people who like having control over their tools. Explore the projects we're working on.</p>
-    <div class="intro-meta"><span>Independent projects</span><span>Built by Guts &amp; Bolts</span><span>Made to be useful</span></div>
+  <section class="hero">
+    <span class="kicker">Everything we make</span>
+    <h1>Guts&amp;Bolts<br><em>makes more than games.</em></h1>
+    <p>A game engine, a Linux repair kit and an AI video maker that runs on your own computer. All three are free, and you can see what each one does before you download it.</p>
+    <ul class="chips"><li class="chip">3 apps</li><li class="chip">Free to download</li><li class="chip">Windows, Mac, Linux and more</li></ul>
   </section>
 
-  <section class="product-list" aria-label="Guts and Bolts products">
-    <article class="product-card product-engine" id="engine">
-      <div class="product-visual engine-visual" aria-hidden="true">
-        <div class="engine-grid"></div>
-        <div class="engine-mark"><span>G</span><i>&amp;</i><span>B</span></div>
-        <div class="visual-caption">BUILD · PLAY · CREATE</div>
-      </div>
-      <div class="product-content">
-        <div class="product-topline"><span class="category">GAME CREATION PLATFORM</span><span class="status status-live">Available</span></div>
-        <h2>Guts &amp; Bolts Engine / Studio</h2>
-        <p class="product-lead">Make games. Break things. Build something worth playing.</p>
-        <p>A game engine and multiplayer platform built around physics, creative freedom, and sharing games with other people. Studio is where you build; the G&amp;B platform is where you publish, discover, and play.</p>
-        <ul class="feature-list">
-          <li>Physics-driven gameplay and world building</li>
-          <li>Visual tools, scripting, and asset workflows</li>
-          <li>Publish games and play with friends</li>
-          <li>Desktop and supported mobile / VR platforms</li>
-        </ul>
-        <div class="product-actions">
-          <a class="button button-primary" href="./#download">Get G&amp;B</a>
-          <a class="button button-secondary" href="app/">Explore the platform</a>
-        </div>
-      </div>
-    </article>
-
-    <article class="product-card product-contentforge" id="contentforge">
-      <div class="product-visual forge-visual" aria-hidden="true">
-        <div class="forge-window">
-          <div class="window-bar"><i></i><i></i><i></i><span>CONTENTFORGE / WORKSPACE</span></div>
-          <div class="forge-workflow"><b>IDEA</b><span></span><b>SCRIPT</b><span></span><b>SCENES</b><span></span><b>VIDEO</b></div>
-          <div class="forge-preview"><div class="preview-play">▶</div><div class="preview-lines"><i></i><i></i><i></i></div></div>
-        </div>
-        <div class="visual-caption">LOCAL AI VIDEO WORKFLOW</div>
-      </div>
-      <div class="product-content">
-        <div class="product-topline"><span class="category">LOCAL AI CREATION</span><span class="status status-experimental">Experimental</span></div>
-        <h2>ContentForge</h2>
-        <p class="product-lead">From an idea to a video, using tools on your own machine.</p>
-        <p>A local-first, AI-assisted short-form video workbench. ContentForge brings research, script drafting, narration, scene planning, and video rendering into one workflow, with local models and locally stored media.</p>
-        <ul class="feature-list">
-          <li>Draft scripts with a local Ollama model</li>
-          <li>Generate narration with Piper and render with FFmpeg</li>
-          <li>Build short-form video with local ComfyUI / Wan models</li>
-          <li>Review and edit before rendering or publishing</li>
-        </ul>
-        <p class="product-note">ContentForge is an active experimental project, not a production-ready publishing service. Windows is the supported quick-start platform.</p>
-        <div class="product-actions">
-          <span class="release-pending">No public installer has been published yet. Downloads will appear here when a packaged release is available.</span>
-        </div>
-      </div>
-    </article>
-
-    <article class="product-card product-sysfix" id="sysfix">
-      <div class="product-visual sysfix-visual" aria-hidden="true">
-        <div class="terminal">
-          <div class="terminal-title"><span></span><span></span><span></span><b>sysfix — system check</b></div>
-          <div class="terminal-body">
-            <p><em>$</em> sysfix run</p>
-            <p class="term-muted">Scanning Linux system...</p>
-            <p><strong>✓</strong> CPU and memory</p>
-            <p><strong>✓</strong> Storage and temperature</p>
-            <p class="term-warn">! Audio configuration warning</p>
-            <p class="term-accent">→ Review recommended fix</p>
-            <div class="terminal-cursor"></div>
-          </div>
-        </div>
-        <div class="visual-caption">LINUX DIAGNOSTICS</div>
-      </div>
-      <div class="product-content">
-        <div class="product-topline"><span class="category">LINUX SYSTEM TOOL</span><span class="status status-open">Linux · v1.2.0</span></div>
-        <h2>Sysfix</h2>
-        <p class="product-lead">Understand what's wrong before you start changing things.</p>
-        <p>Linux diagnostics and repair with AI-assisted recommendations, system health tools, performance benchmarking, disk cleanup, and hardware monitoring. Sysfix keeps control with the user and requires confirmation before system-changing actions.</p>
-        <ul class="feature-list">
-          <li>Fedora / RHEL / openSUSE package (RPM)</li>
-          <li>Debian / Ubuntu / Mint package (DEB)</li>
-          <li>System Health, performance benchmark, and disk cleanup</li>
-          <li>SHA-256 checksums supplied with the release</li>
-        </ul>
-        <div class="product-actions">
-          <a class="button button-primary" href="/products/Sysfix">Explore Sysfix</a>
-          <a class="button button-secondary" href="/download/products/sysfix/1.2.0/sysfix-ai-1.2.0-1.fc44.noarch.rpm">Download RPM</a>
-          <a class="button button-secondary" href="/download/products/sysfix/1.2.0/sysfix-ai_1.2.0-1_all.deb">Download DEB</a>
-          <a class="button button-secondary" href="/download/products/sysfix/1.2.0/SHA256SUMS.txt">Checksums</a>
-        </div>
-        <p class="product-note">The release packages are mirrored from the official Sysfix v1.2.0 release. Verify the SHA-256 checksums before installing.</p>
-      </div>
-    </article>
+  <section aria-label="Pick by what you want to do" class="pick">
+    <a class="p-engine" href="#engine"><span class="ico" aria-hidden="true">G</span><span class="want">I want to</span><b>Make and play games</b><span class="go">Guts&amp;Bolts Engine &rarr;</span></a>
+    <a class="p-contentforge" href="#contentforge"><span class="ico" aria-hidden="true">C</span><span class="want">I want to</span><b>Turn an idea into a video</b><span class="go">ContentForge &rarr;</span></a>
+    <a class="p-sysfix" href="#sysfix"><span class="ico" aria-hidden="true">S</span><span class="want">I want to</span><b>Find out what's wrong with my Linux PC</b><span class="go">Sysfix &rarr;</span></a>
   </section>
 
-  <section class="closing">
-    <div><p class="eyebrow">BUILT INDEPENDENTLY</p><h2>One team. Different kinds of tools.</h2><p>Some projects help you make games. Others help you make videos or keep your Linux machine healthy. This is where the G&amp;B projects live together.</p></div>
-    <a class="button button-primary" href="app/">Visit Guts &amp; Bolts</a>
+  <article class="product product-engine" id="engine">
+    <div class="art">
+      <img class="shot" src="/img/engine-boom.jpg" alt="" loading="lazy">
+      <div class="gb-mark" aria-hidden="true"><span>G</span><i>&amp;</i><span>B</span></div>
+      <span class="caption">Build &middot; Play &middot; Fall apart</span>
+    </div>
+    <div class="body">
+      <span class="kicker">Game engine and platform</span>
+      <h2>Guts&amp;Bolts</h2>
+      <p class="tagline">Build games, play them with friends, fall apart spectacularly.</p>
+      <ul class="chips"><li class="chip ok">Out now</li><li class="chip">Free</li><li class="chip">Windows &middot; Mac &middot; Linux &middot; Android &middot; Quest VR</li></ul>
+      <ul class="ticks">
+        <li>Studio to build worlds, with Lua scripting and real physics</li>
+        <li>Ragdolls that come apart, explosions, water and weather</li>
+        <li>Publish your game and play it with friends online</li>
+        <li>An avatar, a catalog, forums, chat and more on the website</li>
+      </ul>
+      <div class="btns">
+        <a class="btn red" href="/#download">Download free</a>
+        <a class="btn" href="/app/#/games">Browse games</a>
+      </div>
+    </div>
+  </article>
+
+  <article class="product product-contentforge" id="contentforge">
+    <div class="art">
+      <div class="window" aria-hidden="true">
+        <div class="bar"><i></i><i></i><i></i><span>ContentForge</span></div>
+        <div class="flow"><b>IDEA</b><span></span><b>SCRIPT</b><span></span><b>VOICE</b><span></span><b>VIDEO</b></div>
+        <div class="vid"><i>&#9654;</i></div>
+      </div>
+      <span class="caption">AI video, on your own PC</span>
+    </div>
+    <div class="body">
+      <span class="kicker">Video maker</span>
+      <h2>ContentForge</h2>
+      <p class="tagline">Go from an idea to a finished short video, with AI that runs on your own computer.</p>
+      <ul class="chips"><li class="chip warn">Early test version</li><li class="chip">Free</li><li class="chip">Windows 10 / 11</li></ul>
+      <ul class="ticks">
+        <li>Writes a script from a topic, then lets you fix it up</li>
+        <li>Reads it out loud with a computer voice</li>
+        <li>Makes the scenes, adds captions and music, and saves an MP4</li>
+        <li>Nothing gets uploaded: you check it, then post it yourself</li>
+      </ul>
+      <div class="btns">
+        <a class="btn red" href="/products/ContentForge">See how it works</a>
+        <a class="btn" href="/products/ContentForge#download">Download</a>
+      </div>
+    </div>
+  </article>
+
+  <article class="product product-sysfix" id="sysfix">
+    <div class="art">
+      <div class="window" aria-hidden="true">
+        <div class="bar"><i></i><i></i><i></i><span>sysfix health</span></div>
+        <div class="term">
+          <p><span class="p">$</span> sysfix health</p>
+          <p class="m">Checking this computer...</p>
+          <p><span class="g">&#10003;</span> CPU and memory</p>
+          <p><span class="g">&#10003;</span> Disks and temperatures</p>
+          <p class="w">! Audio: 1 thing to look at</p>
+          <p class="a">&rarr; Here's what it means</p>
+        </div>
+      </div>
+      <span class="caption">Linux health check</span>
+    </div>
+    <div class="body">
+      <span class="kicker">Linux repair kit</span>
+      <h2>Sysfix</h2>
+      <p class="tagline">Find out what's wrong with your Linux computer before you start changing things.</p>
+      <ul class="chips"><li class="chip ok">Version 1.2.0</li><li class="chip">Free</li><li class="chip">Linux</li></ul>
+      <ul class="ticks">
+        <li>A health check of your CPU, memory, disks and temperatures</li>
+        <li>Looks into sound, network, security and services</li>
+        <li>A desktop app, or commands for the terminal</li>
+        <li>Never changes anything without asking you first</li>
+      </ul>
+      <div class="btns">
+        <a class="btn red" href="/products/Sysfix#download">Download</a>
+        <a class="btn" href="/products/Sysfix">See how it works</a>
+      </div>
+    </div>
+  </article>
+
+  <section class="box" id="compare">
+    <h2>Which one is for me?</h2>
+    <p class="lead">A quick side-by-side. All three are made by Guts&amp;Bolts and cost nothing.</p>
+    <div class="table-scroll">
+      <table class="compare">
+        <thead><tr><th scope="col"></th><th scope="col">Guts&amp;Bolts</th><th scope="col">ContentForge</th><th scope="col">Sysfix</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">What it does</th><td>Make and play games</td><td>Make short videos with AI</td><td>Check and fix a Linux PC</td></tr>
+          <tr><th scope="row">Works on</th><td>Windows, Mac, Linux, Android, Quest VR</td><td>Windows 10 / 11</td><td>Linux (Fedora, Ubuntu, Debian and more)</td></tr>
+          <tr><th scope="row">You also need</th><td>Nothing else</td><td>Python, Ollama, FFmpeg, Piper. A strong NVIDIA card for AI video</td><td>Python 3.10+. Ollama only if you want Fyxa to help</td></tr>
+          <tr><th scope="row">Uses AI?</th><td>Fyxa in Studio, if you want it</td><td>Yes, all on your own PC</td><td>Optional, on your own PC</td></tr>
+          <tr><th scope="row">Ready?</th><td>Yes</td><td>Early test version</td><td>Yes, version 1.2.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="box">
+    <h2>Also on the Guts&amp;Bolts website</h2>
+    <p class="lead">Same account, same friends and Bolts. No download needed.</p>
+    <div class="mini-grid">
+      <a href="/app/#/art"><b>Art</b><span>Post drawings, pixel art and renders.</span></a>
+      <a href="/app/#/academy"><b>Academy</b><span>Free courses on making games.</span></a>
+      <a href="/app/#/paste"><b>Paste</b><span>Share code and crash logs by link.</span></a>
+      <a href="/app/#/forum"><b>Communities</b><span>Forums, groups and people.</span></a>
+      <a href="/app/#/chat"><b>Chat</b><span>Chats, parties and calls.</span></a>
+    </div>
   </section>
 </main>
 
-<footer class="site-footer">
-  <a href="./">Guts&amp;Bolts</a>
-  <span>Independent software and creative tools.</span>
-  <a href="app/#/support">Support</a>
+<footer class="site-foot">
+  <a href="/app/">Guts&amp;Bolts</a> | <a href="/products">Products</a> | <a href="/app/#/updates">Updates</a> | <a href="/app/#/support">Help</a> | <a href="/app/#/terms">Terms</a> | <a href="/privacy">Privacy</a>
+  <br><br>Guts&amp;Bolts is a free, independent hobby platform. Not affiliated with Roblox Corporation.
 </footer>
 </body>
 </html>
