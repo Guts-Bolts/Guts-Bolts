@@ -26,13 +26,13 @@ inline bool straightSides(const glm::mat4& m) {
 }
 
 // Could this part be drawn as a copy? Parts with a picture on them (clothing, a face,
-// a T-shirt), a MaterialVariant, a Roblox SpecialMesh or Bones are drawn one by one,
+// a T-shirt), a MaterialVariant, a SurfaceAppearance, a Roblox SpecialMesh or Bones are drawn one by one,
 // because each needs its own settings. (`water` comes from Player::isWater.)
 inline bool canCopy(const SceneNode& n, const glm::mat4& model, bool water) {
     if (water || !n.mesh || n.kind != NodeKind::Part) return false;
     if (!n.texture.empty() || !n.tshirt.empty() || !n.materialVariant.empty()) return false;
     for (const auto& c : n.children) {
-        if (c->isBone()) return false;
+        if (c->isBone() || c->isSurfaceAppearance()) return false;
         if (const Attribute* cls = c->findAttribute("RobloxClass"); cls && cls->type == Attribute::String && cls->s == "SpecialMesh")
             return false;
     }

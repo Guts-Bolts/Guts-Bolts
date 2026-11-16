@@ -57,7 +57,7 @@ const char* const kClassNames[] = {"Part", "WedgePart", "CornerWedgePart", "Trus
     "UIAspectRatioConstraint", "RemoteEvent", "RemoteFunction", "BindableEvent", "BindableFunction",
     "IntValue", "NumberValue", "StringValue", "BoolValue", "ObjectValue", "Vector3Value", "CFrameValue",
     "Color3Value", "Animation", "Animator", "Explosion", "Camera", "Sky", "Atmosphere", "BloomEffect",
-    "BlurEffect", "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "Team", "IKControl",
+    "BlurEffect", "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "Team", "IKControl", "SurfaceAppearance",
     "HumanoidDescription", "SpecialMesh", "BlockMesh", "Accessory", "Shirt", "Pants", "ShirtGraphic",
     "Configuration", "SelectionBox", "BoxHandleAdornment"};
 

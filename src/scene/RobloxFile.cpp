@@ -1345,6 +1345,15 @@ struct Converter {
             Attribute a; a.name = "RobloxClass"; a.type = Attribute::String; a.s = c;
             node->attributes.push_back(a);
             ++report.models;
+        } else if (c == "SurfaceAppearance") {
+            // Pictures on its part's mesh, by the mesh's UVs (rbxassetid:// ones are kept as they are).
+            node = std::make_unique<SceneNode>(name, NodeKind::SurfaceAppearance);
+            MaterialVariantProps& v = node->variant;
+            v.colorMap = in.str("ColorMap");
+            v.normalMap = in.str("NormalMap");
+            v.roughnessMap = in.str("RoughnessMap");
+            v.metalnessMap = in.str("MetalnessMap");
+            clampVariant(v);
         } else if (c == "MaterialVariant") {
             // Your own material made from pictures. (rbxassetid:// pictures won't load here,
             // but are kept, so it goes back to Roblox the same.)
@@ -2099,6 +2108,7 @@ struct XmlWriter {
             case NodeKind::Tool:       cls = "Tool"; break;
             case NodeKind::Decal:      cls = "Decal"; break;
             case NodeKind::MaterialVariant: cls = "MaterialVariant"; break;
+            case NodeKind::SurfaceAppearance: cls = "SurfaceAppearance"; break;
             case NodeKind::Animation:  cls = nullptr; break;   // (Roblox keeps animations online)
             case NodeKind::FluidSystem: case NodeKind::FluidEmitter: cls = nullptr; break;   // (Guts&Bolts only)
             case NodeKind::Mover:      cls = kMoverClassNames[(int)n.mover.type]; break;
@@ -2190,6 +2200,18 @@ struct XmlWriter {
             pic("RoughnessMap", v.roughnessMap);
             pic("MetalnessMap", v.metalnessMap);
             flt("StudsPerTile", v.studsPerTile);
+            break;
+        }
+        case NodeKind::SurfaceAppearance: {
+            const MaterialVariantProps& v = n.variant;
+            auto pic = [&](const char* prop, const std::string& url) {
+                if (url.empty()) o << "<Content name=\"" << prop << "\"><null></null></Content>\n";
+                else o << "<Content name=\"" << prop << "\"><url>" << esc(url) << "</url></Content>\n";
+            };
+            pic("ColorMap", v.colorMap);
+            pic("NormalMap", v.normalMap);
+            pic("RoughnessMap", v.roughnessMap);
+            pic("MetalnessMap", v.metalnessMap);
             break;
         }
         case NodeKind::Sky: {

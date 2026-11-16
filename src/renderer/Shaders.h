@@ -122,6 +122,9 @@ uniform vec4      uVHas;      // (1 = has it): colour, normal
 uniform vec3      uVOrmHas;   // (1 = the packed picture has it): occlusion, roughness, metalness
 uniform float     uVTile;
 uniform vec3      uVParams;
+// A SurfaceAppearance (in the part) uses the same pictures, but laid on the mesh by its own
+// UVs (like a shirt) instead of tiled on each face.
+uniform bool      uVMeshUV;
 
 uniform vec3  uColor;
 uniform int   uMaterial;      // 0 plastic 1 metal 2 neon 3 wood 4 glass 5 concrete 6 ice (7 water, 8 liquid, 9 terrain)
@@ -562,6 +565,7 @@ void main() {
         bool top = an.y >= max(an.x, an.z);
         vec2 uv = (top ? vObjPos.xz : (an.x > an.z ? vObjPos.zy : vObjPos.xy)) / max(uVTile, 0.01);
         uv.y = -uv.y;   // (pictures are upright on the sides)
+        if (uVMeshUV) uv = vUV;
         if (uVHas.x > 0.5) albedo *= lin(tiled(uVColor, uv).rgb);
         rough = uVParams.x;
         metal = uVParams.y;

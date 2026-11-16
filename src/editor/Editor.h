@@ -464,6 +464,16 @@ private:
 public:
     nlohmann::json phoneCheck(int profile) const;      // the budget table (also the phone_check AI tool)
 private:
+    // Stress test (EditorStressTest.cpp): memory on a weaker device, a pile of crates for the physics
+    bool m_showStressTest = false;
+    int  m_stressDevice = 0, m_stressBackground = 1, m_stressCrates = 500;
+    float m_stressSeconds = 2.0f;
+    nlohmann::json m_stressResult;
+    void renderStressTest();
+public:
+    nlohmann::json stressTest(int device, int background, int crates, float seconds);   // (also the stress_test AI tool)
+    static int stressDeviceIndex(const std::string& key);   // "cheap_phone" -> 0, -1 = no such device
+private:
     bool m_showLuaDebugger = false;
     int m_debugLineInput = 1;
     int m_debugSeenPauses = 0;   // the Lua Debugger's pause count we've already jumped to

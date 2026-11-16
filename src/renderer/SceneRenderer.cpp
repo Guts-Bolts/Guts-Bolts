@@ -1786,11 +1786,20 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         for (const auto& c : ms->children)
             if (c->isMaterialVariant()) variants.emplace(c->name, c.get());
     // A part's MaterialVariant: its pictures, if the part's Material is the variant's BaseMaterial.
+    // A SurfaceAppearance in the part wins (its pictures go on by the mesh's own UVs).
     auto useVariant = [&](const SceneNode* node) {
-        if (node->materialVariant.empty() || variants.empty()) return false;
-        auto v = variants.find(node->materialVariant);
-        if (v == variants.end() || v->second->variant.base != node->material) return false;
-        const MaterialVariantProps& p = v->second->variant;
+        const MaterialVariantProps* found = nullptr;
+        bool meshUV = false;
+        for (const auto& c : node->children)
+            if (c->isSurfaceAppearance()) { found = &c->variant; meshUV = true; break; }
+        if (!found) {
+            if (node->materialVariant.empty() || variants.empty()) return false;
+            auto v = variants.find(node->materialVariant);
+            if (v == variants.end() || v->second->variant.base != node->material) return false;
+            found = &v->second->variant;
+        }
+        const MaterialVariantProps& p = *found;
+        m_lit->setBool("uVMeshUV", meshUV);
         const std::string* pics[] = {&p.colorMap, &p.normalMap};
         const char* names[] = {"uVColor", "uVNormal"};
         glm::vec4 has(0.0f);

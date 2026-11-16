@@ -87,6 +87,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_showReplay = std::getenv("GB_TEST_REPLAY") != nullptr;   // (tests: start with it showing)
     m_showCompare = std::getenv("GB_TEST_COMPARE") != nullptr;   // (tests: start with it showing)
     m_showLiveProfiler = std::getenv("GB_TEST_PROFILER") != nullptr;   // (tests: start with it showing)
+    m_showStressTest = std::getenv("GB_TEST_STRESS") != nullptr;   // (tests: start with it showing)
     m_viewport = std::make_unique<ViewportPanel>(window, scene, &m_state);
     registerWorkspaceSettings();   // (before the layout file is read, on the first frame)
     auto open  = [this](SceneNode* n) { openScript(n); };
@@ -464,6 +465,7 @@ void Editor::render(float dt) {
     renderLearn();
     renderPerformanceDoctor();
     renderPhoneTest();
+    renderStressTest();
     renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
@@ -3141,6 +3143,14 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         parent = service;
         put(std::make_unique<SceneNode>("MaterialVariant", NodeKind::MaterialVariant));
     }
+    else if (what == "SurfaceAppearance") {
+        // It goes in the part whose mesh it covers.
+        if (!parent || !parent->isPart()) {
+            Log::warn("Select a part first (a MeshPart, usually): a SurfaceAppearance goes inside the part it covers.");
+            return;
+        }
+        put(std::make_unique<SceneNode>("SurfaceAppearance", NodeKind::SurfaceAppearance));
+    }
     else if (what == "ClickDetector" || what == "DragDetector") {
         // It goes on the part (or model) players click / drag.
         if (!parent || parent == m_scene->root() || (!parent->isPart() && parent->kind != NodeKind::Model)) {
@@ -3370,7 +3380,7 @@ const std::vector<InsertItem>& insertItems() {
         {"MeshPart", Icons::Id::Mesh}, {"SpawnLocation", Icons::Id::Part}, {"TrussPart", Icons::Id::Part}, {"Seat", Icons::Id::Part}, {"VehicleSeat", Icons::Id::Part}, {"Water", Icons::Id::Part}, {"FluidVolume", Icons::Id::Part}, {"WaterSource", Icons::Id::Part}, {"FluidSystem", Icons::Id::Value}, {"FluidEmitter", Icons::Id::Sound}, {"Model", Icons::Id::Model}, {"Folder", Icons::Id::Folder},
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
         {"Sky", Icons::Id::Lighting}, {"ColorCorrectionEffect", Icons::Id::Lighting}, {"SunRaysEffect", Icons::Id::Lighting},
-        {"MaterialVariant", Icons::Id::Lighting},
+        {"MaterialVariant", Icons::Id::Lighting}, {"SurfaceAppearance", Icons::Id::Lighting},
         {"DepthOfFieldEffect", Icons::Id::Lighting}, {"BloomEffect", Icons::Id::Lighting}, {"BlurEffect", Icons::Id::Lighting},
         {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"ClickDetector", Icons::Id::Click}, {"DragDetector", Icons::Id::Click}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
         {"ParticleEmitter", Icons::Id::Particles}, {"Fire", Icons::Id::Particles}, {"Smoke", Icons::Id::Particles}, {"Sparkles", Icons::Id::Particles},
@@ -3937,6 +3947,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Live Profiler", nullptr, &m_showLiveProfiler)) {}
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
         if (ImGui::MenuItem("Test like a phone...", nullptr, &m_showPhoneTest)) {}
+        if (ImGui::MenuItem("Stress test...", nullptr, &m_showStressTest)) {}
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}

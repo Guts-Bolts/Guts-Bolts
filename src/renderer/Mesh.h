@@ -40,6 +40,8 @@ public:
     // Replace the whole mesh (for shapes that change every frame, like waves).
     void update(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices);
     int  indexCount() const { return m_indexCount; }
+    // Bytes it takes on the graphics card (all its detail levels too). Studio's stress test.
+    size_t bytes() const { size_t b = m_vboBytes + m_eboBytes; for (const Mesh& l : m_lods) b += l.m_vboBytes + l.m_eboBytes; return b; }
     // Draws copies the graphics card listed itself (GpuCulling.h): how many and where they
     // start come from the record at `offset` in the bound GL_DRAW_INDIRECT_BUFFER, the
     // copies' settings from `perCopy`. Computers only.

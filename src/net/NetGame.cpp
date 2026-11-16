@@ -228,7 +228,7 @@ std::string nodeState(const SceneNode* n) {
     if (n->isPostEffect()) return std::string(buf) + Serializer::postEffectToJson(n->post, n->enabled).dump();
     if (n->isLight() && n->lightShadows) return std::string(buf) + "|lsh";   // a lamp's Shadows switched on
     if (n->isSky()) return std::string(buf) + Serializer::skyToJson(n->sky).dump();
-    if (n->isMaterialVariant()) return std::string(buf) + Serializer::variantToJson(n->variant).dump();
+    if (n->isMaterialVariant() || n->isSurfaceAppearance()) return std::string(buf) + Serializer::variantToJson(n->variant).dump();
     if (n->isConstraint() && usesJointProps(n->constraintType)) return std::string(buf) + Serializer::jointToJson(n->joint).dump();
     if (n->isParticles()) return std::string(buf) + Serializer::particleToJson(n->particle, n->enabled).dump();
     return buf;
@@ -249,7 +249,7 @@ json nodeUpdate(const SceneNode* n) {
     if (n->isSound() || n->isSoundGroup() || n->isSoundEffect()) u["snd"] = Serializer::soundToJson(*n);
     if (n->isPostEffect()) u["pfx"] = Serializer::postEffectToJson(n->post, n->enabled);
     if (n->isSky()) u["sky"] = Serializer::skyToJson(n->sky);
-    if (n->isMaterialVariant()) u["var"] = Serializer::variantToJson(n->variant);
+    if (n->isMaterialVariant() || n->isSurfaceAppearance()) u["var"] = Serializer::variantToJson(n->variant);
     if (n->isConstraint() && usesJointProps(n->constraintType)) u["jt"] = Serializer::jointToJson(n->joint);
     if (n->isBone()) u["bn"] = Serializer::boneRigToJson(n->rig);
     if (n->isPart()) { u["tx"] = n->texture; u["ts"] = n->tshirt; }   // its picture (a script put a shirt on an NPC...)
@@ -291,7 +291,7 @@ void applyUpdate(SceneNode* n, const json& u) {
     if (u.contains("snd") && u["snd"].is_object()) Serializer::soundFromJson(*n, u["snd"]);
     if (n->isPostEffect() && u.contains("pfx") && u["pfx"].is_object()) Serializer::postEffectFromJson(u["pfx"], n->post, n->enabled);
     if (n->isSky() && u.contains("sky") && u["sky"].is_object()) Serializer::skyFromJson(u["sky"], n->sky);
-    if (n->isMaterialVariant() && u.contains("var") && u["var"].is_object()) Serializer::variantFromJson(u["var"], n->variant);
+    if ((n->isMaterialVariant() || n->isSurfaceAppearance()) && u.contains("var") && u["var"].is_object()) Serializer::variantFromJson(u["var"], n->variant);
     if (n->isConstraint() && u.contains("jt") && u["jt"].is_object()) Serializer::jointFromJson(u["jt"], n->joint);
     if (n->isBone() && u.contains("bn") && u["bn"].is_object()) Serializer::boneRigFromJson(u["bn"], n->rig);   // (the wobble itself isn't sent)
     applyExtras(n, u);

@@ -253,6 +253,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
         case NodeKind::IKControl: return "IKControl";
+        case NodeKind::SurfaceAppearance: return "SurfaceAppearance";
         case NodeKind::ClickDetector: return n->click.drag ? "DragDetector" : "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
@@ -1438,6 +1439,25 @@ bool variantNewIndex(lua_State* L, SceneNode* n, const char* k) {
     return false;
 }
 
+// A SurfaceAppearance: its pictures (ColorMap, NormalMap, RoughnessMap, MetalnessMap; ours: OrmMap).
+// A number is a Library picture's ID. Roblox's AlphaMode, Color and TexturePack are accepted.
+bool surfaceIndex(lua_State* L, SceneNode* n, const char* k) {
+    if (std::string* pic = variantPicture(n->variant, k)) { lua_pushstring(L, pic->c_str()); return true; }
+    if (is(k, "AlphaMode")) { lua_pushstring(L, "Overlay"); return true; }
+    return false;
+}
+bool surfaceNewIndex(lua_State* L, SceneNode* n, const char* k) {
+    if (std::string* pic = variantPicture(n->variant, k)) {
+        *pic = lua_type(L, 3) == LUA_TNUMBER ? "gb:" + std::to_string((long long)lua_tointeger(L, 3))
+             : lua_isnil(L, 3) ? std::string() : std::string(luaL_checkstring(L, 3));
+        if (pic->rfind("rbxassetid://", 0) == 0) *pic = "gb:" + pic->substr(13);
+        clampVariant(n->variant);
+        return true;
+    }
+    if (is(k, "AlphaMode") || is(k, "Color") || is(k, "TexturePack")) return true;   // (accepted)
+    return false;
+}
+
 bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
     const GuiProps& g = n->gui;
     if (is(k, "AbsoluteSize") || is(k, "AbsolutePosition")) GameGui::refresh(*E(L)->scene());
@@ -2192,6 +2212,7 @@ int inst_index(lua_State* L) {
     if (n->isPostEffect() && postIndex(L, n, k)) return 1;
     if (n->isSky() && skyIndex(L, n, k)) return 1;
     if (n->isMaterialVariant() && variantIndex(L, n, k)) return 1;
+    if (n->isSurfaceAppearance() && surfaceIndex(L, n, k)) return 1;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointIndex(L, n, k)) return 1;
     if (n->isParticles() && particleIndex(L, n, k)) return 1;
     if (n->isConstraint() && n->legacyJoint) {   // Weld / Motor6D
@@ -2664,6 +2685,7 @@ int inst_set(lua_State* L) {
     if (n->isPostEffect() && postNewIndex(L, n, k)) return 0;
     if (n->isSky() && skyNewIndex(L, n, k)) return 0;
     if (n->isMaterialVariant() && variantNewIndex(L, n, k)) return 0;
+    if (n->isSurfaceAppearance() && surfaceNewIndex(L, n, k)) return 0;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointNewIndex(L, n, k)) return 0;
     if (n->isParticles() && particleNewIndex(L, n, k)) return 0;
     if (n->isConstraint() && n->legacyJoint) {   // Weld / Motor6D
@@ -3252,6 +3274,8 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Sky);
     } else if (cls == "MaterialVariant") {
         n = std::make_unique<SceneNode>(cls, NodeKind::MaterialVariant);
+    } else if (cls == "SurfaceAppearance") {   // pictures on its parent part's mesh, by the mesh's UVs
+        n = std::make_unique<SceneNode>(cls, NodeKind::SurfaceAppearance);
     } else if (std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), cls) != std::end(kParticleClassNames)) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Particles);
         for (int i = 0; i < kParticleTypeCount; ++i) if (cls == kParticleClassNames[i]) n->particle = particleDefaults((ParticleType)i);

@@ -12,7 +12,7 @@ inline bool appMay(const std::string& tool, bool canChange) {
         "read_script", "get_output", "get_errors", "diagnose_object",
         "analyze_scene_performance", "analyze_script_dependencies",
         "validate_scene", "find_path", "get_runtime_state", "screenshot",
-        "phone_check"
+        "phone_check", "stress_test"
     };
     static const char* writeTools[] = {
         "insert_object", "delete_object", "set_property", "find_and_change",
