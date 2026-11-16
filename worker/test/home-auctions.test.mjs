@@ -80,3 +80,10 @@ test('shared UI rendering strips standalone undefined placeholders from page and
   assert.match(appSource, /function show\(content\)[\s\S]*?removeUndefinedPlaceholders\(view\)/);
   assert.match(appSource, /function setMe\(m\)[\s\S]*?removeUndefinedPlaceholders\(box\)/);
 });
+
+test('undefined placeholder cleanup also observes asynchronous page DOM updates', () => {
+  assert.match(appSource, /const view = \$\('#view'\);[\s\S]*?new MutationObserver\(/);
+  assert.match(appSource, /undefinedTextObserver\.observe\(view, \{ childList: true, characterData: true, subtree: true \}\)/);
+  assert.match(appSource, /if \(record\.type === 'characterData'\) removeUndefinedPlaceholders\(record\.target\)/);
+  assert.match(appSource, /for \(const node of record\.addedNodes \|\| \[\]\) removeUndefinedPlaceholders\(node\)/);
+});

@@ -47,6 +47,10 @@ const $ = (sel, root = document) => root.querySelector(sel);
 // "undefined" placeholders introduced by raw HTML or direct DOM updates.
 function removeUndefinedPlaceholders(root) {
   if (!root) return;
+  if (root.nodeType === Node.TEXT_NODE) {
+    if (root.nodeValue.trim() === 'undefined') root.remove();
+    return;
+  }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const remove = [];
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -62,6 +66,18 @@ function show(content) {
   setTimeout(() => upgradeItemPictures(), 0);   // (item renders on every page)
 }
 const view = $('#view');
+
+// Some UI is populated asynchronously after show() has rendered the page. Watch
+// later DOM insertions and text updates too, so those paths cannot reintroduce
+// the same visible JavaScript placeholder.
+const undefinedTextObserver = typeof MutationObserver === 'undefined' ? null : new MutationObserver((records) => {
+  for (const record of records) {
+    if (record.type === 'characterData') removeUndefinedPlaceholders(record.target);
+    for (const node of record.addedNodes || []) removeUndefinedPlaceholders(node);
+  }
+});
+if (undefinedTextObserver) undefinedTextObserver.observe(view, { childList: true, characterData: true, subtree: true });
+
 // Render fenced code blocks as inert, copyable code. Never interpret code as HTML or execute it.
 function richText(value) {
   const source = String(value ?? '');
