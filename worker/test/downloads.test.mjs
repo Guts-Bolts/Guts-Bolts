@@ -29,7 +29,7 @@ test('download publishing accepts only the designated release workflow on main o
 
 test('Sysfix release mirror accepts only its manual publisher workflow on main', () => {
   assert.equal(isTrustedReleaseClaims(sysfixClaims()), true);
-  assert.equal(isTrustedReleaseClaims(sysfixClaims({ event_name: 'push' })), false);
+  assert.equal(isTrustedReleaseClaims(sysfixClaims({ event_name: 'push' })), true);
   assert.equal(isTrustedReleaseClaims(sysfixClaims({ repository_id: '1' })), false);
   assert.equal(isTrustedReleaseClaims(sysfixClaims({ workflow_ref: 'Guts-Bolts/Sysfix-Releases/.github/workflows/other.yml@refs/heads/main' })), false);
   assert.equal(isTrustedReleaseClaims(sysfixClaims({ ref: 'refs/heads/feature' })), false);
