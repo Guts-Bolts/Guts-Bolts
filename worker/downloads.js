@@ -5,8 +5,9 @@
 //   GET  /download/<file>              the newest copy of that file
 //   PUT  /download/upload/<file>?version=X   (the G&B release workflow, with its GitHub token)
 //   PUT  /download/upload/<file>?version=X&product=sysfix   (the Sysfix release mirror)
-//   GET  /download/products/sysfix/<version>/<file>        (a mirrored Sysfix release asset)
-//   GET  /download/products/sysfix/latest/<file>           (the newest mirrored Sysfix asset)
+//   PUT  /download/upload/<file>?version=X&product=contentforge (the ContentForge release workflow)
+//   GET  /download/products/<product>/<version>/<file>      (a mirrored product release asset)
+//   GET  /download/products/<product>/latest/<file>         (the newest mirrored product asset)
 //   POST /download/publish             (the G&B release workflow) {version, name, notes, files}
 //
 // Nightly test builds (the Player's opt-in "Nightly" channel) live apart from the
@@ -46,6 +47,12 @@ const RELEASE_PUBLISHERS = {
     events: ['push', 'workflow_dispatch'],
     refs: (ref) => ref === 'refs/heads/main',
   },
+  'Guts-Bolts/ContentForge': {
+    repositoryId: '1458913228',
+    workflow: 'Guts-Bolts/ContentForge/.github/workflows/release.yml',
+    events: ['push'],
+    refs: (ref) => ref.startsWith('refs/tags/v') && /^[0-9]/.test(ref.slice('refs/tags/v'.length)),
+  },
 };
 
 // Only explicitly designated release workflows may publish downloads. A valid
@@ -59,10 +66,11 @@ export function isTrustedReleaseClaims(claims) {
   return claims.workflow_ref === policy.workflow + '@' + ref;
 }
 
-// A Sysfix publisher may write only to the Sysfix product namespace, never to
-// the Engine's top-level downloads or nightly channel.
+// Product publishers are restricted to their own namespace, never the Engine's
+// top-level downloads or nightly channel.
 export function canPublishProductUpload(claims, product, nightly = false) {
   if (claims?.repository === 'Guts-Bolts/Sysfix-Releases') return product === 'sysfix' && !nightly;
+  if (claims?.repository === 'Guts-Bolts/ContentForge') return product === 'contentforge' && !nightly;
   return product === '';
 }
 export function limitUploadStream(stream, maxBytes) {
@@ -345,7 +353,7 @@ export async function handleDownload(request, env, url) {
     if (!obj) return json({ ok: false, error: 'No nightly build yet.' }, 404);
     return new Response(obj.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } });
   }
-  const productFile = /^products\/(sysfix)\/(latest|[0-9][0-9A-Za-z.-]{0,30})\/([^/]+)$/.exec(rest);
+  const productFile = /^products\/(sysfix|contentforge)\/(latest|[0-9][0-9A-Za-z.-]{0,30})\/([^/]+)$/.exec(rest);
   if (productFile) {
     if (!FILE.test(productFile[3])) return new Response('Not found.', { status: 404 });
     const productObject = await env.DOWNLOADS.get('products/' + productFile[1] + '/' + productFile[2] + '/' + productFile[3]);
