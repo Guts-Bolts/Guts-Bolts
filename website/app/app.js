@@ -59,6 +59,14 @@ function removeUndefinedPlaceholders(root) {
   remove.forEach((node) => node.remove());
 }
 
+function show(content) {
+  view.innerHTML = content.s;
+  removeUndefinedPlaceholders(view);
+  view.querySelectorAll('.lang-slot:empty').forEach((slot) => slot.append(languagePicker()));
+  setTimeout(() => upgradeItemPictures(), 0);   // (item renders on every page)
+}
+const view = $('#view');
+
 // Some UI is populated asynchronously after show() has rendered the page. Watch
 // later DOM insertions and text updates too, so those paths cannot reintroduce
 // the same visible JavaScript placeholder.
@@ -70,13 +78,6 @@ const undefinedTextObserver = typeof MutationObserver === 'undefined' ? null : n
 });
 if (undefinedTextObserver) undefinedTextObserver.observe(view, { childList: true, characterData: true, subtree: true });
 
-function show(content) {
-  view.innerHTML = content.s;
-  removeUndefinedPlaceholders(view);
-  view.querySelectorAll('.lang-slot:empty').forEach((slot) => slot.append(languagePicker()));
-  setTimeout(() => upgradeItemPictures(), 0);   // (item renders on every page)
-}
-const view = $('#view');
 // Render fenced code blocks as inert, copyable code. Never interpret code as HTML or execute it.
 function richText(value) {
   const source = String(value ?? '');
