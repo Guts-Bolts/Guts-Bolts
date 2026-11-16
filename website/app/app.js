@@ -5700,10 +5700,10 @@ async function refreshActivityFeeds() {
 async function refreshLiveAuctions() {
   if (auctionRefreshBusy || document.visibilityState !== 'visible') return;
   const path = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/');
-  if (path[0] !== 'home' && path[0] !== 'item' && path[0] !== 'catalog') return;
+  if (path[0] !== 'games' && path[0] !== 'item' && path[0] !== 'catalog') return;
   auctionRefreshBusy = true;
   try {
-    if (path[0] === 'home') {
+    if (path[0] === 'games') {
       const r = await pageCall('list', { kind: 'clothing', auctions: true, sort: 'ending', limit: 12 });
       const section = $('#liveAuctions');
       if (!r.ok || !section || (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home') !== 'home') return;
