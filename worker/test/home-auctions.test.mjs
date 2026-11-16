@@ -74,6 +74,14 @@ test('auction catalog discovery page features a live auction banner and refreshe
 });
 
 
+test('Games discovery homepage refreshes its live auction shelf', () => {
+  assert.ok(appSource.includes("const auctionBox = html`<div id=\"liveAuctions\">"));
+  assert.match(appSource, /if \(path\[0\] !== 'games' && path\[0\] !== 'item' && path\[0\] !== 'catalog'\) return;/);
+  assert.match(appSource, /if \(path\[0\] === 'games'\) \{[\s\S]*?const r = await pageCall\('list', \{ kind: 'clothing', auctions: true, sort: 'ending', limit: 12 \}\);[\s\S]*?const section = \$\('#liveAuctions'\);[\s\S]*?section\.innerHTML = renderAuctionHomeSection\(r\.assets\)\.s/);
+  assert.match(appSource, /setInterval\(refreshLiveAuctions, 12000\)/);
+  assert.match(appSource, /event === 'auctions'\) \{ refreshActivityFeeds\(\); refreshLiveAuctions\(\); \}/);
+});
+
 test('shared UI rendering strips standalone undefined placeholders from page and account markup', () => {
   assert.ok(appSource.includes('function removeUndefinedPlaceholders(root)'));
   assert.ok(appSource.includes('if (node.nodeValue.trim() === \'undefined\') remove.push(node);'));
