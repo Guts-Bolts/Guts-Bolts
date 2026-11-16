@@ -27,7 +27,7 @@ test('download publishing accepts only the designated release workflow on main o
   assert.equal(isTrustedReleaseClaims(claims('refs/heads/feature/test')), false);
 });
 
-test('Sysfix release mirror accepts only its manual publisher workflow on main', () => {
+test('Sysfix release mirror accepts only its designated publisher workflow on main', () => {
   assert.equal(isTrustedReleaseClaims(sysfixClaims()), true);
   assert.equal(isTrustedReleaseClaims(sysfixClaims({ event_name: 'push' })), true);
   assert.equal(isTrustedReleaseClaims(sysfixClaims({ repository_id: '1' })), false);
