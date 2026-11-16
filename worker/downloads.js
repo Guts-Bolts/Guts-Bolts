@@ -353,7 +353,7 @@ export async function handleDownload(request, env, url) {
     if (!obj) return json({ ok: false, error: 'No nightly build yet.' }, 404);
     return new Response(obj.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } });
   }
-  const productFile = /^products\\/(sysfix|contentforge)\\/(latest|[0-9][0-9A-Za-z.-]{0,30})\\/([^/]+)$/.exec(rest);
+  const productFile = /^products\/(sysfix|contentforge)\/(latest|[0-9][0-9A-Za-z.-]{0,30})\/([^/]+)$/.exec(rest);
   if (productFile) {
     if (!FILE.test(productFile[3])) return new Response('Not found.', { status: 404 });
     const productObject = await env.DOWNLOADS.get('products/' + productFile[1] + '/' + productFile[2] + '/' + productFile[3]);
