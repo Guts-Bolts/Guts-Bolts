@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isTrustedReleaseClaims, limitUploadStream, normalizeReleaseManifest } from '../downloads.js';
+import { canPublishProductUpload, isTrustedReleaseClaims, limitUploadStream, normalizeReleaseManifest } from '../downloads.js';
 
 const REPO = 'Guts-Bolts/Guts-Bolts';
 const workflow = REPO + '/.github/workflows/build.yml';
@@ -33,6 +33,15 @@ test('Sysfix release mirror accepts only its manual publisher workflow on main',
   assert.equal(isTrustedReleaseClaims(sysfixClaims({ repository_id: '1' })), false);
   assert.equal(isTrustedReleaseClaims(sysfixClaims({ workflow_ref: 'Guts-Bolts/Sysfix-Releases/.github/workflows/other.yml@refs/heads/main' })), false);
   assert.equal(isTrustedReleaseClaims(sysfixClaims({ ref: 'refs/heads/feature' })), false);
+});
+
+test('product upload publishers are confined to their own download namespace', () => {
+  const sysfix = sysfixClaims();
+  assert.equal(canPublishProductUpload(sysfix, 'sysfix', false), true);
+  assert.equal(canPublishProductUpload(sysfix, '', false), false);
+  assert.equal(canPublishProductUpload(sysfix, 'sysfix', true), false);
+  assert.equal(canPublishProductUpload(claims(), '', false), true);
+  assert.equal(canPublishProductUpload(claims(), 'sysfix', false), false);
 });
 
 test('download publishing rejects tokens from other workflows and event types', () => {
