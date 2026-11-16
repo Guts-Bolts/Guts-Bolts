@@ -42,8 +42,22 @@ function html(strings, ...vals) {
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
+// A missing value should never become visible UI text. The HTML template renderer
+// already omits JavaScript undefined values; this also catches literal
+// "undefined" placeholders introduced by raw HTML or direct DOM updates.
+function removeUndefinedPlaceholders(root) {
+  if (!root) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const remove = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeValue.trim() === 'undefined') remove.push(node);
+  }
+  remove.forEach((node) => node.remove());
+}
+
 function show(content) {
   view.innerHTML = content.s;
+  removeUndefinedPlaceholders(view);
   view.querySelectorAll('.lang-slot:empty').forEach((slot) => slot.append(languagePicker()));
   setTimeout(() => upgradeItemPictures(), 0);   // (item renders on every page)
 }
@@ -538,6 +552,7 @@ function setMe(m) {
   } else {
     box.innerHTML = html`<a href="#/signup">Sign Up</a> | <a href="#/login">Login</a>`.s;
   }
+  removeUndefinedPlaceholders(box);
   showWarning();
 }
 
