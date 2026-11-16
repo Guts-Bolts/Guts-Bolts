@@ -1483,6 +1483,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # The character: held-down ragdolls, knocked off seats, swimming.
+    add_executable(StillWaterTests tests/StillWaterTests.cpp)
+    target_link_libraries(StillWaterTests PRIVATE gb_engine)
+    add_test(NAME StillWaterTests COMMAND StillWaterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
     add_executable(CharacterTests tests/CharacterTests.cpp)
     target_link_libraries(CharacterTests PRIVATE gb_engine)
     add_test(NAME CharacterTests COMMAND CharacterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"

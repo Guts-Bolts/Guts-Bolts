@@ -2485,7 +2485,8 @@ uniform mat4  uView;
 uniform mat4  uProj;
 uniform mat3  uNormalMat;
 uniform bool  uWaveMesh;             // the moving surface (while playing), not a plain box
-uniform float uWaveAmp;              // the ocean swell's height (0 = calm)
+uniform float uWaveAmp;              // the ocean swell's height (0 = calm), at most 1...
+uniform float uOcStretch;            // ...on a sea this many times bigger (OceanWaves::stretch)
 uniform float uChop;                 // how much the water bunches towards the crests
 uniform float uCell;                 // how far apart this surface's points are (studs)
 uniform sampler2D uOcD0, uOcD1;      // the two big bands' waves: sideways x, height, sideways z
@@ -2509,12 +2510,13 @@ void main() {
         float edge = clamp(min(min(w.x - uBodyMin.x, uBodyMax.x - w.x), min(w.z - uBodyMin.z, uBodyMax.z - w.z)) * 0.5, 0.0, 1.0);
         // Waves smaller than the surface's own points would only make it jitter, so each
         // band is read from a blurrier copy when the points are far apart (a huge sea).
-        float l0 = max(0.0, log2(uCell / uOcTexel.x) + 0.5), l1 = max(0.0, log2(uCell / uOcTexel.y) + 0.5);
-        vec4 d = textureLod(uOcD0, w.xz / uOcLen.x + uOcHalf, l0) + textureLod(uOcD1, w.xz / uOcLen.y + uOcHalf, l1);
+        vec2 len = uOcLen.xy * uOcStretch, texel = uOcTexel.xy * uOcStretch;
+        float l0 = max(0.0, log2(uCell / texel.x) + 0.5), l1 = max(0.0, log2(uCell / texel.y) + 0.5);
+        vec4 d = textureLod(uOcD0, w.xz / len.x + uOcHalf, l0) + textureLod(uOcD1, w.xz / len.y + uOcHalf, l1);
         vOc.z = edge;
         vWaveH = d.y;
-        w.xz += d.xz * (uWaveAmp * uChop * edge);
-        w.y  += d.y * uWaveAmp;
+        w.xz += d.xz * (uWaveAmp * uChop * edge * uOcStretch);
+        w.y  += d.y * uWaveAmp * uOcStretch;
     }
     vWorldPos = w;
     vNormal = n;
@@ -2572,6 +2574,7 @@ uniform vec3  uDyeGrid;          // cell size, points across x, points across z
 // The ocean swell's pictures (see OceanGpu.h): 2 bands from the processor, or 3 from
 // the graphics card.
 uniform float uWaveAmp;
+uniform float uOcStretch;
 uniform float uChop;
 uniform int   uOcBands;
 uniform sampler2D uOcD0, uOcD1, uOcD2;
@@ -2711,7 +2714,7 @@ void main() {
     float breaking = 0.0;
     bool swell = uWaveAmp > 0.0 && uOcBands > 0 && N.y > 0.3;
     if (swell) {
-        vec2 q0 = vOc.xy / uOcLen.x + uOcHalf, q1 = vOc.xy / uOcLen.y + uOcHalf;
+        vec2 q0 = vOc.xy / (uOcLen.x * uOcStretch) + uOcHalf, q1 = vOc.xy / (uOcLen.y * uOcStretch) + uOcHalf;
         vec4 s = texture(uOcS0, q0) + texture(uOcS1, q1);
         // (Tiny ripples don't get steeper just because the swell is huge.)
         if (uOcBands > 2) s.xy += texture(uOcS2, vOc.xy / uOcLen.z + uOcHalf).xy * min(1.0, 0.6 / uWaveAmp);
@@ -2724,7 +2727,7 @@ void main() {
         float squeeze = jx * jz - c * c * jxz * jxz;   // 1 = calm, near 0 = folding over
         vec2 sl = uWaveAmp * s.xy / max(vec2(jx, jz), vec2(0.35));
         N = normalize(N + vec3(-sl.x, 0.0, -sl.y));
-        breaking = (1.0 - smoothstep(0.3, 0.62, squeeze)) * smoothstep(0.3, 1.1, uWaveAmp);
+        breaking = (1.0 - smoothstep(0.3, 0.62, squeeze)) * smoothstep(0.3, 1.1, uWaveAmp * uOcStretch);
     }
     // Little ripples close up; far away they're smaller than a pixel, so they'd only sparkle.
     // (The graphics card's third band is real ripples, so the made-up ones are only
@@ -2803,7 +2806,7 @@ void main() {
         // the crests glow in the water's own colour.
         if (swell) {
             float towardsSun = pow(max(dot(-V, L), 0.0), 3.0);
-            float thin = smoothstep(0.15, 1.0, vWaveH) * min(uWaveAmp, 1.5);
+            float thin = smoothstep(0.15, 1.0, vWaveH) * min(uWaveAmp * uOcStretch, 1.5);
             col += deep * sunRad * sun * towardsSun * thin * (1.0 - fres) * 0.7;
         }
         // Foam: a lacy band where the water meets the shore, on breaking crests and

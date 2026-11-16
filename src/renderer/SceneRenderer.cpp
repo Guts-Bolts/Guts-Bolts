@@ -1490,8 +1490,12 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             w.setMat4("uModel", glm::mat4(1.0f));
             w.setMat3("uNormalMat", glm::mat3(1.0f));
             w.setBool("uWaveMesh", true);
-            w.setFloat("uWaveAmp", wb->swell);
-            w.setFloat("uChop", OceanWaves::chop(wb->swell));
+            {   // (a big swell is the same sea made bigger: OceanWaves::stretch)
+                const float s = OceanWaves::stretch(wb->swell), a = wb->swell > 0.0f ? wb->swell / s : 0.0f;
+                w.setFloat("uWaveAmp", a);
+                w.setFloat("uOcStretch", s);
+                w.setFloat("uChop", OceanWaves::chop(a));
+            }
             {   // (how far apart the surface's points are: the same sum as buildWaterMesh)
                 const glm::vec3 size = wb->max - wb->min;
                 w.setFloat("uCell", std::max({0.5f, size.x / 179.0f, size.z / 179.0f}));
@@ -1556,6 +1560,7 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             w.setMat3("uNormalMat", glm::transpose(glm::inverse(glm::mat3(it.model))));
             w.setBool("uWaveMesh", false);
             w.setFloat("uWaveAmp", 0.0f);
+            w.setFloat("uOcStretch", 1.0f);
             w.setFloat("uChop", 0.0f);
             w.setBool("uHasFlowMap", false);
             w.setBool("uHasDye", false);

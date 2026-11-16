@@ -76,4 +76,21 @@ inline glm::vec2 step(const glm::vec2& v, const glm::vec2& move, float walkSpeed
     return out;
 }
 
+// Riding something: where a point that moved along with the part we stand on is now.
+// `before` and `now` are the part's world matrix last frame and this frame.
+//
+// A part that didn't move leaves the point exactly where it was. (Working it out
+// anyway, as now * inverse(before), is never quite exact in floats: far from the
+// middle of the map, on a big squashed baseplate, it came out a hair off every
+// frame, and a player standing still slowly slid across the map, faster the higher
+// the frame rate.) A moving part is worked out in doubles, for the same reason.
+// `turnDegrees` (if given) gets how far the part turned about the up axis.
+inline glm::vec3 carry(const glm::mat4& before, const glm::mat4& now, const glm::vec3& point, float* turnDegrees = nullptr) {
+    if (turnDegrees) *turnDegrees = 0.0f;
+    if (before == now) return point;
+    const glm::dmat4 change = glm::dmat4(now) * glm::inverse(glm::dmat4(before));
+    if (turnDegrees) *turnDegrees = (float)glm::degrees(std::atan2(change[2][0], change[2][2]));
+    return glm::vec3(change * glm::dvec4(glm::dvec3(point), 1.0));
+}
+
 } // namespace CharacterFooting
