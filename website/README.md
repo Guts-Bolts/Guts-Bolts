@@ -46,7 +46,7 @@ From then on, every change merged into `main` goes live on its own.
 ## Change it
 
 - Front page text: `index.html`. Pictures: `img/`.
-- Public product directory: `products.html` and `products.css`. The Sysfix product guide lives in `products/sysfix.html` with its styles in `products/sysfix.css`; the Worker maps `/products/Sysfix` to that page.
+- Products: `products.html` lists everything G&B makes. Each download app has its own page in `products/` (`sysfix.html`, `contentforge.html`); all of them share `products/product.css` (the site's red and white, dark mode through `theme.js`) and `products/product.js` (copy buttons, and turning on a download once it's on the mirror). The Worker serves `/products`, `/products/Sysfix` and `/products/ContentForge`. The apps also show on the website's Home from `APPS` in `app/products.js`.
 - Site pages: `app/app.js` (one function per page), look: `app/app.css`.
 - The crypto (`app/gbcrypto.wasm`) is built by `tools/webcrypto/build.sh`. You only
   need to rebuild it if `tools/webcrypto/gbcrypto.c` changes.

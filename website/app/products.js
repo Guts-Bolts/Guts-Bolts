@@ -122,6 +122,20 @@ export const PRODUCTS = [
   },
 ];
 
+// Apps you download and run on your own computer, made by Guts&Bolts but not part of
+// the website. Each has its own page under /products (website/products/<id>.html) and
+// a card in the "Apps to download" row on Home. Not in the top bar: they aren't site pages.
+//   id, name, blurb  as above
+//   href      its product page
+//   platform  what it runs on, shown on its card
+//   stage     'out' (you can download it) or 'test' (early test version)
+export const APPS = [
+  { id: 'sysfix', name: 'Sysfix', href: '/products/Sysfix', platform: 'Linux', stage: 'out',
+    blurb: 'Checks your Linux PC, explains what is wrong, and never changes things without asking.' },
+  { id: 'contentforge', name: 'ContentForge', href: '/products/ContentForge', platform: 'Windows', stage: 'test',
+    blurb: 'Turns an idea into a short video, with AI that runs on your own PC.' },
+];
+
 // The groups the Home page shows products in. Guts&Bolts is the parent brand: games are
 // one group of many. `later` names ideas that aren't built yet (shown small, as "on the
 // way"), so adding a product to a group later means adding its id to `products`.

@@ -73,7 +73,7 @@
     // (The pages themselves too, so the old workers.dev address can send visitors to gutsandbolts.net.)
     "run_worker_first": ["/api", "/api/*", "/ws", "/ws/remote", "/ws/infrastructure", "/thumb/*", "/icon/*", "/avatar/*", "/download/*", "/", "/index.html", "/app", "/app/", "/app/index.html",
       "/ads.txt", "/ads-config", "/privacy", "/privacy.html", "/checkout", "/checkout.html",
-      "/products/*", "/mcp", "/mcp/*", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*", "/.well-known/oauth-authorization-server"]
+      "/products", "/products/*", "/mcp", "/mcp/*", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*", "/.well-known/oauth-authorization-server"]
   },
   "durable_objects": {
     "bindings": [

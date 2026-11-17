@@ -3,294 +3,155 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sysfix — Linux diagnostics, security &amp; system health | Guts&amp;Bolts</title>
-<meta name="description" content="Meet Sysfix: local-first Linux diagnostics, system health monitoring, security tools and optional Fyxa AI assistance. Learn what it does, how to install it and how to use it.">
-<meta name="theme-color" content="#0b1110">
+<title>Sysfix | Guts&amp;Bolts</title>
+<meta name="description" content="Sysfix checks the health of your Linux computer, explains what it finds in plain words and never changes anything without asking. Free, with optional Fyxa AI help.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Sysfix — Understand your system. Fix it with confidence.">
-<meta property="og:description" content="A local-first Linux toolkit for diagnostics, system health, security and optional Fyxa AI assistance.">
+<meta property="og:title" content="Sysfix: know what's wrong with your Linux PC">
+<meta property="og:description" content="A free Linux health check and repair kit from Guts&amp;Bolts. Desktop app or terminal, with optional Fyxa AI help.">
 <meta property="og:url" content="https://gutsandbolts.net/products/Sysfix">
 <link rel="canonical" href="https://gutsandbolts.net/products/Sysfix">
 <link rel="icon" href="/img/icon.png">
 <link rel="stylesheet" href="/fonts/font.css">
-<link rel="stylesheet" href="/products/sysfix.css">
+<link rel="stylesheet" href="/products/product.css">
+<script src="/theme.js"></script>
 </head>
-<body>
-<header class="site-header">
-  <div class="header-inner">
-    <a class="brand" href="/" aria-label="Guts and Bolts home"><img src="/img/logo.png" alt="Guts &amp; Bolts"></a>
-    <nav aria-label="Main navigation">
-      <a href="/">Home</a><a class="active" href="/products.html">Products</a><a href="/app/#/games">Games</a><a href="/app/#/updates">Updates</a>
-    </nav>
-    <a class="header-cta" href="#download">Get Sysfix</a>
+<body class="p-sysfix">
+<header class="topbar">
+  <div class="wrap">
+    <a class="logo" href="/"><img src="/img/logo.png" alt="Guts &amp; Bolts" width="720" height="242"></a>
+    <span class="acct"><a href="/app/#/signup">Sign Up</a> | <a href="/app/#/login">Login</a></span>
   </div>
 </header>
+<nav class="mainnav" aria-label="Main">
+  <div class="wrap">
+    <a href="/app/">Home</a><a href="/products" aria-current="page">Products</a><a href="/app/#/games">Games</a><a href="/app/#/updates">Updates</a><a href="/app/#/support">Help</a>
+    <a class="nav-cta" href="#download">Get Sysfix</a>
+  </div>
+</nav>
 
 <main>
-  <section class="hero">
-    <div class="hero-copy">
-      <p class="eyebrow"><span class="eyebrow-dot"></span> GUTS &amp; BOLTS SOFTWARE</p>
-      <h1>Your Linux system.<br><span>Know what's going on.</span></h1>
-      <p class="hero-lead">Sysfix is a local-first diagnostics and maintenance toolkit that helps you understand your computer, investigate problems and make informed decisions about what to do next.</p>
-      <div class="hero-actions">
-        <a class="button button-primary" href="#download">Download Sysfix <span aria-hidden="true">↗</span></a>
-        <a class="button button-quiet" href="#getting-started">Learn how to use it</a>
+  <section class="hero hero-split">
+    <div>
+      <span class="kicker"><a href="/products" style="color:inherit">Products</a> &rsaquo; Linux repair kit</span>
+      <h1>Sysfix<br><em>Know what's wrong.</em></h1>
+      <p>Sysfix checks your Linux computer, tells you what it found in plain words, and helps you decide what to do. It never changes anything without asking you first.</p>
+      <div class="btns">
+        <a class="btn white" href="#download">Download 1.2.0</a>
+        <a class="btn ghost" href="#start">How to start</a>
       </div>
-      <div class="hero-facts"><span>Linux</span><span>GUI + terminal</span><span>Optional local AI</span><span>Python 3.10+</span></div>
+      <ul class="chips" style="margin-top:18px"><li class="chip">Linux</li><li class="chip">Free</li><li class="chip">Desktop app + terminal</li><li class="chip">Optional local AI</li></ul>
     </div>
-    <div class="hero-visual" aria-label="Illustration of a Sysfix system health report">
-      <div class="dashboard-window">
-        <div class="window-top"><div class="window-dots"><i></i><i></i><i></i></div><span>SYSFIX / SYSTEM OVERVIEW</span><b>LOCAL</b></div>
-        <div class="dashboard-body">
-          <div class="dash-heading"><div><small>SYSTEM STATUS</small><strong>Health overview</strong></div><span class="live-dot">● MONITORING</span></div>
-          <div class="metric-grid">
-            <div class="metric"><small>CPU</small><strong>24<span>%</span></strong><div class="meter"><i style="width:24%"></i></div></div>
-            <div class="metric"><small>MEMORY</small><strong>61<span>%</span></strong><div class="meter"><i style="width:61%"></i></div></div>
-            <div class="metric"><small>STORAGE</small><strong>42<span>%</span></strong><div class="meter"><i style="width:42%"></i></div></div>
-          </div>
-          <div class="report">
-            <div class="report-title"><b>Diagnostic report</b><span>EXAMPLE UI</span></div>
-            <div class="report-row"><i class="check">✓</i><span>CPU and memory</span><em>Checked</em></div>
-            <div class="report-row"><i class="check">✓</i><span>Mounted filesystems</span><em>Checked</em></div>
-            <div class="report-row"><i class="warning">!</i><span>Service configuration</span><em class="warn-text">Review</em></div>
-            <div class="report-row"><i class="check">✓</i><span>Available temperatures</span><em>Checked</em></div>
-          </div>
-          <div class="dash-footer"><span><i></i> Data stays on this machine by default</span><span>SYSFIX</span></div>
-        </div>
+    <div class="window" aria-hidden="true">
+      <div class="bar"><i></i><i></i><i></i><span>sysfix health</span></div>
+      <div class="term">
+        <p><span class="p">$</span> sysfix health</p>
+        <p class="m">Sysfix &middot; System health report</p>
+        <p><span class="g">&#10003;</span> CPU&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;24% used</p>
+        <p><span class="g">&#10003;</span> Memory&nbsp;&nbsp;&nbsp;&nbsp;61% used</p>
+        <p><span class="g">&#10003;</span> Disk /&nbsp;&nbsp;&nbsp;&nbsp;42% full</p>
+        <p class="w">! Service&nbsp;&nbsp;&nbsp;1 failed: look at it</p>
+        <p class="m">Example. Real numbers come from your PC.</p>
       </div>
-      <div class="visual-tag tag-one"><b>01</b> Inspect</div>
-      <div class="visual-tag tag-two"><b>02</b> Understand</div>
     </div>
   </section>
 
-  <section class="trust-strip" aria-label="Product principles">
-    <div><b>Local-first</b><span>Your system data is inspected locally</span></div>
-    <div><b>Evidence-led</b><span>See findings, not just vague warnings</span></div>
-    <div><b>Your decision</b><span>Review changes before applying them</span></div>
-    <div><b>Two interfaces</b><span>Use the desktop GUI or terminal</span></div>
-  </section>
+  <nav class="sub-nav" aria-label="On this page">
+    <a href="#what">What it does</a><a href="#start">How to start</a><a href="#commands">Commands</a><a href="#fyxa">Fyxa</a><a href="#safe">Is it safe?</a><a href="#download">Download</a><a href="#faq">Questions</a>
+  </nav>
 
-  <section class="section" id="what-it-does">
-    <div class="section-heading">
-      <p class="eyebrow">THE TOOLBOX</p>
-      <h2>One place to investigate<br>what's happening on Linux.</h2>
-      <p>Sysfix brings system information and troubleshooting tools together. Start with a quick health report, then dig into the area that needs attention.</p>
-    </div>
-    <div class="feature-grid">
-      <article class="feature-card feature-wide">
-        <div class="feature-icon green">⌁</div><p class="feature-kicker">01 / SYSTEM HEALTH</p>
-        <h3>See the state of your machine.</h3>
-        <p>Inspect CPU usage, physical memory, swap, mounted storage, running processes and available temperature readings. Find failed services, boot issues, USB devices and disk-health information where supported.</p>
-        <div class="feature-tags"><span>CPU &amp; RAM</span><span>Storage</span><span>Temperatures</span><span>Services</span></div>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon blue">⌕</div><p class="feature-kicker">02 / DIAGNOSTICS</p>
-        <h3>Investigate problems.</h3>
-        <p>Run diagnostic checks across hardware, audio, networking and system configuration. Findings are grouped into problems, warnings and information so you can prioritize what matters.</p>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon amber">◫</div><p class="feature-kicker">03 / PERFORMANCE</p>
-        <h3>Find resource pressure.</h3>
-        <p>Identify resource-heavy processes, inspect memory and disk pressure, review energy use and examine predictive maintenance signals such as SMART trends when available.</p>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon red">⌑</div><p class="feature-kicker">04 / SECURITY</p>
-        <h3>Review your system's exposure.</h3>
-        <p>Explore security audits, listening ports, firewall state, failed logins, suspicious process indicators and optional malware-scanning integrations.</p>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon purple">⌘</div><p class="feature-kicker">05 / NETWORK</p>
-        <h3>Understand your connection.</h3>
-        <p>Check interfaces, DNS resolution, gateway latency and internet connectivity. Additional Wi-Fi and network analysis depends on hardware and available system tools.</p>
-      </article>
-      <article class="feature-card feature-wide">
-        <div class="feature-icon cyan">✳</div><p class="feature-kicker">06 / FYXA AI</p>
-        <h3>A troubleshooting assistant that can inspect context.</h3>
-        <p>Fyxa can explain diagnostic results, help investigate logs and guide troubleshooting using optional local AI through Ollama. Its tools and capabilities depend on the installed model and enabled integrations.</p>
-        <div class="feature-tags"><span>Ollama</span><span>System context</span><span>Log investigation</span><span>Local memory</span></div>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon green">▤</div><p class="feature-kicker">07 / MAINTENANCE</p>
-        <h3>Keep track of changes.</h3>
-        <p>Review updates, inspect configuration snapshots, compare a Golden State baseline and use available rollback or cleanup tools where supported.</p>
-      </article>
-      <article class="feature-card">
-        <div class="feature-icon blue">⌨</div><p class="feature-kicker">08 / WORKFLOW</p>
-        <h3>GUI when you want it. CLI when you need it.</h3>
-        <p>Use the desktop application for visual monitoring and interactive troubleshooting, or run focused commands from a terminal and scripts.</p>
-      </article>
+  <section class="box" id="what">
+    <h2>What it does</h2>
+    <p class="lead">Start with a quick health check, then look closer at whatever needs it.</p>
+    <div class="cards">
+      <div class="card"><span class="num">1</span><h3>Health check</h3><p>CPU, memory, swap, disks, the busiest programs and temperatures (when your PC reports them).</p></div>
+      <div class="card"><span class="num">2</span><h3>Find problems</h3><p>Checks hardware, sound, network and settings, then sorts what it finds into problems, warnings and info.</p></div>
+      <div class="card"><span class="num">3</span><h3>Speed</h3><p>Finds programs eating your memory or disk, and warns early when a disk starts to wear out.</p></div>
+      <div class="card"><span class="num">4</span><h3>Security</h3><p>Open ports, firewall, failed logins and odd-looking programs, with optional virus scanning.</p></div>
+      <div class="card"><span class="num">5</span><h3>Network</h3><p>Checks your connection, DNS and how fast your router answers.</p></div>
+      <div class="card"><span class="num">6</span><h3>Two ways to use it</h3><p>A desktop app with tabs and charts, or quick commands in a terminal (handy over SSH).</p></div>
     </div>
   </section>
 
-  <section class="section interface-section" id="interfaces">
-    <div class="section-heading">
-      <p class="eyebrow">PICK YOUR WORKFLOW</p>
-      <h2>A desktop app and a terminal.<br>Same diagnostic engine.</h2>
-      <p>You don't have to choose one way to use Sysfix. Both interfaces are designed to work with the same local configuration and diagnostic tools.</p>
-    </div>
-    <div class="interface-grid">
-      <article class="interface-card">
-        <div class="interface-head"><span>DESKTOP APPLICATION</span><b>GUI</b></div>
-        <div class="mock-gui">
-          <div class="mock-sidebar"><b>SYSFIX</b><i class="selected">▦ &nbsp;Dashboard</i><i>✳ &nbsp;Quick Fix</i><i>⬡ &nbsp;Security</i><i>⌁ &nbsp;Network</i><i>♡ &nbsp;Health</i><i>◉ &nbsp;AI Chat</i><i>▤ &nbsp;Brain</i><i>⚙ &nbsp;Settings</i></div>
-          <div class="mock-main"><small>OVERVIEW</small><strong>System dashboard</strong><div class="mock-gauges"><i><b>24%</b><small>CPU</small></i><i><b>61%</b><small>RAM</small></i><i><b>42%</b><small>DISK</small></i></div><div class="mock-chart"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><small class="mock-caption">ILLUSTRATIVE LAYOUT · NOT A LIVE SCREENSHOT</small></div>
-        </div>
-        <h3>Use the GUI for everyday work.</h3>
-        <p>Open the dashboard for system information, navigate to security or network checks, use AI Chat to investigate findings, and adjust settings from one desktop window.</p>
-      </article>
-      <article class="interface-card">
-        <div class="interface-head"><span>TERMINAL INTERFACE</span><b>CLI</b></div>
-        <div class="code-window">
-          <div class="code-title"><i></i><i></i><i></i><span>your-terminal</span></div>
-          <pre><span class="prompt">$</span> sysfix health
-<span class="muted">Sysfix · System health report</span>
+  <section class="box" id="start">
+    <h2>How to start</h2>
+    <p class="lead">You need a modern Linux and Python 3.10 or newer. The ready-made package is the easiest way.</p>
+    <ol class="steps">
+      <li><h3>Download the package for your Linux</h3><p>RPM for Fedora, RHEL and openSUSE. DEB for Debian, Ubuntu and Mint.</p><a href="#download">Go to downloads &darr;</a></li>
+      <li><h3>Install it</h3><p>Open a terminal in the folder you downloaded it to and run the line for your Linux:</p>
+        <div class="cmd"><code>sudo dnf install ./sysfix-ai-1.2.0-1.fc44.noarch.rpm</code><button type="button" data-copy="sudo dnf install ./sysfix-ai-1.2.0-1.fc44.noarch.rpm">Copy</button></div>
+        <div class="cmd"><code>sudo apt install ./sysfix-ai_1.2.0-1_all.deb</code><button type="button" data-copy="sudo apt install ./sysfix-ai_1.2.0-1_all.deb">Copy</button></div></li>
+      <li><h3>Open it</h3><p>Find Sysfix in your apps menu, or type one of these:</p>
+        <div class="cmd"><code>sysfix</code><button type="button" data-copy="sysfix">Copy</button></div>
+        <div class="cmd"><code>sysfix health</code><button type="button" data-copy="sysfix health">Copy</button></div></li>
+    </ol>
+  </section>
 
-<span class="green">CPU</span>          Utilization: reported
-<span class="green">MEMORY</span>       Physical + swap usage
-<span class="green">STORAGE</span>      Mounted filesystem capacity
-<span class="green">PROCESSES</span>    Top resident processes
-<span class="green">THERMALS</span>     Available sensor readings
-
-<span class="prompt">$</span> sysfix health --json</pre>
-          <div class="code-note">Example command flow. Actual values come from your computer.</div>
-        </div>
-        <h3>Use the CLI for focused checks.</h3>
-        <p>Run a health report, request JSON output, automate checks or troubleshoot over SSH without opening the desktop interface.</p>
-      </article>
+  <section class="box" id="commands">
+    <h2>Commands to try</h2>
+    <p class="lead">Type <code>sysfix --help</code> to see every command in your version.</p>
+    <div class="cmd-list">
+      <div><div class="cmd"><code>sysfix health</code><button type="button" data-copy="sysfix health">Copy</button></div><span>A quick health report. Changes nothing, doesn't need root.</span></div>
+      <div><div class="cmd"><code>sysfix health --json</code><button type="button" data-copy="sysfix health --json">Copy</button></div><span>The same report as JSON, for scripts.</span></div>
+      <div><div class="cmd"><code>sysfix check</code><button type="button" data-copy="sysfix check">Copy</button></div><span>The full check for problems.</span></div>
+      <div><div class="cmd"><code>sysfix security</code><button type="button" data-copy="sysfix security">Copy</button></div><span>Look at security settings.</span></div>
+      <div><div class="cmd"><code>sysfix network</code><button type="button" data-copy="sysfix network">Copy</button></div><span>Check your connection.</span></div>
+      <div><div class="cmd"><code>sysfix share</code><button type="button" data-copy="sysfix share">Copy</button></div><span>A report you can paste when asking for help. Hides your computer and user name. (Coming in the next version.)</span></div>
+      <div><div class="cmd"><code>sysfix terminal</code><button type="button" data-copy="sysfix terminal">Copy</button></div><span>The menu version for the terminal.</span></div>
     </div>
   </section>
 
-  <section class="section getting-started" id="getting-started">
-    <div class="section-heading">
-      <p class="eyebrow">GET UP AND RUNNING</p>
-      <h2>Start using Sysfix<br>in a few steps.</h2>
-      <p>Sysfix targets modern Linux distributions and requires Python 3.10 or newer. The packaged release is the easiest way to get started.</p>
+  <div class="two">
+    <section class="box" id="fyxa">
+      <h2>Fyxa can help</h2>
+      <p class="lead">Fyxa is the Guts&amp;Bolts AI helper. In Sysfix it explains what the checks found and helps you dig into logs, in plain words or in tech-speak.</p>
+      <ul class="ticks">
+        <li>Runs on your own PC with Ollama. Nothing is sent away.</li>
+        <li>Remembers your hardware and past fixes, on your PC.</li>
+        <li>Optional: Sysfix works fine without it.</li>
+      </ul>
+    </section>
+    <section class="box" id="safe">
+      <h2>Is it safe?</h2>
+      <p class="lead">Sysfix looks first and only changes things when you say so.</p>
+      <ul class="ticks">
+        <li><b>The health check only reads.</b> It doesn't need root and changes nothing.</li>
+        <li><b>Fixes wait for you.</b> Automatic repairs are switched off in this version.</li>
+        <li><b>Some extras need root</b> or extra packages, and are still experimental.</li>
+      </ul>
+    </section>
+  </div>
+
+  <section class="box" id="download">
+    <span class="kicker">Sysfix 1.2.0</span>
+    <h2>Download</h2>
+    <p class="lead">Pick the package for your Linux. Both are the same app.</p>
+    <div class="downloads">
+      <a class="dl" href="/download/products/sysfix/1.2.0/sysfix-ai-1.2.0-1.fc44.noarch.rpm"><span class="pkg">RPM</span><span><b>Fedora / RHEL / openSUSE</b><small>sysfix-ai-1.2.0 &middot; .rpm</small></span></a>
+      <a class="dl" href="/download/products/sysfix/1.2.0/sysfix-ai_1.2.0-1_all.deb"><span class="pkg">DEB</span><span><b>Debian / Ubuntu / Mint</b><small>sysfix-ai 1.2.0 &middot; .deb</small></span></a>
     </div>
-    <div class="install-grid">
-      <article class="install-card">
-        <div class="install-number">01</div><p class="feature-kicker">DOWNLOAD</p>
-        <h3>Choose your package.</h3>
-        <p>Use the RPM package for Fedora-family distributions or the DEB package for Debian-family distributions.</p>
-        <a href="#download" class="text-link">Go to downloads ↗</a>
-      </article>
-      <article class="install-card">
-        <div class="install-number">02</div><p class="feature-kicker">INSTALL</p>
-        <h3>Install the package.</h3>
-        <p>Open a terminal in the folder where you downloaded the file and run the command for your distribution.</p>
-        <div class="code-snippet"><small>FEDORA / RPM</small><code>sudo dnf install ./sysfix-ai-1.2.0-1.fc44.noarch.rpm</code><button type="button" data-copy="sudo dnf install ./sysfix-ai-1.2.0-1.fc44.noarch.rpm" aria-label="Copy Fedora install command">Copy</button></div>
-        <div class="code-snippet"><small>DEBIAN / UBUNTU / DEB</small><code>sudo apt install ./sysfix-ai_1.2.0-1_all.deb</code><button type="button" data-copy="sudo apt install ./sysfix-ai_1.2.0-1_all.deb" aria-label="Copy Debian install command">Copy</button></div>
-      </article>
-      <article class="install-card">
-        <div class="install-number">03</div><p class="feature-kicker">LAUNCH</p>
-        <h3>Open Sysfix.</h3>
-        <p>Launch the desktop app from your application menu or start it from a terminal.</p>
-        <div class="code-snippet"><small>DESKTOP GUI</small><code>sysfix</code><button type="button" data-copy="sysfix" aria-label="Copy GUI launch command">Copy</button></div>
-        <div class="code-snippet"><small>TERMINAL MODE</small><code>sysfix terminal</code><button type="button" data-copy="sysfix terminal" aria-label="Copy terminal command">Copy</button></div>
-      </article>
-    </div>
-    <div class="source-install">
-      <div><b>Prefer installing from source?</b><p>Clone the repository and install the Python package in editable mode. This is useful for development and testing.</p></div>
-      <pre><span class="prompt">$</span> git clone https://github.com/Guts-Bolts/Sysfix.git
-<span class="prompt">$</span> cd Sysfix
-<span class="prompt">$</span> pip install -e .</pre>
-      <p class="small-note">The repository's package metadata and README are the source of truth for dependencies and current installation requirements.</p>
-    </div>
+    <p class="small muted" style="margin-top:12px">Want to make sure the file arrived in one piece? Compare it with the <a href="/download/products/sysfix/1.2.0/SHA256SUMS.txt">SHA-256 checksums</a> (<code>sha256sum</code> the file and check it matches).</p>
+    <dl class="req">
+      <div><dt>Linux</dt><dd>Fedora, Ubuntu, Debian, Arch and most other modern ones</dd></div>
+      <div><dt>Python</dt><dd>3.10 or newer</dd></div>
+      <div><dt>Desktop</dt><dd>Only for the app window. Terminal commands work without one.</dd></div>
+      <div><dt>Ollama</dt><dd>Optional, only for Fyxa</dd></div>
+    </dl>
   </section>
 
-  <section class="section command-section" id="commands">
-    <div class="section-heading">
-      <p class="eyebrow">YOUR FIRST COMMANDS</p>
-      <h2>Tell Sysfix what you<br>want to inspect.</h2>
-      <p>These are useful starting points. Run <code>sysfix --help</code> to see the commands available in your installed version.</p>
-    </div>
-    <div class="command-list">
-      <div><code>sysfix health</code><span>Run a read-only system health report.</span><button data-copy="sysfix health">Copy</button></div>
-      <div><code>sysfix health --json</code><span>Get the health report in JSON for scripts or other tools.</span><button data-copy="sysfix health --json">Copy</button></div>
-      <div><code>sysfix check</code><span>Run the broader diagnostic workflow.</span><button data-copy="sysfix check">Copy</button></div>
-      <div><code>sysfix security</code><span>Inspect security-related system configuration.</span><button data-copy="sysfix security">Copy</button></div>
-      <div><code>sysfix network</code><span>Run network diagnostics.</span><button data-copy="sysfix network">Copy</button></div>
-      <div><code>sysfix version</code><span>Show version and runtime information.</span><button data-copy="sysfix version">Copy</button></div>
-    </div>
-    <p class="small-note">Command availability can vary by release. Use the local help output if a command differs in your installed build.</p>
+  <section class="box" id="faq">
+    <h2>Questions</h2>
+    <details><summary>Does it work on Windows or Mac?</summary><p>No, Sysfix is for Linux only.</p></details>
+    <details><summary>Do I need AI to use it?</summary><p>No. All the checks work without it. Fyxa is an extra that needs Ollama and a model.</p></details>
+    <details><summary>Will it change my settings by itself?</summary><p>No. Automatic repairs are off in this version. Read what it suggests before you run anything that needs root.</p></details>
+    <details><summary>Why does something say "unavailable"?</summary><p>Some checks need a sensor, a tool, root or a kernel feature your PC doesn't have. "Unavailable" doesn't mean that part passed.</p></details>
+    <details><summary>Where do I report a bug?</summary><p>On the <a href="/app/#/support">Guts&amp;Bolts help page</a>. Tip: paste the output of <code>sysfix health</code> (or <code>sysfix share</code> in the next version) into <a href="/app/#/pastenew">G&amp;B Paste</a> and share the link.</p></details>
   </section>
-
-  <section class="section fyxa-section" id="fyxa">
-    <div class="fyxa-copy">
-      <p class="eyebrow">OPTIONAL AI ASSISTANCE</p>
-      <h2>Meet Fyxa.</h2>
-      <p class="fyxa-lead">A local AI assistant for making sense of your system.</p>
-      <p>When configured with Ollama and a supported local model, Fyxa can help explain findings, investigate system context and guide troubleshooting. Sysfix can still run its core diagnostic commands without an AI model.</p>
-      <ul class="plain-list"><li>Ask questions about diagnostic results.</li><li>Get explanations in plain language or more technical detail.</li><li>Use relevant system context to investigate problems.</li><li>Keep local brain and configuration data on your machine.</li></ul>
-      <div class="fyxa-note"><b>AI is optional.</b> Install and configure Ollama separately if you want Fyxa's local model features. AI capabilities depend on the model and the integrations available on your system.</div>
-    </div>
-    <div class="fyxa-visual">
-      <div class="chat-window"><div class="chat-top"><span class="fyxa-orb">✳</span><div><b>Fyxa</b><small>LOCAL ASSISTANT · CONCEPT</small></div><i>●</i></div><div class="chat-message user-message">Why is my system slowing down?</div><div class="chat-message assistant-message"><b>Let's investigate.</b><br>We can start by checking memory pressure, CPU usage and the processes consuming the most resources. I'll explain what the results mean before suggesting next steps.</div><div class="chat-input">Ask Fyxa something… <span>↑</span></div></div>
-    </div>
-  </section>
-
-  <section class="section safety-section" id="safety">
-    <div class="section-heading">
-      <p class="eyebrow">CONTROL STAYS WITH YOU</p>
-      <h2>Diagnostics first.<br>Changes only with care.</h2>
-      <p>Sysfix is designed to make system state easier to understand. A report is not permission to change your computer.</p>
-    </div>
-    <div class="safety-grid">
-      <article><span class="safety-mark safe">✓</span><h3>Read-only health checks</h3><p>The structured <code>sysfix health</code> report does not need root and does not change services, processes, files or kernel settings.</p></article>
-      <article><span class="safety-mark review">!</span><h3>Review proposed actions</h3><p>Read recommendations and understand their impact before running commands that change system state.</p></article>
-      <article><span class="safety-mark lock">⌑</span><h3>Some features need privileges</h3><p>Security monitoring, hardware interfaces and advanced integrations may require root, extra packages or kernel support.</p></article>
-    </div>
-    <div class="safety-callout"><b>Current safety boundary</b><p>In the current stabilization build, autonomous repair execution is disabled. Advanced capabilities such as eBPF monitoring, malware analysis and micro-VM isolation are optional and should be treated as experimental until validated on the target distribution and hardware.</p></div>
-  </section>
-
-  <section class="section requirements-section" id="requirements">
-    <div class="section-heading"><p class="eyebrow">BEFORE YOU INSTALL</p><h2>What you'll need.</h2></div>
-    <div class="requirements-table">
-      <div><b>Operating system</b><span>Modern Linux distribution (Fedora, Ubuntu, Debian, Arch and others)</span></div>
-      <div><b>Python</b><span>Python 3.10 or newer</span></div>
-      <div><b>Desktop environment</b><span>Needed for GUI mode; terminal commands can run without a desktop session</span></div>
-      <div><b>Ollama</b><span>Optional. Required for local Fyxa AI model features</span></div>
-      <div><b>Advanced integrations</b><span>Optional dependencies, permissions and hardware support vary by feature</span></div>
-    </div>
-  </section>
-
-  <section class="section download-section" id="download">
-    <div class="download-copy"><p class="eyebrow">SYSFIX 1.2.0</p><h2>Get Sysfix.</h2><p>Choose the package that matches your Linux distribution. Verify the checksum if you want to confirm the downloaded file's integrity.</p><div class="download-meta"><span>Linux</span><span>Version 1.2.0</span><span>RPM + DEB</span></div></div>
-    <div class="download-options">
-      <a class="download-option" href="/download/products/sysfix/1.2.0/sysfix-ai-1.2.0-1.fc44.noarch.rpm"><span class="package-icon">RPM</span><span><b>Fedora / RHEL</b><small>RPM package · x86_64 / noarch</small></span><strong>Download ↗</strong></a>
-      <a class="download-option" href="/download/products/sysfix/1.2.0/sysfix-ai_1.2.0-1_all.deb"><span class="package-icon deb">DEB</span><span><b>Debian / Ubuntu</b><small>DEB package · all architectures</small></span><strong>Download ↗</strong></a>
-      <a class="checksum-link" href="/download/products/sysfix/1.2.0/SHA256SUMS.txt">View SHA-256 checksums ↗</a>
-    </div>
-    <p class="download-disclaimer">Downloads are provided from the Guts &amp; Bolts release mirror. Check the release notes for package-specific details and verify checksums before installing.</p>
-  </section>
-
-  <section class="section faq-section" id="faq">
-    <div class="section-heading"><p class="eyebrow">COMMON QUESTIONS</p><h2>Good to know.</h2></div>
-    <details><summary>Does Sysfix work on Windows or macOS?</summary><p>No. Sysfix is currently a Linux system diagnostics and maintenance application. Its commands and integrations rely on Linux facilities.</p></details>
-    <details><summary>Do I need an AI model to use Sysfix?</summary><p>No. Core diagnostic commands work without an AI model. Fyxa's local AI assistance requires Ollama and a compatible model.</p></details>
-    <details><summary>Does Sysfix automatically change system settings?</summary><p>The current stabilization build disables autonomous repair execution. Review proposed actions and their impact before running privileged commands.</p></details>
-    <details><summary>Why does a feature say unavailable?</summary><p>Some features depend on optional tools, root permissions, kernel capabilities, hardware sensors or a particular Linux distribution. An unavailable integration does not mean your system passed that check.</p></details>
-    <details><summary>Where can I report a bug or request help?</summary><p>Visit the <a href="/app/#/support">Guts &amp; Bolts support page</a> or open the <a href="https://github.com/Guts-Bolts/Sysfix/issues">Sysfix issue tracker</a>.</p></details>
-    <details><summary>Where can I see the source code?</summary><p>Sysfix is maintained in the <a href="https://github.com/Guts-Bolts/Sysfix">Guts-Bolts/Sysfix GitHub repository</a>.</p></details>
-  </section>
-
-  <section class="bottom-cta"><div><p class="eyebrow">TAKE A CLOSER LOOK</p><h2>Know your system before you change it.</h2><p>Start with a health report. Investigate what matters. Keep the final decision in your hands.</p></div><a class="button button-primary" href="#download">Download Sysfix ↗</a></section>
 </main>
 
-<footer class="site-footer"><a href="/">Guts &amp; Bolts</a><span>Sysfix is a Guts &amp; Bolts software project.</span><a href="/products.html">All products</a><a href="https://github.com/Guts-Bolts/Sysfix">GitHub</a></footer>
-<script>
-document.querySelectorAll('[data-copy]').forEach((button) => {
-  button.addEventListener('click', async () => {
-    const value = button.getAttribute('data-copy');
-    try {
-      await navigator.clipboard.writeText(value);
-      const old = button.textContent;
-      button.textContent = 'Copied';
-      setTimeout(() => { button.textContent = old; }, 1400);
-    } catch {
-      button.textContent = 'Select command';
-    }
-  });
-});
-</script>
+<footer class="site-foot">
+  <a href="/products">All products</a> | <a href="/products/ContentForge">ContentForge</a> | <a href="/app/#/support">Help</a>
+  <br><br>Sysfix is made by Guts&amp;Bolts.
+</footer>
+<script src="/products/product.js"></script>
 </body>
 </html>

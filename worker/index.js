@@ -343,9 +343,13 @@ async function route(request, env, ctx) {
         return reply({ ok: false, error: 'Couldn\'t reach the Guts&Bolts server (' + (e && e.message || 'error') + '). Is it running?' });
       }
     }
-    // Give Sysfix a clean, shareable product URL while serving the static page file.
-    if (/^\/products\/sysfix\/?$/i.test(url.pathname)) {
-      const pageUrl = new URL('/products/sysfix.html', url.origin);
+    // Clean, shareable product URLs: /products is the Products page, and
+    // /products/Sysfix or /products/ContentForge is that product's own page (any
+    // capitals). We ask for the page without ".html": Cloudflare answers a ".html"
+    // address with a redirect to the short one, which would come back here forever.
+    const productPage = /^\/products(?:\/(sysfix|contentforge))?\/?$/i.exec(url.pathname);
+    if (productPage) {
+      const pageUrl = new URL(productPage[1] ? '/products/' + productPage[1].toLowerCase() : '/products', url.origin);
       pageUrl.search = url.search;
       return withAdsMeta(await env.ASSETS.fetch(new Request(pageUrl, request)), env);
     }
