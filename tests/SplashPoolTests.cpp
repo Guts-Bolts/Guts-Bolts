@@ -113,7 +113,9 @@ int main(int argc, char** argv) {
         float fastest = 0.0f;
         glm::vec3 last = p->position();
         double t = 0.0;
-        for (int i = 0; i < (int)(fps * 40); ++i) {
+        int below = 0;   // (frames since reaching the bottom: stop a little after)
+        for (int i = 0; i < (int)(fps * 90) && below < (int)(fps * 3); ++i) {
+            if (p->position().y < 6.0f) ++below;
             const glm::vec3 v = p->velocity();
             const float l = glm::length(glm::vec2(v.x, v.z));
             p->scriptMove(l > 0.5f ? glm::vec3(v.x / l, 0.0f, v.z / l) : glm::vec3(0.6f, 0.0f, 0.8f));
