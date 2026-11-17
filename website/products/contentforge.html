@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ContentForge | Guts&amp;Bolts</title>
-<meta name="description" content="ContentForge turns an idea into a short video with AI that runs on your own Windows PC: it writes the script, reads it out, makes the scenes and adds captions. Free, from Guts&amp;Bolts.">
+<meta name="description" content="ContentForge is a free desktop app for Windows that turns a list of ideas into short videos: it writes the scripts, reads them out, adds captions and music, and queues them up for YouTube, TikTok and Instagram. From Guts&amp;Bolts.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="ContentForge: from an idea to a video, on your own PC">
 <meta property="og:description" content="A free AI video maker from Guts&amp;Bolts. Script, voice, scenes and captions, all made on your own computer.">
@@ -34,7 +34,7 @@
     <div>
       <span class="kicker"><a href="/products" style="color:inherit">Products</a> &rsaquo; Video maker</span>
       <h1>ContentForge<br><em>Idea in, video out.</em></h1>
-      <p>Give it a topic. ContentForge writes a script, reads it out loud, makes the scenes, adds captions and music, and hands you a finished short video. The AI all runs on your own PC, and nothing gets posted until you post it.</p>
+      <p>Paste in one idea or a hundred. ContentForge writes each script, reads it out loud, makes the scenes, adds captions and music, and lines the videos up to post on YouTube, TikTok and Instagram on your schedule. It's a normal app: install it and double-click it.</p>
       <div class="btns">
         <a class="btn white" href="#download">Download</a>
         <a class="btn ghost" href="#how">How it works</a>
@@ -54,13 +54,13 @@
 
   <section class="box" id="how">
     <h2>How it works</h2>
-    <p class="lead">Five steps, and you can check and change everything in between.</p>
+    <p class="lead">Five steps, and you can check and change everything in between. You can do one video, or a whole batch at once.</p>
     <div class="cards">
-      <div class="card"><span class="num">1</span><h3>Pick a topic</h3><p>Type one in, or let it collect ideas from news feeds you choose.</p></div>
-      <div class="card"><span class="num">2</span><h3>Get a script</h3><p>A local AI (Ollama) writes the narration, a hook, captions, hashtags and notes on what to fact-check.</p></div>
-      <div class="card"><span class="num">3</span><h3>Fix it up</h3><p>Read it, change anything you like, and mark it as checked.</p></div>
+      <div class="card"><span class="num">1</span><h3>Paste your ideas</h3><p>One question per line, as many as you like, or let it collect ideas from news feeds you choose.</p></div>
+      <div class="card"><span class="num">2</span><h3>Get a script</h3><p>An AI writes the narration, a hook, captions, hashtags and notes on what to fact-check. Use the free one on your PC (Ollama), or Claude with your own key.</p></div>
+      <div class="card"><span class="num">3</span><h3>Fix it up</h3><p>Turn on "check before making the video" to read and change each script first. The queue shows where every video is.</p></div>
       <div class="card"><span class="num">4</span><h3>Make the video</h3><p>Piper reads it out, the scenes get made, and captions, music and sound effects line up with the voice.</p></div>
-      <div class="card"><span class="num">5</span><h3>Post it yourself</h3><p>You get an MP4 and a captions file. ContentForge never posts anything for you.</p></div>
+      <div class="card"><span class="num">5</span><h3>Post it</h3><p>Pick a schedule, like one video every 8 hours. ContentForge uploads to the accounts you connect, or tells you when it's time to post one yourself.</p></div>
     </div>
   </section>
 
@@ -88,48 +88,49 @@
 
   <section class="box" id="need">
     <h2>What you need</h2>
-    <p class="lead">ContentForge doesn't come with these, because they're big and made by other people. The setup steps show where to get each one.</p>
+    <p class="lead">Just the app. It fetches the rest for you with one click on its Setup screen.</p>
     <dl class="req">
-      <div><dt>Windows</dt><dd>Windows 10 or 11, 64-bit</dd></div>
-      <div><dt>Python</dt><dd>3.11 or newer</dd></div>
-      <div><dt>Ollama</dt><dd>Writes the scripts. Free from ollama.com, plus a model like <code>qwen3:4b</code></dd></div>
-      <div><dt>FFmpeg</dt><dd>Puts the video together</dd></div>
-      <div><dt>Piper</dt><dd>The voice, plus a voice file you're allowed to use</dd></div>
-      <div><dt>NVIDIA card</dt><dd>Only for AI video clips (8 GB+ of video memory)</dd></div>
+      <div><dt>Computer</dt><dd>Windows 10 or 11 (64-bit). A Mac version (Apple chip) is on the way</dd></div>
+      <div><dt>FFmpeg</dt><dd>Puts the video together. Comes inside the app</dd></div>
+      <div><dt>Voice</dt><dd>Piper and a voice file. The app downloads them for you (about 80 MB)</dd></div>
+      <div><dt>Script writer</dt><dd>Ollama, free from ollama.com (the app downloads its model), or a Claude API key</dd></div>
+      <div><dt>NVIDIA card</dt><dd>Only for the extra AI video clips (8 GB+ of video memory)</dd></div>
     </dl>
   </section>
 
   <section class="box" id="start">
     <h2>How to start</h2>
     <ol class="steps">
-      <li><h3>Download and unzip</h3><p>Get the ZIP below and unzip it into a folder you can write to.</p></li>
-      <li><h3>Run the setup</h3><p>Open PowerShell in that folder and run:</p>
-        <div class="cmd"><code>Set-ExecutionPolicy -Scope Process Bypass; .\setup.ps1</code><button type="button" data-copy="Set-ExecutionPolicy -Scope Process Bypass; .\setup.ps1">Copy</button></div></li>
-      <li><h3>Get a writing model</h3><p>With Ollama running, download a model and put its name in the <code>.env</code> file as <code>OLLAMA_MODEL</code>:</p>
-        <div class="cmd"><code>ollama pull qwen3:4b</code><button type="button" data-copy="ollama pull qwen3:4b">Copy</button></div></li>
-      <li><h3>Start it</h3><p>Double-click <code>start.bat</code>, then open <a href="http://127.0.0.1:8787" rel="nofollow">127.0.0.1:8787</a> in your browser.</p></li>
+      <li><h3>Install it</h3><p>On Windows, run <code>ContentForge-Setup.exe</code>. It doesn't need admin rights. On a Mac, open the <code>.dmg</code> and drag ContentForge into Applications.</p></li>
+      <li><h3>Get past the warning</h3><p>The app isn't signed yet, so your computer doesn't know it. On Windows press <b>More info</b>, then <b>Run anyway</b>. On a Mac, right-click the app the first time and pick <b>Open</b>.</p></li>
+      <li><h3>Press the Setup buttons</h3><p>Open the Setup screen and press <b>Install</b> for the voice and <b>Download model</b> for the writer. Everything turns green when it's ready.</p></li>
+      <li><h3>Make videos</h3><p>Go to Create, paste your ideas, pick a look and a schedule, and press <b>Make videos</b>. Connect your accounts on the Accounts screen to post them.</p></li>
     </ol>
-    <p class="note"><b>Keep it on your PC.</b> The ContentForge dashboard has no password, so don't open it up to the internet.</p>
+    <p class="note"><b>Your stuff stays yours.</b> ContentForge only talks to your own computer, and your keys only go to the platform they belong to.</p>
   </section>
 
   <section class="box" id="download">
-    <span class="kicker">ContentForge for Windows</span>
+    <span class="kicker">ContentForge for Windows (Mac coming)</span>
     <h2>Download</h2>
     <p class="lead" data-release-text>ContentForge is still being tested, so there's no download yet. When the first version is out, it shows up right here.</p>
     <div class="downloads">
-      <a class="dl off" data-release-check="/download/products/contentforge/latest/ContentForge-Windows.zip" href="/download/products/contentforge/latest/ContentForge-Windows.zip" aria-disabled="true">
-        <span class="pkg">ZIP</span><span><b>Windows 10 / 11</b><small data-release-label>Not out yet</small></span></a>
+      <a class="dl off" data-release-check="/download/products/contentforge/latest/ContentForge-Setup.exe" data-ready-label="Installer · .exe" href="/download/products/contentforge/latest/ContentForge-Setup.exe" aria-disabled="true">
+        <span class="pkg">EXE</span><span><b>Windows 10 / 11</b><small data-release-label>Not out yet</small></span></a>
+      <a class="dl off" data-release-check="/download/products/contentforge/latest/ContentForge-Mac.dmg" data-ready-label="Apple chip · .dmg" href="/download/products/contentforge/latest/ContentForge-Mac.dmg" aria-disabled="true">
+        <span class="pkg">DMG</span><span><b>Mac</b><small data-release-label>Not out yet</small></span></a>
+      <a class="dl off" data-release-check="/download/products/contentforge/latest/ContentForge-Windows.zip" data-ready-label="No install, just unzip · .zip" href="/download/products/contentforge/latest/ContentForge-Windows.zip" aria-disabled="true">
+        <span class="pkg">ZIP</span><span><b>Windows, portable</b><small data-release-label>Not out yet</small></span></a>
     </div>
-    <p class="small muted" style="margin-top:12px" data-release-sums hidden>Check the file with the <a href="/download/products/contentforge/latest/SHA256SUMS.txt">SHA-256 checksums</a>.</p>
+    <p class="small muted" style="margin-top:12px" data-release-sums hidden>Check the files with the <a href="/download/products/contentforge/latest/SHA256SUMS.txt">SHA-256 checksums</a>.</p>
   </section>
 
   <section class="box" id="faq">
     <h2>Questions</h2>
-    <details><summary>Does it post to YouTube or TikTok?</summary><p>No. It makes the video and you post it yourself. That way nothing goes out that you haven't watched.</p></details>
-    <details><summary>Is it really all on my PC?</summary><p>Yes. The AI runs on your computer. It only goes online to download its parts during setup, and to read the news feeds you pick.</p></details>
+    <details><summary>Does it post to YouTube, TikTok and Instagram?</summary><p>Yes, through each one's official way of uploading, with accounts you connect yourself. YouTube works fully, with scheduling. TikTok sends videos to your drafts until TikTok approves your app. Instagram needs a Business or Creator account. For Facebook, X and anything else, ContentForge tells you when it's time and you post it yourself.</p></details>
+    <details><summary>Is it really all on my PC?</summary><p>The app and your videos are. It goes online to download its parts during setup, find free pictures, read the news feeds you pick, and upload to the accounts you connect. If you pick Claude as the writer, your topics are sent to Claude to write the script.</p></details>
     <details><summary>Can I trust the facts in the script?</summary><p>Not on their own. The AI can get things wrong, so ContentForge lists what to check. Look things up yourself before you post.</p></details>
-    <details><summary>Does it work on Mac or Linux?</summary><p>Windows is the one we support. Linux may work if you set the paths up yourself.</p></details>
-    <details><summary>Is it finished?</summary><p>Not yet. It's an early test version: things can break, and some parts (like stock footage or posting) aren't there.</p></details>
+    <details><summary>Does it work on Mac or Linux?</summary><p>Windows is ready. A Mac (Apple chip) download is on the way and turns on here by itself when it's out. Linux may work from the source code if you set it up yourself.</p></details>
+    <details><summary>Is it finished?</summary><p>Not yet. It's an early test version: things can break, and some parts (like stock footage) aren't there.</p></details>
     <details><summary>Where do I report a bug?</summary><p>On the <a href="/app/#/support">Guts&amp;Bolts help page</a>.</p></details>
   </section>
 </main>
