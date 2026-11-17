@@ -118,6 +118,15 @@ Loadout& mine() {
     return l;
 }
 
+bool fillSlot(int i, const std::string& id, const std::string& name, std::shared_ptr<const Anim::Clip> clip) {
+    Loadout& l = mine();
+    if (i < 0 || i >= kSlots || id.empty() || l.slots[i].id != id || !clip) return false;
+    l.slots[i].name = name.empty() ? "Emote" : name;
+    l.slots[i].clip = std::move(clip);
+    ++l.version;
+    return true;
+}
+
 std::vector<MenuEntry> menu() {
     std::vector<MenuEntry> out;
     const Loadout& l = mine();
