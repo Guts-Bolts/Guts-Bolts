@@ -1511,6 +1511,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(PlayerFootingTests PRIVATE gb_engine)
     add_test(NAME PlayerFootingTests COMMAND PlayerFootingTests)
 
+    add_executable(StepUpTests tests/StepUpTests.cpp)
+    target_link_libraries(StepUpTests PRIVATE gb_engine)
+    add_test(NAME StepUpTests COMMAND StepUpTests)
+
     # Roblox-strength gravity: new games, and old saves scaled up when they load.
     add_executable(RobloxGravityTests tests/RobloxGravityTests.cpp)
     target_link_libraries(RobloxGravityTests PRIVATE gb_engine)

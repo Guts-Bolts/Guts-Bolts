@@ -49,7 +49,7 @@ const char* const kWords[] = {
     // Members
     "Parent", "Name", "ClassName", "Position", "Orientation", "Size", "CFrame", "Color", "Transparency", "Material",
     "Anchored", "CanCollide", "CollisionGroup", "RespectCanCollide", "Velocity", "AssemblyLinearVelocity", "AssemblyAngularVelocity", "Shape",
-    "Touched", "Clicked", "Heartbeat", "Died", "Humanoid", "Health", "MaxHealth", "WalkSpeed", "JumpPower", "Character",
+    "Touched", "Clicked", "Heartbeat", "Died", "Humanoid", "Health", "MaxHealth", "WalkSpeed", "JumpPower", "HipHeight", "MaxSlopeAngle", "Character",
     "Connect", "Once", "Wait", "Disconnect", "FindFirstChild", "FindFirstChildOfClass", "WaitForChild", "GetChildren",
     "GetDescendants", "Destroy", "Clone", "IsA", "IsDescendantOf", "GetFullName", "GetPivot", "PivotTo",
     "ApplyImpulse", "ApplyAngularImpulse", "TakeDamage", "BreakJoints", "Play", "Stop",

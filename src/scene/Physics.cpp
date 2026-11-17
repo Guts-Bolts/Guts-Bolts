@@ -411,7 +411,8 @@ bool Physics::resolveSphere(glm::vec3& c, float r, glm::vec3* normal) const {
 // Every solid part is tested against it with the separating-axis test, so it
 // fits through gaps sideways, brushes past corners and stands on ramps.
 Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec3& delta,
-                                           bool wasGrounded, float yaw, uint64_t self, int group) const {
+                                           bool wasGrounded, float yaw, uint64_t self, int group,
+                                           const Footing& foot) const {
     MoveResult r;
     glm::vec3 pos = feet;
     // Parts, then the other characters' bodies (never our own); only the ones our
@@ -434,6 +435,41 @@ Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec
         return true;
     };
 
+    const float minY = std::clamp(foot.minGroundY, 0.0f, 1.0f);
+    // Could the character stand here: is there a walkable surface right under its feet?
+    auto standable = [&](const glm::vec3& p) {
+        OBB me = charOBB(p - glm::vec3(0.0f, 0.04f, 0.0f), yaw);
+        AABB mine = bounds(me);
+        for (const Collider* cp : solids) {
+            const Collider& c = *cp;
+            if (!mine.overlaps(c.box)) continue;
+            glm::vec3 n; float d;
+            if (obbOverlap(me, boxOf(c), n, d) && n.y > minY) return true;
+        }
+        return false;
+    };
+    // The legs pass through whatever we walked into: if it's lower than the step height
+    // (and flat enough on top to stand on), the body rides up onto it, like a Roblox
+    // Humanoid floating HipHeight over a stair. `to` = the lowest height that fits.
+    auto climb = [&](float& to) {
+        const float H = foot.stepHeight;
+        if (H <= 0.0f) return false;
+        float lo = pos.y, hi = -1e30f;
+        for (int i = 1; i <= 12; ++i) {
+            const float y = pos.y + H * (float)i / 12.0f;
+            if (fits({pos.x, y, pos.z})) { hi = y; break; }
+            lo = y;
+        }
+        if (hi < -1e29f) return false;
+        for (int i = 0; i < 6; ++i) {
+            const float m = (lo + hi) * 0.5f;
+            if (fits({pos.x, m, pos.z})) hi = m; else lo = m;
+        }
+        if (!standable({pos.x, hi, pos.z})) return false;
+        to = hi;
+        return true;
+    };
+
     // Push the body out of everything solid it's inside. `stepUp`: walking into
     // something low (a stair, a curb) climbs on top of it instead of stopping.
     auto resolve = [&](bool stepUp, bool falling) {
@@ -446,19 +482,20 @@ Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec
                 glm::vec3 n; float d;
                 if (!obbOverlap(me, boxOf(c), n, d)) continue;
                 any = true;
-                if (stepUp && wasGrounded && !c.rotated) {
-                    float rise = c.box.max.y - pos.y;
-                    if (rise > 0.0f && rise <= kStepHeight && fits({pos.x, c.box.max.y + 0.001f, pos.z})) {
-                        r.stepped += c.box.max.y + 0.001f - pos.y;
-                        pos.y = c.box.max.y + 0.001f;
+                if (stepUp && n.y <= minY && n.y >= -minY) {   // a wall... or just a step?
+                    float to;
+                    if (climb(to)) {
+                        r.stepped += to - pos.y;
+                        pos.y = to;
+                        if (!wasGrounded) { r.grounded = true; r.groundId = c.node->id; }
                         continue;
                     }
                 }
-                if (n.y > 0.55f) {                       // something to stand on
+                if (n.y > minY) {                        // something to stand on
                     pos.y += std::min(d / n.y, 1.0f);
                     r.grounded = true;
                     r.groundId = c.node->id;
-                } else if (n.y < -0.55f) {               // bumped our head
+                } else if (n.y < -minY) {                // bumped our head
                     pos += n * d;
                     r.hitCeiling = true;
                 } else {                                  // a wall: slide along it
@@ -525,19 +562,21 @@ Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec
     // Stick to the ground when walking down slopes and steps (instead of
     // flying off every little edge).
     if (wasGrounded && delta.y <= 0.0f && !r.grounded) {
-        glm::vec3 probe = pos - glm::vec3(0.0f, 0.4f, 0.0f);
+        // (as far down as we could step up: walking down stairs follows them)
+        const float reach = std::max(0.4f, foot.stepHeight);
+        glm::vec3 probe = pos - glm::vec3(0.0f, reach, 0.0f);
         OBB me = charOBB(probe, yaw);
         float bestY = -1e30f;
         uint64_t bestId = 0;
         for (const Collider* cp : solids) {
             const Collider& c = *cp;
             glm::vec3 n; float d;
-            if (!bounds(me).overlaps(c.box) || !obbOverlap(me, boxOf(c), n, d) || n.y <= 0.55f) continue;
+            if (!bounds(me).overlaps(c.box) || !obbOverlap(me, boxOf(c), n, d) || n.y <= minY) continue;
             float y = probe.y + d / n.y;
             if (y <= pos.y + 0.01f && y > bestY) { bestY = y; bestId = c.node->id; }
         }
         float g;
-        if (useTerrain && terrainGround(pos, yaw, g) && g <= pos.y + 0.01f && g >= pos.y - 0.6f && g > bestY) { bestY = g; bestId = 0; }
+        if (useTerrain && terrainGround(pos, yaw, g) && g <= pos.y + 0.01f && g >= pos.y - std::max(0.6f, reach) && g > bestY) { bestY = g; bestId = 0; }
         if (bestY > -1e29f) {
             r.dropped += pos.y - bestY;
             pos.y = bestY;

@@ -30,6 +30,10 @@ void PlayerPanel::render() {
         if (h.useJumpPower) PG::SliderFloat("Jump Power", &h.jumpPower, 0.0f, 40.0f);
         else                PG::SliderFloat("Jump Height", &h.jumpHeight, 0.0f, 20.0f, "%.1f studs");
         ImGui::Checkbox   ("Auto Rotate", &h.autoRotate);
+        PG::SliderFloat("Hip Height", &h.hipHeight, 0.0f, 4.0f, "%.2f studs");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("How high the body floats on its legs.\nSteps up to 3/4 of this are walked onto without jumping.");
+        PG::SliderFloat("Max Slope Angle", &h.maxSlopeAngle, 0.0f, 89.0f, "%.0f degrees");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Steeper than this is a wall: you can't stand on it or step up it.");
     }
 
     if (PG::CollapsingHeader("Health", ImGuiTreeNodeFlags_DefaultOpen)) {
