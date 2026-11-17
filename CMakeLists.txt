@@ -1603,6 +1603,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(RobloxAnimTests tests/RobloxAnimTests.cpp)
     target_link_libraries(RobloxAnimTests PRIVATE gb_engine)
     add_test(NAME RobloxAnimTests COMMAND RobloxAnimTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    # Equipped catalog emotes show and play as themselves, not "Emote" placeholders.
+    add_executable(EquippedEmotesTests tests/EquippedEmotesTests.cpp)
+    target_link_libraries(EquippedEmotesTests PRIVATE gb_engine)
+    add_test(NAME EquippedEmotesTests COMMAND EquippedEmotesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Script help (the autocomplete's "how to use it"), wrong-case names, mouse button binds.
     add_executable(ScriptingHelpTests tests/ScriptingHelpTests.cpp)

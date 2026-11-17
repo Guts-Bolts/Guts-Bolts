@@ -19,8 +19,8 @@ document.querySelectorAll('[data-release-check]').forEach(function (card) {
     card.classList.remove('off');
     card.removeAttribute('aria-disabled');
     var box = card.closest('section') || document;
-    var label = box.querySelector('[data-release-label]'); if (label) label.textContent = 'Newest version · .zip';
-    var text = box.querySelector('[data-release-text]'); if (text) text.textContent = 'The newest test version for Windows. Unzip it, then follow "How to start" above.';
+    var label = card.querySelector('[data-release-label]'); if (label) label.textContent = card.getAttribute('data-ready-label') || 'Newest version';
+    var text = box.querySelector('[data-release-text]'); if (text) text.textContent = 'The newest test version. Install it, then follow "How to start" above.';
     var sums = box.querySelector('[data-release-sums]'); if (sums) sums.hidden = false;
   }).catch(function () { /* offline: leave it greyed out */ });
 });
