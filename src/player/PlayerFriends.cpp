@@ -114,12 +114,20 @@ void PlayerApp::syncEmotes() {
         ++l.version;
         if (id.empty()) continue;
         Online::download(id, [i, id, readText](bool ok, const std::filesystem::path& file, const json& info) {
-            Emotes::Slot& s = Emotes::mine().slots[i];
             Anim::Clip clip;
-            if (!ok || s.id != id || !Emotes::parseEmoteFile(readText(file), clip)) return;   // (changed meanwhile)
-            s.name = info.value("name", std::string("Emote"));
-            s.clip = std::make_shared<const Anim::Clip>(std::move(clip));
-            ++Emotes::mine().version;
+            if (!ok || Emotes::mine().slots[i].id != id || !Emotes::parseEmoteFile(readText(file), clip)) return;   // (changed meanwhile)
+            auto moves = std::make_shared<const Anim::Clip>(std::move(clip));
+            // A fresh download comes with the item's details (its name). One already in this
+            // computer's downloads folder comes without them, so ask the server for its name:
+            // without it every slot was called "Emote", the menu showed 8 "Emote" placeholders,
+            // and they all played the first one.
+            const std::string name = info.is_object() && info.contains("name") && info["name"].is_string()
+                                         ? info["name"].get<std::string>() : std::string();
+            if (!name.empty()) { Emotes::fillSlot(i, id, name, moves); return; }
+            Online::request("asset.info", {{"id", id}}, [i, id, moves](const json& r) {
+                const json a = r.contains("asset") && r["asset"].is_object() ? r["asset"] : json::object();
+                Emotes::fillSlot(i, id, a.contains("name") && a["name"].is_string() ? a["name"].get<std::string>() : std::string(), moves);
+            });
         });
     }
     if (pack != l.packId) {

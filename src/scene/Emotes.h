@@ -70,6 +70,11 @@ struct Loadout {
 };
 Loadout& mine();
 
+// An equipped emote's file has arrived: put it in slot `i` (0-7) with its name, unless that
+// slot has changed to another item meanwhile. An empty name becomes "Emote" (only when the
+// server couldn't say). False if the slot changed.
+bool fillSlot(int i, const std::string& id, const std::string& name, std::shared_ptr<const Anim::Clip> clip);
+
 // What the emote menu shows: your equipped emotes in their slots, or (when you haven't
 // equipped any) the built-in ones. name = what to play ("" = an empty slot).
 struct MenuEntry { std::string name, title; };
