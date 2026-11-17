@@ -4,6 +4,8 @@
 //    20 to 30, so a joined player was "moving too fast" and got pulled back to their
 //    last good spot again and again. Now water slides, streams and pools may go as
 //    fast as the water carries you.
+//  * Spiky pool: the slide's stream sank the pool's surface until it hit its limit,
+//    where the points slammed up and down every frame. See below.
 //  * Sliding about: liquid that splashed onto the 240-stud baseplate marked the whole
 //    baseplate wet, so the whole map was as slippery as the slide for 20 seconds; you
 //    slid around, even standing still. Now a big flat floor is only slippery where
@@ -100,6 +102,50 @@ int main(int argc, char** argv) {
         for (const WaterSystem::Body& w : scene.water().bodies())
             for (float h : w.h) tallest = std::max(tallest, std::abs(h));
         check(tallest < 0.5f, "the pools' ripples stay calm (" + std::to_string(tallest) + " studs)");
+    }
+
+    // The spiky pool. The slide pours a steady stream of drops into the Splash Pool
+    // (the graphics card's liquid reports up to 64 a frame). Every drop pushed the
+    // surface down and nothing brought it back up, so the whole pool sank, a little more
+    // each second, until it hit the lowest a ripple can go (2 studs). There the height
+    // stopped but its speed kept growing, so points slammed from top to bottom every
+    // frame: spiky white mountains. Two minutes of that pour:
+    {
+        uint32_t seed = 7;
+        auto rnd = [&]() { seed = seed * 1664525u + 1013904223u; return (float)(seed >> 8) / 16777216.0f; };
+        // (looked up again each time: the list of pools is remade now and then)
+        auto splashPool = [&]() -> const WaterSystem::Body* {
+            for (const WaterSystem::Body& w : scene.water().bodies())
+                if (w.min.x < 44.0f && w.max.x > 44.0f && w.min.z < -32.0f && w.max.z > -32.0f) return &w;
+            return nullptr;
+        };
+        check(splashPool() != nullptr, "(found the Splash Pool)");
+        float tall = 0.0f, level = 0.0f;
+        int pinned = 0;
+        for (int i = 0; i < 60 * 120; ++i) {
+            for (int d = 0; d < 64; ++d)
+                scene.water().disturb(glm::vec3(40.0f + rnd() * 8.0f, 3.0f, -36.0f + rnd() * 8.0f), 0.02f, 0.7f);
+            frame(session, 1.0f / 60.0f);
+        }
+        if (const WaterSystem::Body* pool = splashPool()) {
+            double sum = 0.0;
+            for (float h : pool->h) { tall = std::max(tall, std::abs(h)); sum += h; if (std::abs(h) > 1.99f) ++pinned; }
+            level = (float)(sum / pool->h.size());
+        }
+        std::printf("      (after 2 minutes of pouring: level %.3f, tallest %.2f, %d points at the limit)\n", level, tall, pinned);
+        check(std::abs(level) < 0.05f, "a stream pouring into the pool for 2 minutes doesn't sink it (it sank 1.9 studs before)");
+        check(pinned == 0 && tall < 0.6f, "...and its surface stays rippled, not spiky");
+
+        // A huge splash (an explosion in the pool) hits the limit: it still settles down.
+        for (int i = 0; i < 30; ++i) {
+            scene.water().disturb(glm::vec3(44.0f, 3.0f, -32.0f), 2.0f, 4.0f);
+            scene.water().disturb(glm::vec3(48.0f, 3.0f, -28.0f), -2.0f, 4.0f);
+            frame(session, 1.0f / 60.0f);
+        }
+        for (int i = 0; i < 60 * 15; ++i) frame(session, 1.0f / 60.0f);
+        tall = 0.0f;
+        if (const WaterSystem::Body* pool = splashPool()) for (float h : pool->h) tall = std::max(tall, std::abs(h));
+        check(tall < 0.5f, "after a huge splash the pool calms down again (" + std::to_string(tall) + " studs)");
     }
 
     // Ride the slide holding forward, reporting where you are 20 times a second like a
