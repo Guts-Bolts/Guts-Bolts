@@ -29,6 +29,8 @@ set(GB_SERVER_SOURCES
     src/server/ServerBanLists.cpp
     src/server/ServerTesters.cpp
     src/server/ServerExperiments.cpp
+    src/server/ServerJourneys.cpp
+    src/server/ServerPromoText.cpp
     src/server/ServerShareLinks.cpp
     src/server/ServerRatings.cpp
     src/server/ServerBackgrounds.cpp
@@ -52,6 +54,7 @@ set(GB_SERVER_SOURCES
     src/core/Paths.cpp
     src/core/Log.cpp
     src/net/Socket.cpp
+    src/net/NetSim.cpp
 )
 
 # GB_SERVER_ONLY builds just GutsAndBoltsServer: no graphics libraries needed,
@@ -590,6 +593,7 @@ add_library(gb_engine STATIC
     src/game/Catalog.cpp
     src/game/TouchControls.cpp
     src/net/Socket.cpp
+    src/net/NetSim.cpp
     src/net/NetGame.cpp
     src/net/Streaming.cpp
     src/net/MoveGuard.cpp
@@ -931,6 +935,7 @@ set(EDITOR_SOURCES
     src/editor/EditorPlatform.cpp
     src/editor/EditorPhoneTest.cpp
     src/editor/EditorStressTest.cpp
+    src/editor/EditorNetSim.cpp
     src/editor/EditorPluginPublish.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp
@@ -1112,6 +1117,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerExperimentsTests gb_version)
     target_link_libraries(ServerExperimentsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerExperimentsTests COMMAND ServerExperimentsTests)
+    # Journeys (branching player paths) and promotional text (ServerJourneys.cpp, ServerPromoText.cpp).
+    add_executable(ServerJourneysTests tests/ServerJourneysTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerJourneysTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerJourneysTests gb_version)
+    target_link_libraries(ServerJourneysTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerJourneysTests COMMAND ServerJourneysTests)
     # Share links: clicks, different people, plays, buys and follows (ServerShareLinks.cpp).
     add_executable(ServerShareLinksTests tests/ServerShareLinksTests.cpp ${GB_SERVER_TEST_SOURCES})
     target_include_directories(ServerShareLinksTests PRIVATE src/ ${GB_GENERATED})

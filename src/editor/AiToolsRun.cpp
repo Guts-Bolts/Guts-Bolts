@@ -2091,6 +2091,11 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     }
 
     if (name == "manage_game") return runPlatformTool(args);
+    if (name == "network_sim") {   // EditorNetSim.cpp
+        const json r = networkSim(args);
+        if (r.contains("error")) return fail("INVALID_INPUT", r.value("error", ""), "action set {preset: \"3G\"} or action status.");
+        return done(r);
+    }
     if (name == "stress_test") {   // EditorStressTest.cpp
         const json a = args.is_object() ? args : json::object();
         const int device = stressDeviceIndex(a.value("device", std::string("cheap_phone")));

@@ -225,6 +225,7 @@ void Editor::renderSearch() {
     window("Performance Doctor", &m_showPerformanceDoctor);
     window("Test like a phone", &m_showPhoneTest);
     window("Stress test (memory and physics)", &m_showStressTest);
+    window("Network simulator (lag, 3G, 4G, Wi-Fi)", &m_showNetSim);
     window("Lua Debugger", &m_showLuaDebugger);
     window("Scene Validator", &m_showSceneValidator);
     window("Project Time Machine", &m_showProjectTimeMachine);

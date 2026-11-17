@@ -381,6 +381,7 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
             j["group"] = {{"id", g->second.id}, {"name", g->second.name}, {"color", g->second.color}};
         if (a.meta.value("featured", 0LL) > 0) j["featured"] = true;
         j["rating"] = a.meta.value("rating", std::string());   // content level (ServerRatings.cpp; "" = none yet)
+        if (json promo = promoJson(a); !promo.is_null()) j["promo"] = promo;   // promotional text (ServerPromoText.cpp)
         json shots = json::array();
         for (const json& s : a.shots) shots.push_back(s.value("id", std::string()));
         j["shots"] = shots;
@@ -721,6 +722,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
     if (name == "profile.background") return backgroundOp(me, args);   // ServerBackgrounds.cpp
     if (name.rfind("experiments.", 0) == 0 || name == "analytics.log") return experimentsOp(name, me, args);   // ServerExperiments.cpp
+    if (name.rfind("journeys.", 0) == 0) return journeysOp(name, me, args);   // ServerJourneys.cpp
+    if (name == "game.promo") return promoTextOp(me, args);   // ServerPromoText.cpp
     if (name.rfind("share.", 0) == 0) return shareOp(name, me, args);   // ServerShareLinks.cpp
     if (name == "game.rating" || name == "game.rate" || name == "rating.limit") return ratingOp(name, me, args);   // ServerRatings.cpp
     if (name.rfind("art.", 0) == 0) return artOp(name, &me, args);   // ServerArt.cpp

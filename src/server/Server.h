@@ -329,6 +329,14 @@ private:
     nlohmann::json experimentResults(const std::string& game, const nlohmann::json& e) const;
     void saveExperiments();
     void loadExperiments();
+    // ServerJourneys.cpp: branching player paths through a game (kept with the experiments), like worker/journeys.js.
+    nlohmann::json journeysOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json journeyResults(const std::string& game, const nlohmann::json& j) const;
+    int journeyEvent(const std::string& game, long long player, const std::string& what);
+    int runningJourneyCount(const std::string& game) const;
+    // ServerPromoText.cpp: a short promotional line on a game's listing, like worker/promotext.js.
+    nlohmann::json promoTextOp(User& me, const nlohmann::json& args);
+    nlohmann::json promoJson(const Asset& a) const;   // {text, until} while it's running, else null
     // ServerTesters.cpp: early testers play a game before it's public.
     nlohmann::json testerOp(const std::string& name, User& me, const nlohmann::json& args);
     bool isTester(const Asset& a, const User& me) const;
@@ -497,7 +505,7 @@ private:
     nlohmann::json m_events = nlohmann::json::array();   // ServerExtras.cpp
     nlohmann::json m_banLists = nlohmann::json::object();   // ServerBanLists.cpp: list id -> list
     nlohmann::json m_art = {{"pieces", nlohmann::json::object()}, {"posts", nlohmann::json::object()}};   // ServerArt.cpp
-    nlohmann::json m_experiments = {{"games", nlohmann::json::object()}, {"data", nlohmann::json::object()}};   // ServerExperiments.cpp
+    nlohmann::json m_experiments = {{"games", nlohmann::json::object()}, {"data", nlohmann::json::object()}, {"journeys", nlohmann::json::object()}, {"jdata", nlohmann::json::object()}};   // ServerExperiments.cpp
     nlohmann::json m_shareLinks = {{"links", nlohmann::json::object()}, {"seen", nlohmann::json::object()}};   // ServerShareLinks.cpp
     nlohmann::json m_pastes = {{"pastes", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerPaste.cpp
     nlohmann::json m_academy = {{"courses", nlohmann::json::object()}, {"progress", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerAcademy.cpp

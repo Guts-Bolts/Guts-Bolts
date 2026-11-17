@@ -9,6 +9,8 @@ import { mountGameWeb } from './gameweb.js';
 import { mountBanLists, mountGameBans, mountBanNotice } from './banlists.js';
 import { mountGameTesters, mountTesterNote } from './testers.js';
 import { mountGameExperiments } from './experiments.js';
+import { mountGameJourneys } from './journeys.js';
+import { mountGamePromo, promoLine } from './promotext.js';
 import { openShareLink, checkShareLinks, addShareBox } from './sharelinks.js';
 import { ratingPill, mountGameRating, mountRatingWhy, mountRatingLimit } from './ratings.js';   // content levels (how intense a game is)
 import { mountLaunchpad, mountLaunchpadShelf, launchpadPill } from './launchpad.js';   // Launchpad creator program
@@ -351,6 +353,7 @@ function gameCard(g) {
   return html`<a class="card" href="#/game/${g.id}">
     ${gamePic(g)}
     <div class="name">${g.featured ? html`<span title="Featured by staff">&#11088;</span> ` : ''}${g.name}</div>
+    ${raw(promoLine(g))}
     <div class="by">by ${g.group ? g.group.name : html`${g.creatorName}${verified(g.creatorVerified)}`}</div>
     <div class="by">${liked ? html`<span class="liked" title="${g.likes} likes, ${g.dislikes} dislikes">&#128077; ${liked}</span> · ` : ''}${n ? html`<b class="playing">${n} playing</b>` : html`${g.plays || 0} visits`}</div>
     ${(g.genres || []).length || g.rating ? html`<div class="by small">${raw(ratingPill(g))} ${(g.genres || []).join(' · ')}</div>` : ''}</a>`;
@@ -1699,6 +1702,7 @@ pages.game = async (id) => {
   show(html`<p><a href="#/games">&lt; Games</a></p>
     <div class="hero">${gameGallery(g)}
       <div><h1 class="game-title">${gameIcon(g, 40)} ${g.name}</h1>
+        ${raw(promoLine(g, true))}
         ${g.access && g.access !== 'public' ? html`<p><span class="badge-pill">${ACCESS_NAMES[g.access]}</span></p>` : ''}
         ${g.featured ? html`<p><span class="badge-pill featured-pill">&#11088; Featured</span></p>` : ''}
         ${g.launchpad ? html`<p><a href="#/create/launchpad">${raw(launchpadPill(g))}</a></p>` : ''}
@@ -2602,7 +2606,9 @@ pages.configure = async (id) => {
     </form>
     <div class="box" id="gameWeb"></div>
     <div class="box" id="gameTesters"></div>
+    <div class="box" id="gamePromo"></div>
     <div class="box" id="gameExperiments"></div>
+    <div class="box" id="gameJourneys"></div>
     <div class="box" id="gameRating"></div>
     <div class="box" id="gameBans"></div>
     <div class="box" id="screenshots"><h2 class="boxhead">Screenshots</h2>
@@ -2684,6 +2690,8 @@ pages.configure = async (id) => {
   mountGameBans($('#gameBans'), g.id, call, toast);   // ban lists (banlists.js)
   mountGameTesters($('#gameTesters'), g.id, call, toast);   // early testers (testers.js)
   mountGameExperiments($('#gameExperiments'), g.id, call, toast);   // A/B tests (experiments.js)
+  mountGameJourneys($('#gameJourneys'), g.id, call, toast);   // branching player paths (journeys.js)
+  mountGamePromo($('#gamePromo'), g.id, g.promo, call, toast);   // promotional text (promotext.js)
   addShareBox(view, 'game', g.id, call, toast);   // share links that count clicks and plays (sharelinks.js)
   mountGameRating($('#gameRating'), g.id, call, toast);   // content level questions (ratings.js)
   // Show a picked picture straight away.

@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include "../net/NetSim.h"
 
 // Studio's "Test with N players" (TEST > Players). Playing in Studio is just you;
 // this starts the open place on a local test server (GutsAndBoltsGameServer --place,
@@ -51,6 +52,13 @@ public:
     bool hasSession() const { return m_sessionStartedEpoch > 0; }
     bool exportSession(std::string& path, std::string& error) const;
 
+    // Network simulator (Test menu > Network simulator..., NetSim.h): every player window's
+    // connection behaves like this. Can change mid-test (the windows read it twice a second).
+    void setNetwork(const NetSim::Conditions& c);
+    const NetSim::Conditions& network() const { return m_net; }
+    // What each player window saw lately: [{player, running, fresh, ...NetClient's numbers}].
+    nlohmann::json networkStats() const;
+
     struct Process;   // a program we started, and what it prints (MultiTest.cpp)
 
 private:
@@ -61,6 +69,8 @@ private:
     std::unique_ptr<Process>              m_server;
     std::vector<std::unique_ptr<Process>> m_players;
     std::string m_placeFile;
+    std::string m_netFile;             // the network simulator's conditions, for the player windows
+    NetSim::Conditions m_net;
     int         m_port = 0;
     int         m_wanted = 0;      // windows to open once the server is ready
     bool        m_ready = false;

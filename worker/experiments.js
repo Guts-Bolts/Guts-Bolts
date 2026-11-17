@@ -30,6 +30,8 @@ export const kMostPlayersCounted = 50000;   // in one experiment (after that, ne
 export const EXPERIMENTS_COSTLY = { 'experiments.create': [20, 60, 3600], 'analytics.log': [1200, 2400, 600] };
 export const EXPERIMENTS_GUEST_OK = ['experiments.forGame', 'analytics.log'];   // (guests can host games too)
 
+import { runningJourneys } from './journeys.js';
+
 const okay = (extra) => Object.assign({ ok: true }, extra || {});
 const fail = (error) => ({ ok: false, error });
 const str = (args, k) => (typeof args[k] === 'string' ? args[k] : '');
@@ -108,8 +110,8 @@ export function installExperiments(Cls) {
     const list = Array.isArray(a.experiments) ? a.experiments : [];
     const running = list.filter((e) => !e.stopped);
 
-    if (name === 'experiments.forGame')
-      return okay({ experiments: running.map((e) => ({ id: e.id, name: e.name, variants: e.variants })) });
+    if (name === 'experiments.forGame')   // (journeys: how many journeys count events too, journeys.js)
+      return okay({ experiments: running.map((e) => ({ id: e.id, name: e.name, variants: e.variants })), journeys: runningJourneys(a).length });
 
     if (name === 'analytics.log') return this.analyticsLog(a, running, me, args);
 
@@ -167,7 +169,8 @@ export function installExperiments(Cls) {
         for (const p of s.players) { const c = this.conns.get(p); const u = c && c.account ? this.users.get(c.account) : null; if (u) allowed.add(u.userId); }
     }
     const events = Array.isArray(args.events) ? args.events.slice(0, kMostEvents) : [];
-    if (!running.length || !events.length) return okay({ kept: 0 });
+    const journeys = runningJourneys(a).length > 0;   // journeys.js counts the same events
+    if ((!running.length && !journeys) || !events.length) return okay({ kept: 0 });
     this.experimentsInit();
     const day = today();
     let kept = 0;
@@ -177,6 +180,7 @@ export function installExperiments(Cls) {
       const what = typeof ev.name === 'string' ? ev.name.slice(0, 60) : '';
       let value = typeof ev.value === 'number' && Number.isFinite(ev.value) ? ev.value : 1;
       if (player <= 0 || !what || (allowed && !allowed.has(player))) continue;
+      if (journeys) kept += this.journeyEvent(a, player, what);
       for (const e of running) {
         const get = (metric) => {
           const r = [...this.sql.exec('SELECT value FROM expdata WHERE game = ? AND exp = ? AND player = ? AND metric = ?', a.id, e.id, player, metric)][0];

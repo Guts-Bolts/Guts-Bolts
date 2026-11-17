@@ -12,6 +12,8 @@
 // Guts&Bolts server on the web, like the one on Cloudflare: the connection is
 // then a WebSocket to its /ws, with each message sent as one WebSocket message.
 // Everything else about a Connection works the same.
+namespace NetSim { class Pipe; }
+
 namespace Net {
 
 class Connection {
@@ -32,6 +34,9 @@ public:
     bool alive() const { return m_alive; }
     const std::string& address() const { return m_address; }
     size_t pendingBytes() const { return m_out.size(); }
+    // Network simulator (NetSim.h): hold this connection's messages back like a slower one.
+    void simulate(bool on);
+    const NetSim::Pipe* sim() const { return m_sim.get(); }
 
 private:
     struct Web;                    // the WebSocket (and TLS) side, for wss:// hosts
@@ -44,6 +49,7 @@ private:
     std::string m_in, m_out;
     bool        m_alive = true;
     std::unique_ptr<Web> m_web;
+    std::unique_ptr<NetSim::Pipe> m_sim;
 };
 
 // "wss://..." or "ws://...": a server on the web (see above).

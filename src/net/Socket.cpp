@@ -1,4 +1,5 @@
 #include "Socket.h"
+#include "NetSim.h"
 
 #include <csignal>
 #include <algorithm>
@@ -799,21 +800,55 @@ bool openUrl(const std::string& url, std::string& error) {
 #endif
 }
 
+namespace {
+double simClock() {
+    using namespace std::chrono;
+    return duration<double>(steady_clock::now().time_since_epoch()).count();
+}
+} // namespace
+
+void Connection::simulate(bool on) {
+#ifdef __EMSCRIPTEN__
+    (void)on;   // (the browser's WebSocket sends straight away: no simulator there)
+#else
+    if (on && !m_sim) m_sim = std::make_unique<NetSim::Pipe>();
+    else if (!on && m_sim) {   // let what it held go now, in order
+        const double far = simClock() + 1e9;
+        m_sim->releaseOut(m_out, far);
+        std::string msg, keep;
+        while (m_sim->popIn(msg, far)) {
+            uint32_t n = (uint32_t)msg.size();
+            unsigned char hdr[4] = {(unsigned char)(n >> 24), (unsigned char)(n >> 16), (unsigned char)(n >> 8), (unsigned char)n};
+            keep.append((const char*)hdr, 4);
+            keep += msg;
+        }
+        m_in = keep + m_in;
+        m_sim.reset();
+    }
+#endif
+}
+
 void Connection::send(const std::string& message) {
     if (!m_alive) return;
 #ifdef __EMSCRIPTEN__
     if (m_web) { m_web->outbox.push_back(message); return; }
 #endif
-    if (m_web) { m_out += wsFrame(0x2, message, m_web->rng); return; }   // one binary WebSocket message
-    uint32_t n = (uint32_t)message.size();
-    unsigned char hdr[4] = {(unsigned char)(n >> 24), (unsigned char)(n >> 16),
-                            (unsigned char)(n >> 8), (unsigned char)n};
-    m_out.append((const char*)hdr, 4);
-    m_out += message;
+    std::string framed;
+    if (m_web) framed = wsFrame(0x2, message, m_web->rng);   // one binary WebSocket message
+    else {
+        uint32_t n = (uint32_t)message.size();
+        unsigned char hdr[4] = {(unsigned char)(n >> 24), (unsigned char)(n >> 16),
+                                (unsigned char)(n >> 8), (unsigned char)n};
+        framed.append((const char*)hdr, 4);
+        framed += message;
+    }
+    if (m_sim) { m_sim->send(std::move(framed), simClock()); return; }
+    m_out += framed;
 }
 
 bool Connection::poll() {
     if (!m_alive) return false;
+    if (m_sim) m_sim->releaseOut(m_out, simClock());
     if (m_web) return webPoll();
     auto s = (decltype(socket(0, 0, 0)))m_sock;
 
@@ -913,6 +948,19 @@ bool Connection::webPoll() {
 }
 
 bool Connection::pop(std::string& message) {
+    if (m_sim) {   // whole messages go into the simulator, and come out when their time has come
+        const double now = simClock();
+        for (;;) {
+            if (m_in.size() < 4) break;
+            const unsigned char* p = (const unsigned char*)m_in.data();
+            uint32_t n = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+            if (n > kMaxMessage) { m_alive = false; return false; }
+            if (m_in.size() < 4 + (size_t)n) break;
+            m_sim->arrive(m_in.substr(4, n), now);
+            m_in.erase(0, 4 + (size_t)n);
+        }
+        return m_sim->popIn(message, now);
+    }
     if (m_in.size() < 4) return false;
     const unsigned char* p = (const unsigned char*)m_in.data();
     uint32_t n = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];

@@ -260,4 +260,18 @@ private:
     bool         m_voiceAllowed = false;
     int          m_voiceTold = -1;    // whether we told the host we're listening (-1 = not yet)
     bool         m_hostGore = false;  // the host sends its blood as it happens (GoreEvents and stains), not as old-style "fx"
+
+    // Network simulator (NetSim.h): what this player saw, written for Studio once a second.
+    struct SimCount {
+        int worlds = 0, parts = 0, moveBacks = 0, misses = 0, ownerChanges = 0;
+        double ageSum = 0.0, worstAge = 0.0, worstMiss = 0.0;
+        int ages = 0;
+    };
+    struct PartSeen { double t; glm::vec3 pos, vel; };
+    SimCount     m_simCount;
+    double       m_simAt = 0.0;
+    size_t       m_simOwned = 0;
+    uint64_t     m_simBytesIn = 0, m_simBytesOut = 0, m_simResent = 0;
+    std::unordered_map<uint64_t, PartSeen> m_partSeen;   // each moving part's last update (to see how far off a guess was)
+    void         simStats();
 };

@@ -22,7 +22,7 @@ inline bool appMay(const std::string& tool, bool canChange) {
         "spawn_explosion", "bake_navmesh", "walk_character_to",
         "script_history", "ai_activity", "checkpoint", "undo", "redo",
         "build", "terrain", "create_ui", "add_game_system", "set_atmosphere",
-        "make_animation"
+        "make_animation", "network_sim"
     };
     for (const char* allowed : readTools) if (tool == allowed) return true;
     if (canChange)

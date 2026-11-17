@@ -11,6 +11,7 @@
 #include "Premades.h"
 #include "LevelGen.h"
 #include "PhysicsReplay.h"
+#include "../net/NetSim.h"
 #include "SceneDiff.h"
 #include "../scene/SceneNode.h"
 #include "../scene/LinkedModels.h"
@@ -473,6 +474,15 @@ private:
 public:
     nlohmann::json stressTest(int device, int background, int crates, float seconds);   // (also the stress_test AI tool)
     static int stressDeviceIndex(const std::string& key);   // "cheap_phone" -> 0, -1 = no such device
+private:
+    // Network simulator (EditorNetSim.cpp): the multiplayer test's players over a worse connection
+    bool m_showNetSim = false;
+    int  m_netPreset = 0;               // NetSim::presets() index; presets().size() = your own numbers
+    NetSim::Conditions m_netCustom{"Custom", 150, 30, 1.0f, 2000};
+    void renderNetSim();
+public:
+    nlohmann::json networkSim(const nlohmann::json& args);   // (also the network_sim AI tool)
+    static nlohmann::json networkAdvice(const nlohmann::json& players, const NetSim::Conditions& c);
 private:
     bool m_showLuaDebugger = false;
     int m_debugLineInput = 1;

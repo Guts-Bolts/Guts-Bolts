@@ -1,5 +1,6 @@
 #include "NetGame.h"
 #include "Streaming.h"
+#include "NetSim.h"
 #include "../game/DragDetectors.h"
 #include <cmath>
 #include <unordered_set>
@@ -1868,6 +1869,11 @@ bool NetClient::connect(const std::string& host, int port) {
     disconnect();
     m_conn = Net::Connection::connectTo(host, port, m_error);
     if (!m_conn) { m_state = State::Failed; return false; }
+    if (NetSim::active()) m_conn->simulate(true);   // Studio's network simulator (a test player)
+    m_simCount = {};
+    m_simAt = 0.0;
+    m_simBytesIn = m_simBytesOut = m_simResent = 0;
+    m_partSeen.clear();
     m_nonce = Account::randomHex(16);
     m_hostAdmin = false;
     m_state = State::Connecting;   // "hello" goes out once the host sends its challenge
@@ -1970,6 +1976,53 @@ void NetClient::update(float dt) {
     }
     showSmoothly(*m_scene, m_poses);
     m_chat.update(dt);
+    if (NetSim::active() && m_state == State::Joined) simStats();
+}
+
+// The network simulator's numbers for Studio (NetSim.h), once a second: how much went each
+// way, how late the world arrived, and how often physics here had to be put right.
+void NetClient::simStats() {
+    const double now = clockNow();
+    // Ownership: parts our computer moves (a car we drive) changing hands.
+    const size_t owned = m_session->ownedParts().size();
+    if (owned != m_simOwned) { ++m_simCount.ownerChanges; m_simOwned = owned; }
+    if (m_simAt == 0.0) { m_simAt = now; return; }
+    const double span = now - m_simAt;
+    if (span < 1.0) return;
+    const NetSim::Pipe* pipe = m_conn ? m_conn->sim() : nullptr;
+    NetSim::Pipe::Counters c = pipe ? pipe->counters() : NetSim::Pipe::Counters{};
+    double behind = 0.0;
+    int shown = 0;
+    for (const auto& [id, pb] : m_poses) { behind += pb.delay(); ++shown; }
+    const NetSim::Conditions& cond = NetSim::current();
+    const auto perSec = [&](double v) { return std::round(v / span * 10.0) / 10.0; };
+    json j = {
+        {"conditions", cond.name}, {"latency", cond.latencyMs}, {"jitter", cond.jitterMs},
+        {"loss", cond.lossPercent}, {"kbps", cond.kbps},
+        {"worldPerSec", perSec(m_simCount.worlds)},               // the server's tick, as it reaches us
+        {"partsPerSec", perSec(m_simCount.parts)},                // replicated part changes
+        {"ageMs", m_simCount.ages ? std::round(m_simCount.ageSum / m_simCount.ages * 1000.0) : 0.0},
+        {"worstAgeMs", std::round(m_simCount.worstAge * 1000.0)},
+        {"kbIn", std::round((double)(c.bytesIn - m_simBytesIn) / span / 102.4) / 10.0},
+        {"kbOut", std::round((double)(c.bytesOut - m_simBytesOut) / span / 102.4) / 10.0},
+        {"resent", (int)(c.resent - m_simResent)},
+        {"waiting", (int)(c.waitingIn + c.waitingOut)},
+        {"moveBacks", m_simCount.moveBacks},                      // the server's anti-cheat put us back
+        {"misses", m_simCount.misses},                            // parts more than a stud from where they were heading
+        {"worstMiss", std::round(m_simCount.worstMiss * 10.0) / 10.0},
+        {"ownerChanges", m_simCount.ownerChanges}, {"owned", (int)owned},
+        {"othersBehindMs", shown ? std::round(behind / shown * 1000.0) : 0.0},
+        {"time", now}};
+    NetSim::writeStats(j.dump());
+    m_simBytesIn = c.bytesIn;
+    m_simBytesOut = c.bytesOut;
+    m_simResent = c.resent;
+    const int keepMoveBacks = m_simCount.moveBacks, keepOwner = m_simCount.ownerChanges;
+    m_simCount = {};
+    // (corrections and ownership changes add up over the whole test: they're rare and worth seeing)
+    m_simCount.moveBacks = keepMoveBacks;
+    m_simCount.ownerChanges = keepOwner;
+    m_simAt = now;
 }
 
 bool NetServer::promptPass(int scriptUserId, const std::string& pass) {
@@ -2193,6 +2246,16 @@ void NetClient::handle(const std::string& text) {
                 SceneNode* parent = m_scene->findById(a.value("parent", (uint64_t)0));
                 scripts.runScriptsIn(m_scene->insert(std::move(node), parent ? parent : m_scene->root()));
             }
+        const bool sim = NetSim::active();
+        if (sim) {
+            ++m_simCount.worlds;
+            if (m.contains("ts")) {   // (a test runs on this computer: the server's clock is ours)
+                const double age = std::max(0.0, clockNow() - m.value("ts", 0.0));
+                m_simCount.ageSum += age;
+                ++m_simCount.ages;
+                m_simCount.worstAge = std::max(m_simCount.worstAge, age);
+            }
+        }
         if (m.contains("upd")) {
             bool newPicture = false;
             for (const auto& u : m["upd"])
@@ -2205,6 +2268,18 @@ void NetClient::handle(const std::string& text) {
                         applyUpdate(n, u);
                         if (mine) { n->transform = keep; n->velocity = keepV; n->angularVelocity = keepW; }
                         newPicture = newPicture || n->texture != had;
+                        if (sim && !mine) {   // how far it is from where its last update said it was heading
+                            ++m_simCount.parts;
+                            const double t = clockNow();
+                            auto seen = m_partSeen.find(n->id);
+                            if (seen != m_partSeen.end() && t - seen->second.t < 1.0 && glm::length(seen->second.vel) > 0.01f) {
+                                const glm::vec3 guess = seen->second.pos + seen->second.vel * (float)(t - seen->second.t);
+                                const double off = glm::length(n->transform.position - guess);
+                                if (off > 1.0) ++m_simCount.misses;
+                                m_simCount.worstMiss = std::max(m_simCount.worstMiss, off);
+                            }
+                            if (m_partSeen.size() < 20000) m_partSeen[n->id] = {t, n->transform.position, n->velocity};
+                        }
                     }
             if (newPicture) Online::fetchSounds(*m_scene);   // (download a picture we don't have yet)
         }
@@ -2390,6 +2465,7 @@ void NetClient::handle(const std::string& text) {
     }
     if (t == "moveback" && me) {   // the host's anti-cheat thinks we moved impossibly: back to where we were
         me->moveTo(vec3(m.value("p", json())));
+        ++m_simCount.moveBacks;
         Log::warn("The game moved you back (" + m.value("why", std::string("moving oddly")) + ").");
         return;
     }

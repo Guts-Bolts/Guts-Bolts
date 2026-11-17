@@ -4,6 +4,7 @@
 #include <SDL.h>   // on Android, SDL starts the app through this main()
 #endif
 #include "../core/CrashHandler.h"
+#include "../net/NetSim.h"
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -17,6 +18,7 @@ int main(int argc, char** argv) {
     LaunchLink::listen();   // Mac: links arrive as messages (start listening before the window opens)
 
     PlayerOptions opts;
+    std::string netsim;
     for (int i = 1; i < argc; ++i) {
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
         if      (!std::strcmp(argv[i], "--page"))       opts.page       = next();
@@ -58,12 +60,15 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--test-face")) opts.testFace = next();
         else if (!std::strcmp(argv[i], "--studio-test")) opts.studioTest = next();   // Studio's "Test with N players"
         else if (!std::strcmp(argv[i], "--studio-input-trace")) opts.studioInputTrace = next(); // Studio's per-player input trace
+        else if (!std::strcmp(argv[i], "--netsim"))      netsim = next();   // Studio's network simulator (NetSim.h)
         else if (!std::strcmp(argv[i], "--vr"))          opts.vr = true;   // straight into the VR headset
         else if (!std::strcmp(argv[i], "--vr-test-hands")) opts.vrTestHands = next();
         else if (!std::strcmp(argv[i], "--name"))        opts.testName = next();
         else if (!std::strncmp(argv[i], "gutsandbolts:", 13)) opts.launchUrl = argv[i];   // the website's Play button
         else if (argv[i][0] != '-')                     opts.game       = argv[i];
     }
+
+    if (!netsim.empty()) NetSim::useFile(netsim, opts.testName);
 
     try {
 #ifdef __EMSCRIPTEN__
