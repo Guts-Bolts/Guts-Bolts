@@ -7,6 +7,7 @@
 #include "Experiments.h"
 #include "Drawings.h"
 #include "LuaRealism.h"
+#include "LuaDisasters.h"
 #include "ServerMemory.h"
 #include "../core/Pad.h"
 #include "../core/Account.h"
@@ -3972,6 +3973,7 @@ void ScriptEngine::start(bool runScripts) {
     Experiments::install(L);      // AnalyticsService and ExperimentService (A/B tests)
     Drawings::install(L);         // AssetService: EditableImages, publishing drawings
     LuaRealism::install(L);       // workspace:FireBullet
+    LuaDisasters::install(L, m_runMode != RunMode::Client);   // game:GetService("Disasters"): lightning, tornadoes, tsunamis, earthquakes
     ServerMemory::install(L, m_runMode != RunMode::Client);   // game.ServerLowMemoryWarning, Stats' memory numbers
     // For Studio's AI tools: an object by its id number (they refer to objects that way).
     lua_register(L, "__gb_byId", [](lua_State* L) -> int {

@@ -514,6 +514,7 @@ add_library(gb_engine STATIC
     src/scene/Particles.cpp
     src/scene/Weather.cpp
     src/scene/Storms.cpp
+    src/scene/Disasters.cpp
     src/scene/Vehicles.cpp
     src/scene/IkControls.cpp
     src/scene/LinkedModels.cpp
@@ -559,6 +560,7 @@ add_library(gb_engine STATIC
     src/scripting/Experiments.cpp
     src/scripting/Drawings.cpp
     src/scripting/LuaRealism.cpp
+    src/scripting/LuaDisasters.cpp
     src/scripting/ServerMemory.cpp
     src/scripting/ScriptActions.cpp
     src/scripting/ScriptHelp.cpp
@@ -1650,5 +1652,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(SevereWeatherTests tests/SevereWeatherTests.cpp)
     target_link_libraries(SevereWeatherTests PRIVATE gb_engine)
     add_test(NAME SevereWeatherTests COMMAND SevereWeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Natural disasters a game spawns: lightning, tornadoes, tsunamis, earthquakes (Disasters.h).
+    add_executable(DisastersTests tests/DisastersTests.cpp)
+    target_link_libraries(DisastersTests PRIVATE gb_engine)
+    add_test(NAME DisastersTests COMMAND DisastersTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()

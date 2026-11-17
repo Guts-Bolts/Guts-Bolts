@@ -87,6 +87,10 @@ void  stopEarthquake(Scene& scene);
 float quakeStrength(float magnitude);            // 0..1 at its worst
 // How the ground is being thrown about right now (studs / second², mostly sideways).
 glm::vec3 quakeAccel(const State& st);
+// The shaking pattern at full strength, and the shaking at a place with the
+// Disasters service's earthquakes added (Disasters.h).
+glm::vec3 quakePattern(const State& st);
+glm::vec3 groundJolt(const Scene& scene, const glm::vec3& p);
 // How hard a camera at `at` should shake (earthquake, and the rumble near a tornado).
 float cameraShake(const Scene& scene, const glm::vec3& at);
 // Hail: how much of what falls at `p` is ice (0..1). Under a supercell's core only.

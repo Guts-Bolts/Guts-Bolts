@@ -8,7 +8,7 @@ class Scene;
 // short scripts you can read and change.
 namespace GameTemplates {
 
-enum class Kind { Obby, Tycoon, SwordFight, Racing };
+enum class Kind { Obby, Tycoon, SwordFight, Racing, DisasterSurvival };
 
 struct Info {
     Kind        kind;

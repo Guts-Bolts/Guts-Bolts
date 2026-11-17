@@ -138,6 +138,28 @@ void WeatherSim::strike(const glm::vec3& eye, float amount) {
     nextStrike = (4.0f + 14.0f * random()) / (0.5f + amount);
 }
 
+void WeatherSim::strikeHere(const glm::vec3& ground, const glm::vec3& eye, float strength) {
+    const glm::vec3 top(ground.x + (random() - 0.5f) * 30.0f, ground.y + 190.0f + 30.0f * random(), ground.z + (random() - 0.5f) * 30.0f);
+    m_bolt.clear();
+    grow(top, ground, 6, 1.0f, 1.0f + 0.3f * std::clamp(strength - 1.0f, -0.5f, 1.0f));
+    m_boltMiddle = (top + ground) * 0.5f;
+    m_boltAge = 0.0f;
+    m_strikeAt = ground;
+    const float k = std::clamp(strength, 0.2f, 2.0f);
+    m_pulses.clear();
+    m_pulses.push_back({0.0f, std::min(1.0f, 0.7f + 0.3f * k), 14.0f});
+    float at = 0.0f;
+    for (int i = 0; i < 3; ++i) {
+        at += 0.05f + 0.08f * random();
+        m_pulses.push_back({at, 0.5f + 0.4f * random(), i == 2 ? 7.0f : 18.0f});
+    }
+    const float dist = glm::length(ground - eye);
+    m_thunderIn = dist / kThunderSpeed;
+    m_thunderVolume = std::clamp(1.2f - dist / (kFarStrike * 1.2f), 0.3f, 1.0f) * std::min(1.0f, 0.6f + 0.4f * k);
+    // (no weather bolt straight after: they'd look like one)
+    nextStrike = std::max(nextStrike, 2.0f);
+}
+
 void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
     const Environment& env = scene.environment();
     const int kind = env.weather > 0 && env.weather < kWeatherCount ? env.weather : 0;

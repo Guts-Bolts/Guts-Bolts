@@ -646,6 +646,9 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         if (!scene.storms().fresh) Storms::snap(scene);
         scene.storms().fresh = false;
         m_weather.update(scene, camera.position(), dt);
+        // Lightning a game called down (Disasters.h): the newest bolt we haven't drawn yet.
+        for (const Disasters::State::Bolt& b : scene.disasters().bolts)
+            if (b.serial > m_lastBolt) { m_weather.strikeHere(b.pos, camera.position(), b.strength); m_lastBolt = b.serial; }
     }
     struct KeepLighting {
         Scene& scene; Environment saved;
@@ -2375,7 +2378,7 @@ void SceneRenderer::ribbonBuffers() {
 // curling out along the ground. Soft see-through columns with wisps winding round them.
 void SceneRenderer::drawStorms(Scene& scene, const Camera& camera) {
     const Storms::State& st = scene.storms();
-    if (st.tornado <= 0.0f && st.downburst <= 0.0f) return;
+    if (st.tornado <= 0.0f && st.downburst <= 0.0f && !Disasters::any(scene)) return;
     ribbonBuffers();
     const glm::vec3 eye = camera.position();
     const float time = (float)(now() - m_startTime);
@@ -2443,9 +2446,7 @@ void SceneRenderer::drawStorms(Scene& scene, const Camera& camera) {
                [&](float v) { return 0.34f * k * glm::smoothstep(0.0f, 0.05f, v) * (0.7f + 0.3f * v); },
                glm::vec3(0.46f, 0.50f, 0.56f), 0.0f, 1.0f, {time * 0.05f, -time * 2.6f}, true);
     }
-    if (st.tornado > 0.0f) {
-        const float s = st.tornado, core = Storms::coreRadius(s);
-        const glm::vec3 foot = st.tornadoPos;
+    auto tornado = [&](const glm::vec3& foot, float s, float core, const glm::vec3& tint) {
         const float H = Storms::kCloudBase + 15.0f;
         // It comes down out of the wall cloud as it forms, and thins back up as it dies.
         const float down = glm::smoothstep(0.03f, 0.6f, s);
@@ -2458,7 +2459,7 @@ void SceneRenderer::drawStorms(Scene& scene, const Camera& camera) {
         column(middle,
                [&](float v) { return core * (0.55f + 0.4f * v) * (0.4f + 0.6f * down) + (core * 3.0f + 22.0f) * std::pow(v, 6.0f); },
                [&](float v) { return 0.95f * glm::smoothstep(1.0f - down, 1.0f - down + 0.1f, v + 0.02f); },
-               glm::vec3(0.50f, 0.52f, 0.56f), 0.0f, 1.0f, {time * (1.6f + 0.5f * s), time * 0.9f}, false);
+               tint, 0.0f, 1.0f, {time * (1.6f + 0.5f * s), time * 0.9f}, false);
         // The debris cloud: dirt and bits whipped up round its foot once it touches down.
         const float touched = glm::smoothstep(0.75f, 1.0f, down);
         if (touched > 0.0f) {
@@ -2468,7 +2469,101 @@ void SceneRenderer::drawStorms(Scene& scene, const Camera& camera) {
                    [&](float v) { return 0.62f * touched * std::pow(1.0f - v, 1.8f) * glm::smoothstep(0.0f, 0.06f, v); },
                    glm::vec3(0.34f, 0.29f, 0.23f), 0.0f, 1.0f, {time * (2.6f + 0.6f * s), time * 1.5f}, false);
         }
+    };
+    if (st.tornado > 0.0f) tornado(st.tornadoPos, st.tornado, Storms::coreRadius(st.tornado), glm::vec3(0.50f, 0.52f, 0.56f));
+    // The Disasters service's tornadoes and tsunamis (Disasters.h).
+    for (const Disasters::Disaster& d : scene.disasters().list) {
+        if (d.fade <= 0.0f) continue;
+        if (d.kind == Disasters::Kind::Tornado)
+            tornado(d.pos, std::max(0.3f, d.strength) * d.fade, Disasters::tornadoCore(d) * (0.4f + 0.6f * d.fade),
+                    glm::vec3(0.36f, 0.36f, 0.38f));   // (darker: it has to stand out against a clear sky too)
     }
+    m_ribbon->setInt("uSoft", 0);
+    drawTsunamis(scene, camera, time);
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
+}
+
+// A tsunami (Disasters.h): a wall of water rolling along, steep and curling over at the
+// front with foam along its crest, sloping off behind into the flood it drags along.
+// Its shape is Disasters::waterTop, the same one the physics uses, so what you see is
+// what carries you.
+void SceneRenderer::drawTsunamis(Scene& scene, const Camera& camera, float time) {
+    std::vector<const Disasters::Disaster*> waves;
+    for (const Disasters::Disaster& d : scene.disasters().list)
+        if (d.kind == Disasters::Kind::Tsunami && d.fade > 0.0f && d.height > 0.1f && d.radius > 0.5f) waves.push_back(&d);
+    if (waves.empty()) return;
+    ribbonBuffers();
+    const Environment& env = scene.environment();
+    const glm::vec3 sun = env.sunDirection();
+    m_ribbon->bind();
+    m_ribbon->setMat4("uViewProj", camera.projection() * camera.view());
+    m_ribbon->setVec3("uLight", glm::clamp(env.ambientColor * env.ambientIntensity * 1.3f +
+                                           env.sunColor * std::max(0.0f, env.sunIntensity) * std::max(sun.y, 0.0f) * 0.55f,
+                                           glm::vec3(0.05f), glm::vec3(1.6f)));
+    m_ribbon->setBool("uHasTex", false);
+    m_ribbon->setFloat("uGlow", 0.0f);
+    m_ribbon->setFloat("uExtra", 0.0f);
+    m_ribbon->setInt("uSoft", 4);
+    m_ribbon->setVec2("uFlow", {0.0f, -time * 0.9f});
+    glBindVertexArray(m_ribbonVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_ribbonVbo);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    std::vector<RibbonVertex> verts;
+    for (const Disasters::Disaster* d : waves) {
+        const glm::vec3 dir = d->dir, side(-dir.z, 0.0f, dir.x);
+        const float L = Disasters::tsunamiLength(*d), R = d->radius, H = d->height * d->fade;
+        const int along = 40, across = 48;
+        struct Pt { glm::vec3 pos; float foam; };
+        std::vector<Pt> pts((size_t)(along + 1) * (across + 1));
+        for (int i = 0; i <= along; ++i) {
+            // (more rows near the front, where the shape changes fast)
+            const float u = (float)i / (float)along, x = u * u;
+            for (int j = 0; j <= across; ++j) {
+                const float lat = ((float)j / (float)across * 2.0f - 1.0f) * R;
+                const glm::vec3 at = d->pos - dir * (x * L) + side * lat;
+                float top = Disasters::waterTop(*d, at);
+                if (top < -1e8f) top = d->pos.y;
+                const float h = top - d->pos.y;
+                // The lip curls forward over the face.
+                const float curl = H * 0.3f * std::exp(-std::pow((x - 0.07f) / 0.035f, 2.0f)) * (h / std::max(H, 0.1f));
+                const float wobble = std::sin(lat * 0.21f + time * 1.7f) * 0.6f + std::sin(lat * 0.07f - time * 0.9f) * 0.9f;
+                Pt& p = pts[(size_t)i * (across + 1) + j];
+                p.pos = glm::vec3(at.x, top, at.z) + dir * curl + glm::vec3(0.0f, wobble * (h / std::max(H, 0.1f)), 0.0f);
+                p.pos.y = std::max(p.pos.y, d->pos.y + 0.05f);
+                p.foam = 0.9f * std::exp(-std::pow((x - 0.085f) / 0.02f, 2.0f)) + 0.5f * (1.0f - glm::smoothstep(0.0f, 0.004f, x));   // the crest and where it hits the ground
+            }
+        }
+        verts.clear();
+        verts.reserve((size_t)along * across * 6);
+        const glm::vec3 deep(0.03f, 0.17f, 0.26f), shallow(0.10f, 0.40f, 0.48f), foam(0.95f, 0.97f, 1.0f);
+        auto vert = [&](int i, int j, const glm::vec3& n) {
+            const Pt& p = pts[(size_t)i * (across + 1) + j];
+            const float lit = 0.45f + 0.5f * std::max(0.0f, glm::dot(n, sun));
+            const float hgt = glm::clamp((p.pos.y - d->pos.y) / std::max(H, 0.1f), 0.0f, 1.0f);
+            glm::vec3 c = glm::mix(deep, shallow, hgt * 0.8f);
+            c = glm::mix(c, foam, glm::clamp(p.foam, 0.0f, 0.85f)) * lit;
+            const glm::vec3 local = p.pos - d->pos;
+            return RibbonVertex{p.pos, {glm::dot(local, side), glm::dot(local, dir)}, glm::vec4(c, 0.93f)};
+        };
+        for (int i = 0; i < along; ++i)
+            for (int j = 0; j < across; ++j) {
+                const glm::vec3& a = pts[(size_t)i * (across + 1) + j].pos;
+                const glm::vec3& b = pts[(size_t)i * (across + 1) + j + 1].pos;
+                const glm::vec3& c = pts[(size_t)(i + 1) * (across + 1) + j].pos;
+                glm::vec3 n = glm::cross(b - a, c - a);
+                n = glm::length(n) > 1e-5f ? glm::normalize(n) : glm::vec3(0, 1, 0);
+                if (n.y < 0.0f) n = -n;
+                verts.insert(verts.end(), {vert(i, j, n), vert(i, j + 1, n), vert(i + 1, j + 1, n),
+                                           vert(i, j, n), vert(i + 1, j + 1, n), vert(i + 1, j, n)});
+            }
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(RibbonVertex)), verts.data(), GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    }
+    glDepthMask(GL_FALSE);
     m_ribbon->setInt("uSoft", 0);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
@@ -2594,7 +2689,8 @@ void SceneRenderer::drawSplashes(Scene& scene, const Camera& camera) {
 // It flickers with the flash and is gone in half a second.
 void SceneRenderer::drawLightning(const Camera& camera) {
     const std::vector<WeatherSim::BoltPiece>& bolt = m_weather.bolt();
-    if (bolt.empty() || !m_ribbonVao) return;   // (drawWeather made the strip buffers: a Storm always rains)
+    if (bolt.empty()) return;
+    ribbonBuffers();   // (a game's own lightning can strike under a clear sky)
     const glm::vec3 eye = camera.position();
     const float glow = m_weather.boltGlow();
     std::vector<RibbonVertex> verts;
