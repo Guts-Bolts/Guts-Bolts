@@ -225,7 +225,8 @@ CharacterPose lerpPose(const CharacterPose& a, const CharacterPose& b, float t) 
 
 json humanoidJson(const Humanoid& h) {
     return {{"health", h.health}, {"maxHealth", h.maxHealth}, {"walkSpeed", h.walkSpeed},
-            {"jumpPower", h.jumpPower}, {"jumpHeight", h.jumpHeight}, {"useJumpPower", h.useJumpPower}};
+            {"jumpPower", h.jumpPower}, {"jumpHeight", h.jumpHeight}, {"useJumpPower", h.useJumpPower},
+            {"hipHeight", h.hipHeight}, {"maxSlopeAngle", h.maxSlopeAngle}};
 }
 void humanoidFrom(Humanoid& h, const json& j) {
     h.maxHealth = j.value("maxHealth", h.maxHealth);
@@ -234,6 +235,8 @@ void humanoidFrom(Humanoid& h, const json& j) {
     h.jumpPower = j.value("jumpPower", h.jumpPower);
     h.jumpHeight = j.value("jumpHeight", h.jumpHeight);
     h.useJumpPower = j.value("useJumpPower", h.useJumpPower);
+    h.hipHeight = j.value("hipHeight", h.hipHeight);
+    h.maxSlopeAngle = j.value("maxSlopeAngle", h.maxSlopeAngle);
 }
 
 // A player's camera options (CameraMode and zoom limits).

@@ -36,6 +36,14 @@ struct Humanoid {
     // PlatformStand: the character stops holding itself up (no walking, no
     // jumping) and topples over stiffly, like a 2011 Roblox character.
     bool  platformStand = false;
+    // Getting over stairs and curbs, like Roblox: the legs don't bump into anything and
+    // the body floats HipHeight over the ground (1 = our legs, Roblox's 2 studs). Anything
+    // up to 3/4 of that is stepped onto without jumping. Surfaces steeper than
+    // MaxSlopeAngle (degrees) are walls: you can't stand on them or step up them.
+    float hipHeight     = 1.0f;
+    float maxSlopeAngle = 56.6f;
+    float stepHeight() const { return std::max(0.0f, hipHeight) * 0.75f; }
+    float minGroundY() const { return std::cos(glm::radians(std::clamp(maxSlopeAngle, 0.0f, 89.0f))); }
 };
 
 // The six body colours of an R6 character.

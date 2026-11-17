@@ -1567,7 +1567,8 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     if (m_grounded && !m_climbing) { delta.x += stormPush.x * 0.12f * dt; delta.z += stormPush.z * 0.12f * dt; }
     delta.y = m_velocity.y * dt;
 
-    Physics::MoveResult res = physics.moveCharacter(pos, delta, m_grounded, r->transform.rotation.y, m_rootId, physics.groupOf(r));
+    const Physics::Footing foot{m_humanoid.stepHeight(), m_humanoid.minGroundY()};   // (HipHeight, MaxSlopeAngle)
+    Physics::MoveResult res = physics.moveCharacter(pos, delta, m_grounded, r->transform.rotation.y, m_rootId, physics.groupOf(r), foot);
     if (footing && dt > 0.0f) {
         // Flung into a wall: the wall takes the extra speed away, instead of it
         // being kept and shooting you off the moment you clear the wall's edge.

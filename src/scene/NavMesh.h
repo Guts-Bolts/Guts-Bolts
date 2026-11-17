@@ -21,7 +21,7 @@ class NavMesh {
 public:
     struct Settings {
         float cell        = 0.5f;    // column width (made bigger for huge worlds)
-        float maxClimb    = 0.55f;   // a step you just walk up (Physics::kStepHeight)
+        float maxClimb    = 0.75f;   // a step you just walk up (Physics::kStepHeight)
         float maxSlope    = 55.0f;   // steeper tilted parts are walls (degrees)
         float jumpHeight  = 3.2f;    // ledges up to this high get jump links
         float jumpGap     = 3.0f;    // gaps up to this wide get jump links
