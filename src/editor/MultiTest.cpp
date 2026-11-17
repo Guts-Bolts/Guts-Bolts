@@ -262,6 +262,13 @@ bool MultiTest::start(const std::string& place, int players, std::string& error)
         if (!f) { error = "Couldn't write the game for the test server to " + m_placeFile; m_placeFile.clear(); return false; }
     }
 
+    // The network simulator's file: every player window reads its conditions from here (and
+    // writes its numbers next to it), so they can change without restarting the test.
+    m_netFile = (std::filesystem::temp_directory_path(ec) /
+                 ("gutsandbolts-netsim-" + std::to_string(currentPid()) + ".txt")).string();
+    if (!NetSim::writeFile(m_netFile, m_net)) m_netFile.clear();
+    if (m_net.on()) Log::system("Network simulator: the players' connections are like " + m_net.name + ".");
+
     m_server = std::make_unique<Process>();
     m_server->name = "Server";
     if (!m_server->start(serverProgram, {"--place", m_placeFile, "--port", std::to_string(m_port)}, error)) {
@@ -289,9 +296,10 @@ bool MultiTest::startPlayer(std::string& error) {
     std::filesystem::create_directories(directory, ec);
     if (ec) { error = "Couldn't create the input-trace folder: " + directory.string(); return false; }
     const auto tracePath = directory / ("input-" + std::to_string(m_sessionStartedEpoch) + "-" + p->name + ".jsonl");
-    if (!p->start(Paths::sibling("GutsAndBoltsPlayer"),
-                  {"--studio-test", "127.0.0.1:" + std::to_string(m_port), "--name", p->name,
-                   "--studio-input-trace", tracePath.string()}, error))
+    std::vector<std::string> args = {"--studio-test", "127.0.0.1:" + std::to_string(m_port), "--name", p->name,
+                                     "--studio-input-trace", tracePath.string()};
+    if (!m_netFile.empty()) { args.push_back("--netsim"); args.push_back(m_netFile); }
+    if (!p->start(Paths::sibling("GutsAndBoltsPlayer"), args, error))
         return false;
     m_inputTraces.push_back({p->name, tracePath.string()});
     m_players.push_back(std::move(p));
@@ -326,6 +334,13 @@ void MultiTest::stop() {
         std::error_code ec;
         std::filesystem::remove(m_placeFile, ec);
         m_placeFile.clear();
+    }
+    if (!m_netFile.empty()) {   // the conditions, and each player's numbers
+        std::error_code ec;
+        for (int i = 1; i <= kMostPlayers; ++i)
+            std::filesystem::remove(NetSim::statsPath(m_netFile, "Player" + std::to_string(i)), ec);
+        std::filesystem::remove(m_netFile, ec);
+        m_netFile.clear();
     }
     if (was) Log::system("Multiplayer test stopped: the test server and the player windows are closed.");
 }
@@ -491,4 +506,36 @@ nlohmann::json MultiTest::status() const {
     return {{"running", running()}, {"ready", m_ready}, {"port", running() ? m_port : 0},
             {"server", {{"running", running()}}}, {"players", players},
             {"players_waiting", m_ready ? 0 : m_wanted}};
+}
+
+// ---------------------------------------------------------------------------
+// Network simulator (NetSim.h)
+
+void MultiTest::setNetwork(const NetSim::Conditions& c) {
+    m_net = NetSim::clamp(c);
+    if (!running() || m_netFile.empty()) return;
+    if (NetSim::writeFile(m_netFile, m_net))
+        Log::system("Network simulator: the players' connections are now like " + m_net.name +
+                    (m_net.on() ? " (" + std::to_string(m_net.latencyMs) + " ms lag)." : " (nothing added)."));
+}
+
+nlohmann::json MultiTest::networkStats() const {
+    nlohmann::json out = nlohmann::json::array();
+    if (m_netFile.empty()) return out;
+    const double now = seconds();
+    for (const auto& p : m_players) {
+        nlohmann::json row = {{"player", p->name}};
+        std::ifstream f(NetSim::statsPath(m_netFile, p->name), std::ios::binary);
+        std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        nlohmann::json j = nlohmann::json::parse(text, nullptr, false);
+        if (j.is_object()) {
+            row.update(j);
+            // (the player writes once a second; older than 3 seconds = it stopped or closed)
+            row["fresh"] = now - j.value("time", 0.0) < 3.0;
+        } else {
+            row["fresh"] = false;
+        }
+        out.push_back(row);
+    }
+    return out;
 }

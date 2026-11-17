@@ -88,6 +88,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_showCompare = std::getenv("GB_TEST_COMPARE") != nullptr;   // (tests: start with it showing)
     m_showLiveProfiler = std::getenv("GB_TEST_PROFILER") != nullptr;   // (tests: start with it showing)
     m_showStressTest = std::getenv("GB_TEST_STRESS") != nullptr;   // (tests: start with it showing)
+    m_showNetSim = std::getenv("GB_TEST_NETSIM") != nullptr;       // (tests: start with it showing)
     m_viewport = std::make_unique<ViewportPanel>(window, scene, &m_state);
     registerWorkspaceSettings();   // (before the layout file is read, on the first frame)
     auto open  = [this](SceneNode* n) { openScript(n); };
@@ -466,6 +467,7 @@ void Editor::render(float dt) {
     renderPerformanceDoctor();
     renderPhoneTest();
     renderStressTest();
+    renderNetSim();
     renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
@@ -3994,6 +3996,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
         if (ImGui::MenuItem("Test like a phone...", nullptr, &m_showPhoneTest)) {}
         if (ImGui::MenuItem("Stress test...", nullptr, &m_showStressTest)) {}
+        if (ImGui::MenuItem("Network simulator...", nullptr, &m_showNetSim)) {}
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}

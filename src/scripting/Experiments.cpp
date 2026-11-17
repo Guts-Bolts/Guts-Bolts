@@ -10,7 +10,8 @@
 //   AnalyticsService:LogOnboardingFunnelStepEvent(player, 3 [, "Jumped"])
 //
 // Only the game's server sends anything (a Script, or Studio's test run), and only while one of
-// the game's experiments is running, so games without experiments send nothing at all. Each
+// the game's experiments or journeys (worker/journeys.js: branching player paths) is running, so
+// games without them send nothing at all. Each
 // player's join and minutes played are counted by themselves. Events go in batches (every 15
 // seconds, or 200 at a time).
 #include "Experiments.h"
@@ -47,6 +48,7 @@ namespace {
 // waiting to be sent.
 struct State {
     bool asked = false, loaded = false;
+    bool tracking = false;   // an experiment or a journey is running: events are worth sending
     std::string game;
     nlohmann::json list = nlohmann::json::array();
     std::vector<nlohmann::json> queue;
@@ -75,6 +77,7 @@ int l_fetch(lua_State* L) {
         auto s = weak.lock();
         if (!s) return;
         if (r.value("ok", false) && r.contains("experiments") && r["experiments"].is_array()) s->list = r["experiments"];
+        s->tracking = !s->list.empty() || (r.contains("journeys") && r["journeys"].is_number() && r["journeys"].get<int>() > 0);
         s->loaded = true;
     });
     return 0;
@@ -131,7 +134,7 @@ int l_log(lua_State* L) {
     const long long user = (long long)luaL_checknumber(L, 1);
     const std::string name = luaL_checkstring(L, 2);
     const double value = luaL_optnumber(L, 3, 1.0);
-    if (user <= 0 || name.empty() || st->list.empty()) return 0;   // nothing running: nothing to count
+    if (user <= 0 || name.empty() || !st->tracking) return 0;   // nothing running: nothing to count
     st->queue.push_back({{"player", user}, {"name", name.substr(0, 60)}, {"value", value}});
     if (st->queue.size() >= 200) send(L, *st);
     return 0;
@@ -142,6 +145,12 @@ int l_flush(lua_State* L) {
     return 0;
 }
 
+// tracking() -> true once the server said an experiment or a journey is running
+int l_tracking(lua_State* L) {
+    lua_pushboolean(L, stateOf(L)->tracking);
+    return 1;
+}
+
 // queued() -> how many events wait to be sent (tests)
 int l_queued(lua_State* L) {
     lua_pushinteger(L, (lua_Integer)stateOf(L)->queue.size());
@@ -149,7 +158,7 @@ int l_queued(lua_State* L) {
 }
 
 const char* kLua = R"LUA(
-local fetch, list, variantOf, logEvent, flush, queued = ...
+local fetch, list, variantOf, logEvent, flush, queued, tracking = ...
 local function isServer() return RunService == nil or RunService:IsServer() end
 
 local forced = {}
@@ -237,7 +246,8 @@ local function joined(p)
 end
 task.spawn(function()
     if not isServer() then return end
-    if #running() == 0 then return end
+    running()   -- (waits for the server's answer)
+    if not tracking() then return end
     for _, p in ipairs(Players:GetPlayers()) do joined(p) end
     Players.PlayerAdded:Connect(joined)
     Players.PlayerRemoving:Connect(function(p)
@@ -270,7 +280,8 @@ void install(lua_State* L) {
     lua_pushcfunction(L, l_log);
     lua_pushcfunction(L, l_flush);
     lua_pushcfunction(L, l_queued);
-    if (lua_pcall(L, 6, 3, 0) != LUA_OK) {
+    lua_pushcfunction(L, l_tracking);
+    if (lua_pcall(L, 7, 3, 0) != LUA_OK) {
         Log::error(std::string("Internal script setup failed: ") + lua_tostring(L, -1));
         lua_pop(L, 1);
         return;

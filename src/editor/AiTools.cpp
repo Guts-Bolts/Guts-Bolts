@@ -710,6 +710,32 @@ const std::vector<Tool>& tools() {
           "{device, about, over: how many checks are over, checks: [{what, count, limit, verdict, fix?}], note}.",
           "None.", "Nothing changes.", "phone_check -> (fix the red ones) -> phone_check.", "\"Will my game run on a cheap phone?\""},
          schema({{"device", {{"type", "string"}, {"enum", {"cheap_phone", "mid_phone", "old_laptop"}}}}}, {})},
+        {"network_sim", "Test multiplayer over a slow connection", "RUNTIME", false, false, true, Risk::Low,
+         {"The network simulator (Test menu > Network simulator): makes every player window in a multiplayer test play "
+          "over a worse connection (Wired, Wi-Fi, 4G, 3G, Bad signal, or your own lag / wobble / lost packets / speed "
+          "limit). It can change while the test runs. status reads what each player saw in the last second: world "
+          "updates a second (the server sends 20), how late the world arrives, how far behind other players are shown, "
+          "KB in/out, packets sent again, times the server moved them back, prediction misses (moving parts more than a "
+          "stud from where they were heading: jumpy physics) and network ownership changes, plus advice in plain words.",
+          "\"Does my game work on 3G / a phone / bad Wi-Fi?\", \"why is it laggy for other people?\", \"is the car "
+          "jumpy online?\", before publishing a multiplayer or physics game.",
+          "It slows only the network, not the computer (use stress_test or phone_check for that). It needs a "
+          "multiplayer_test to measure anything; set works before one starts too.",
+          "action (required): set or status. set: preset (Off, Wired, Wi-Fi, 4G, 3G, Bad signal) or your own "
+          "latency_ms (0-3000, round trip), jitter_ms (0-1000), loss_percent (0-50), kbps (0 = no limit).",
+          "{conditions: {name, latency_ms, jitter_ms, loss_percent, kbps}, test_running, players: [{player, fresh, "
+          "worldPerSec, ageMs, worstAgeMs, othersBehindMs, kbIn, kbOut, resent, waiting, moveBacks, misses, worstMiss, "
+          "ownerChanges, owned}], advice: [...], note?}.",
+          "None.", "set: the multiplayer test's connections change (nothing in the game changes).",
+          "network_sim set {preset: \"3G\"} -> multiplayer_test start -> wait ~5 s -> network_sim status -> (fix) -> again.",
+          "\"Test my racing game on 3G with 2 players.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"set", "status"}}}},
+                 {"preset", {{"type", "string"}, {"enum", {"Off", "Wired", "Wi-Fi", "4G", "3G", "Bad signal"}}}},
+                 {"latency_ms", {{"type", "integer"}, {"minimum", 0}, {"maximum", 3000}, {"description", "Extra round trip (ping)"}}},
+                 {"jitter_ms", {{"type", "integer"}, {"minimum", 0}, {"maximum", 1000}, {"description", "How much the lag wobbles"}}},
+                 {"loss_percent", {{"type", "number"}, {"minimum", 0}, {"maximum", 50}, {"description", "Packets lost (sent again)"}}},
+                 {"kbps", {{"type", "integer"}, {"minimum", 0}, {"maximum", 1000000}, {"description", "Speed limit, 0 = none"}}}},
+                {"action"})},
         {"stress_test", "Stress test the game on a weaker device", "DEBUG", true, false, true, Risk::None,
          {"Like Roblox's Performance Simulator, plus physics. On a private copy of the game (nothing changes) it adds up "
           "roughly how much memory the game needs and compares it with what a cheap phone, a mid-range phone or an old laptop "
@@ -1067,6 +1093,7 @@ json workflowOf(const std::string& name) {
         {"run_lua", {{"get_game_tree"}, {"get_game_tree", "screenshot"}}},
         {"playtest", {{"validate_scene"}, {"get_errors", "get_output", "get_object", "screenshot"}}},
         {"multiplayer_test", {{"create_script", "playtest"}, {"multiplayer_test", "get_errors", "edit_script"}}},
+        {"network_sim", {{"multiplayer_test"}, {"multiplayer_test", "network_sim"}}},
         {"get_output", {{"playtest", "run_lua"}, {}}},
         {"ai_activity", {{"validate_scene"}, {"undo"}}},
         {"script_history", {{"playtest"}, {"read_script", "edit_script"}}},

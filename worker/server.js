@@ -26,6 +26,8 @@ import { installRatings, ratingAllowed } from './ratings.js';   // content level
 import { installLaunchpad } from './launchpad.js';   // Launchpad: staff help picked creators build big games
 import { installBackgrounds } from './backgrounds.js';   // a picture behind your avatar on your profile
 import { installExperiments, EXPERIMENTS_COSTLY, EXPERIMENTS_GUEST_OK } from './experiments.js';   // A/B tests for creators: versions, custom metrics, results
+import { installJourneys, JOURNEYS_COSTLY } from './journeys.js';   // Journeys: branching player paths and where players leave (Sankey)
+import { installPromoText } from './promotext.js';   // Promotional text on game listings (events, updates, limited modes)
 import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js';   // share links that count clicks, plays and buys
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
@@ -512,6 +514,7 @@ Object.assign(COSTLY, ART_COSTLY);   // art.js
 Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
 Object.assign(COSTLY, ACADEMY_COSTLY);   // academy.js
 Object.assign(COSTLY, EXPERIMENTS_COSTLY);   // experiments.js
+Object.assign(COSTLY, JOURNEYS_COSTLY);   // journeys.js
 Object.assign(COSTLY, SHARE_COSTLY);   // sharelinks.js
 const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'game.leaderboards', 'gamelog.list', 'events.list']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
@@ -3517,6 +3520,8 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('banlist.') || name === 'game.banLists' || name === 'game.ban') return this.banListOp(name, me, args);   // banlists.js
     if (name === 'profile.background') return this.backgroundOp(name, me, args);   // backgrounds.js
     if (name.startsWith('experiments.') || name === 'analytics.log') return this.experimentsOp(name, me, args);   // experiments.js
+    if (name.startsWith('journeys.')) return this.journeysOp(name, me, args);   // journeys.js
+    if (name === 'game.promo') return this.promoTextOp(name, me, args);   // promotext.js
     if (name.startsWith('share.')) return this.shareOp(name, me, args);   // sharelinks.js
     if (name.startsWith('launchpad.')) return this.launchpadOp(name, me, args);   // launchpad.js
     if (name === 'game.rating' || name === 'game.rate' || name === 'rating.limit') return this.ratingOp(name, me, args);   // ratings.js
@@ -7157,6 +7162,8 @@ installRatings(GbServerObject);
 installLaunchpad(GbServerObject);
 installBackgrounds(GbServerObject);
 installExperiments(GbServerObject);
+installJourneys(GbServerObject);
+installPromoText(GbServerObject);
 installShareLinks(GbServerObject);
 installArt(GbServerObject);
 installPaste(GbServerObject);

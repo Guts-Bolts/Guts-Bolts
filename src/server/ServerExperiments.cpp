@@ -77,7 +77,7 @@ void GbServer::loadExperiments() {
         json j = json::parse(text, nullptr, false);
         if (j.is_object()) m_experiments = j;
     }
-    for (const char* k : {"games", "data"})
+    for (const char* k : {"games", "data", "journeys", "jdata"})
         if (!m_experiments.contains(k) || !m_experiments[k].is_object()) m_experiments[k] = json::object();
 }
 
@@ -136,7 +136,9 @@ json GbServer::experimentsOp(const std::string& name, User& me, const json& args
     if (name == "experiments.forGame") {
         json out = json::array();
         for (const json* e : running) out.push_back({{"id", (*e)["id"]}, {"name", (*e)["name"]}, {"variants", (*e)["variants"]}});
-        json r = okay(); r["experiments"] = out; return r;
+        json r = okay(); r["experiments"] = out;
+        r["journeys"] = runningJourneyCount(a.id);   // (journeys count the same events: ServerJourneys.cpp)
+        return r;
     }
 
     if (name == "analytics.log") {
@@ -155,7 +157,8 @@ json GbServer::experimentsOp(const std::string& name, User& me, const json& args
         }
         json r = okay();
         r["kept"] = 0;
-        if (running.empty() || !args.contains("events") || !args["events"].is_array()) return r;
+        const bool journeys = runningJourneyCount(a.id) > 0;
+        if ((running.empty() && !journeys) || !args.contains("events") || !args["events"].is_array()) return r;
         json& gameData = m_experiments["data"][a.id];
         const long long day = today();
         int kept = 0;
@@ -170,6 +173,7 @@ json GbServer::experimentsOp(const std::string& name, User& me, const json& args
             if (!std::isfinite(value)) value = 1.0;
             if (player <= 0 || what.empty() || (!trusted && !allowed.count(player))) continue;
             const std::string pk = std::to_string(player);
+            if (journeys) kept += journeyEvent(a.id, player, what);
             for (json* e : running) {
                 json& expData = gameData[sv(*e, "id")];
                 if (!expData.is_object()) expData = json::object();
