@@ -3079,6 +3079,51 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         rate.n = 8.0;
         w->attributes.push_back(rate);
     }
+    else if (what == "TornadoSpawner" || what == "LightningSpawner" || what == "TsunamiSpawner" || what == "EarthquakeSpawner") {
+        // A natural disaster spawner (Disasters.h): when the game runs, the disaster starts
+        // here, tuned by the attributes (AutoStart off = only when a script calls
+        // Disasters:SpawnFromPart(part)). The part itself is hidden while playing.
+        const std::string kind = what.substr(0, what.size() - std::string("Spawner").size());
+        SceneNode* sp = part(what.c_str(), kind == "Tornado" ? PrimitiveType::Cylinder : PrimitiveType::Cube);
+        sp->anchored = true;
+        sp->canCollide = false;
+        sp->castShadow = false;
+        sp->transparency = 0.5f;
+        sp->material = Material::Neon;
+        auto str = [&](const char* name, const std::string& v) { Attribute a; a.name = name; a.type = Attribute::String; a.s = v; sp->attributes.push_back(a); };
+        auto num = [&](const char* name, double v) { Attribute a; a.name = name; a.type = Attribute::Number; a.n = v; sp->attributes.push_back(a); };
+        auto flag = [&](const char* name, bool v) { Attribute a; a.name = name; a.type = Attribute::Bool; a.b = v; sp->attributes.push_back(a); };
+        str("Disaster", kind);
+        flag("AutoStart", true);
+        num("Delay", 0.0);
+        num("Repeat", 0.0);
+        if (kind == "Tornado") {
+            sp->transform.scale = {4, 8, 4};
+            sp->color = {0.55f, 0.58f, 0.62f};
+            num("Strength", 2.0); num("Duration", 60.0); num("RotationSpeed", 1.0); num("PullForce", 1.0);
+            num("LiftForce", 1.0); num("ThrowForce", 1.0); num("ThrowAfter", 2.5); num("Damage", 0.0);
+            flag("Ragdoll", true); flag("ExplodeOnImpact", false); flag("Kill", false); flag("Destroy", true);
+            Attribute v; v.name = "Velocity"; v.type = Attribute::Vector3; v.v = glm::vec3(0.0f); sp->attributes.push_back(v);
+        } else if (kind == "Lightning") {
+            sp->transform.scale = {2, 0.4f, 2};
+            sp->color = {0.75f, 0.8f, 1.0f};
+            num("Damage", 100.0); num("Radius", 6.0); flag("Kill", false); flag("Ragdoll", true);
+            num("Repeat", 6.0);   // (a spot lightning keeps hitting)
+            sp->attributes.erase(std::remove_if(sp->attributes.begin(), sp->attributes.end(),
+                [](const Attribute& a) { return a.name == "Repeat" && a.n == 0.0; }), sp->attributes.end());
+        } else if (kind == "Tsunami") {
+            sp->transform.scale = {40, 2, 4};   // (as wide as the wave; it rolls the way the part faces, its front)
+            sp->color = {0.15f, 0.45f, 0.6f};
+            num("Height", 18.0); num("Speed", 30.0); num("Distance", 300.0); num("Damage", 10.0);
+            flag("Ragdoll", true); flag("Kill", false); flag("Destroy", true);
+            num("Radius", 20.0);
+        } else {
+            sp->transform.scale = {4, 0.4f, 4};
+            sp->color = {0.6f, 0.4f, 0.25f};
+            num("Magnitude", 6.0); num("Duration", 20.0); num("Radius", 0.0); num("Damage", 0.0); num("Shake", 1.0);
+            flag("LoseFooting", true); flag("Ragdoll", false); flag("Destroy", true);
+        }
+    }
     else if (what == "SpawnLocation") {
         SceneNode* sp = part("SpawnLocation", PrimitiveType::Cube);
         sp->transform.scale = {3, 0.2f, 3};
@@ -3378,6 +3423,7 @@ const std::vector<InsertItem>& insertItems() {
     static const std::vector<InsertItem> list = {
         {"Part", Icons::Id::Part}, {"Sphere", Icons::Id::Sphere}, {"Cylinder", Icons::Id::Cylinder},
         {"MeshPart", Icons::Id::Mesh}, {"SpawnLocation", Icons::Id::Part}, {"TrussPart", Icons::Id::Part}, {"Seat", Icons::Id::Part}, {"VehicleSeat", Icons::Id::Part}, {"Water", Icons::Id::Part}, {"FluidVolume", Icons::Id::Part}, {"WaterSource", Icons::Id::Part}, {"FluidSystem", Icons::Id::Value}, {"FluidEmitter", Icons::Id::Sound}, {"Model", Icons::Id::Model}, {"Folder", Icons::Id::Folder},
+        {"TornadoSpawner", Icons::Id::Part}, {"LightningSpawner", Icons::Id::Part}, {"TsunamiSpawner", Icons::Id::Part}, {"EarthquakeSpawner", Icons::Id::Part},
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
         {"Sky", Icons::Id::Lighting}, {"ColorCorrectionEffect", Icons::Id::Lighting}, {"SunRaysEffect", Icons::Id::Lighting},
         {"MaterialVariant", Icons::Id::Lighting}, {"SurfaceAppearance", Icons::Id::Lighting},

@@ -4048,6 +4048,8 @@ int hum_index(lua_State* L) {
     if (is(k, "WalkSpeed"))  { lua_pushnumber(L, h.walkSpeed);  return 1; }
     if (is(k, "JumpPower"))  { lua_pushnumber(L, h.jumpPower);  return 1; }
     if (is(k, "JumpHeight")) { lua_pushnumber(L, h.jumpHeight); return 1; }
+    if (is(k, "HipHeight"))  { lua_pushnumber(L, h.hipHeight);  return 1; }
+    if (is(k, "MaxSlopeAngle")) { lua_pushnumber(L, h.maxSlopeAngle); return 1; }
     if (is(k, "Sit") || is(k, "SeatPart")) {   // sitting on a Seat (our own character)
         Player* p = E(L)->scene()->player();
         const bool mine = p && p->rootId() == humRoot(L);
@@ -4145,6 +4147,8 @@ int hum_newindex(lua_State* L) {
     else if (is(k, "JumpPower"))  { h.jumpPower = std::max(0.0f, (float)luaL_checknumber(L, 3)); h.useJumpPower = true; }
     else if (is(k, "JumpHeight")) { h.jumpHeight = std::max(0.0f, (float)luaL_checknumber(L, 3)); h.useJumpPower = false; }
     else if (is(k, "UseJumpPower")) h.useJumpPower = lua_toboolean(L, 3);
+    else if (is(k, "HipHeight"))  h.hipHeight = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 10.0f);
+    else if (is(k, "MaxSlopeAngle")) h.maxSlopeAngle = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 89.0f);
     else if (is(k, "Sit")) {   // true: sit down right here (no seat needed); false: get up
         Player* p = E(L)->scene()->player();
         if (p && p->rootId() == humRoot(L)) {

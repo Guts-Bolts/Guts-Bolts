@@ -101,6 +101,7 @@ Npc* NpcSystem::adopt(Scene& scene, SceneNode* model) {
     }
     // Settings a builder can give the model as attributes.
     if (const Attribute* a = model->findAttribute("WalkSpeed"); a && a->type == Attribute::Number) npc->humanoid.walkSpeed = (float)a->n;
+    if (const Attribute* a = model->findAttribute("HipHeight"); a && a->type == Attribute::Number) npc->humanoid.hipHeight = std::max(0.0f, (float)a->n);
     if (const Attribute* a = model->findAttribute("MaxHealth"); a && a->type == Attribute::Number)
         npc->humanoid.maxHealth = npc->humanoid.health = std::max(1.0f, (float)a->n);
     npc->lastHealth = npc->humanoid.health;
@@ -258,7 +259,8 @@ void NpcSystem::step(Npc& n, SceneNode* r, float dt, Scene& scene, Physics& phys
     n.velocity.x *= drag;
     n.velocity.z *= drag;
 
-    Physics::MoveResult res = physics.moveCharacter(pos, delta, n.grounded, r->transform.rotation.y, r->id, physics.groupOf(r));
+    Physics::MoveResult res = physics.moveCharacter(pos, delta, n.grounded, r->transform.rotation.y, r->id, physics.groupOf(r),
+                                                    Physics::Footing{h.stepHeight(), h.minGroundY()});
     glm::vec2 wanted(delta.x, delta.z), got(res.position.x - pos.x, res.position.z - pos.z);
     if (moving && n.grounded && glm::length(wanted) > 1e-4f && glm::length(got) < glm::length(wanted) * 0.3f)
         n.stuckTime += dt;

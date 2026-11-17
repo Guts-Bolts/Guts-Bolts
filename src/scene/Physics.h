@@ -44,6 +44,16 @@ struct TouchEvent {
     uint64_t otherId;
 };
 
+// How a character gets over things, like Roblox's Humanoid. Its legs never bump
+// into anything: the body floats on them HipHeight above the ground, so whatever
+// is lower than `stepHeight` (a stair, a curb, the seam between two tilted parts,
+// turned or not) just passes under it and the character is lifted on top, on the
+// ground or in the air. It only stands on surfaces flatter than MaxSlopeAngle
+// (`minGroundY` = its cosine), so it can't step its way up a wall or a steep wedge.
+struct CharacterStep {
+    float stepHeight = 0.75f;      // Physics::kStepHeight
+    float minGroundY = 0.55f;    // about 57 degrees
+};
 
 // Very small physics world used in Play mode:
 //  * the character is a box that walks, climbs small steps and lands on parts
@@ -67,7 +77,9 @@ public:
     static constexpr float kCharHalfWidth = 0.5f;
     static constexpr float kCharHalfDepth = 0.25f;
     static constexpr float kCharHeight    = 2.65f;
-    static constexpr float kStepHeight    = 0.55f;
+    static constexpr float kStepHeight    = 0.75f;   // what HipHeight 1 (the legs) steps over
+
+    using Footing = CharacterStep;   // (see CharacterStep above)
 
     static AABB worldBounds(const SceneNode* node);
     static OBB  worldOBB(const SceneNode* node);
@@ -92,7 +104,7 @@ public:
     // `group`: the character's collision group slot (groupOf): it walks through parts,
     // characters and the terrain its group doesn't collide with.
     MoveResult moveCharacter(const glm::vec3& feet, const glm::vec3& delta, bool wasGrounded, float yaw = 0.0f,
-                             uint64_t self = 0, int group = 0) const;
+                             uint64_t self = 0, int group = 0, const Footing& foot = Footing()) const;
     // Collision groups (PhysicsService). A character is in its HumanoidRootPart's group
     // (or its Torso's); this frame's table is a copy of the Workspace's.
     static const std::string& characterGroup(const SceneNode* root);

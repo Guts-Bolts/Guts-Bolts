@@ -14,6 +14,7 @@ namespace {
 constexpr float kWaveSpeed = 6.0f;    // how fast ripples spread (units / second)
 constexpr float kCalm      = 0.55f;   // how quickly waves die down
 constexpr int   kMaxPoints = 96;      // grid points along the longest side
+constexpr float kMaxRipple = 2.0f;    // the highest (and lowest) a ripple goes, in studs
 
 float rnd01() { static uint32_t s = 0x9e3779b9u; s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s & 0xffffff) / 16777216.0f; }
 
@@ -503,8 +504,25 @@ void WaterSystem::update(float dt, Scene& scene) {
                     b.v[id] += c2 * (l + r + d + u - 4.0f * c) * hs;
                     b.v[id] *= std::max(0.0f, 1.0f - kCalm * hs);
                 }
-            for (size_t id = 0; id < b.h.size(); ++id)
-                b.h[id] = std::clamp(b.h[id] + b.v[id] * hs, -2.0f, 2.0f) * (1.0f - 0.02f * hs);
+            for (size_t id = 0; id < b.h.size(); ++id) {
+                const float h = b.h[id] + b.v[id] * hs;
+                // At its highest or lowest the water stops there (its speed too). Before,
+                // only the height stopped: the speed kept growing, so the point slammed
+                // from one limit to the other every frame (spiky white mountains).
+                if (h > kMaxRipple || h < -kMaxRipple) b.v[id] = 0.0f;
+                b.h[id] = std::clamp(h, -kMaxRipple, kMaxRipple) * (1.0f - 0.02f * hs);
+            }
+        }
+        // The pool's level stays where it is. Ripples only move water about, but every
+        // drop that pours in pushes the surface down and nothing brought it back up, so
+        // a steady stream (the slide's) sank the whole pool, a little more each second,
+        // until it hit the lowest it can go (and went spiky). The extra water drains away.
+        if (!b.h.empty()) {
+            double sum = 0.0;
+            for (float h : b.h) sum += h;
+            const float level = (float)(sum / (double)b.h.size());
+            if (std::abs(level) > 1e-5f)
+                for (float& h : b.h) h -= level;
         }
         // White water: where the surface shoots up fast (a wave slapping a wall, the
         // middle of a splash) it throws real liquid drops into the air.

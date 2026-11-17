@@ -1466,7 +1466,8 @@ json settingsJson(Scene& scene) {
             {"humanoid", {{"walkSpeed", h.walkSpeed}, {"jumpPower", h.jumpPower},
                           {"jumpHeight", h.jumpHeight}, {"useJumpPower", h.useJumpPower},
                           {"health", h.health}, {"maxHealth", h.maxHealth},
-                          {"autoRotate", h.autoRotate}}},
+                          {"autoRotate", h.autoRotate},
+                          {"hipHeight", h.hipHeight}, {"maxSlopeAngle", h.maxSlopeAngle}}},
         };
     }
     return j;
@@ -1593,6 +1594,8 @@ void applySettings(Scene& scene, const json& j) {
                 } else {
                     h.useJumpPower = true;   // the game picked its own Jump Power: keep it
                 }
+                h.hipHeight     = get<float>(hj, "hipHeight", h.hipHeight);
+                h.maxSlopeAngle = get<float>(hj, "maxSlopeAngle", h.maxSlopeAngle);
                 h.maxHealth  = get<float>(hj, "maxHealth", h.maxHealth);
                 h.health     = get<float>(hj, "health", h.maxHealth);
                 h.autoRotate = get<bool>(hj, "autoRotate", h.autoRotate);

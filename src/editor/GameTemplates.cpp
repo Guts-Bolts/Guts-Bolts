@@ -339,6 +339,152 @@ end)
     title(scene, "Racing", "Hop in a car and race around the track. Your best lap time shows on the leaderboard.");
 }
 
+// Natural disaster survival: an island with a few houses (their walls are Breakable).
+// Every round the server picks a disaster from the Disasters service; whoever is still
+// alive at the end gets a point.
+const char* kDisasterRounds = R"(-- Natural Disaster Survival: every round a disaster hits the island. Stay alive to
+-- score a point on the leaderboard. Change the numbers, or add your own disasters
+-- to the DISASTERS list (each is a function that starts one; see the Disasters help).
+local Players = game:GetService("Players")
+local Disasters = game:GetService("Disasters")
+local ROUND_SECONDS = 30
+local BREAK_SECONDS = 10
+local island = workspace.Island
+
+local function randomSpot()
+    return Vector3.new(math.random(-60, 60), 0, math.random(-60, 60))
+end
+local function randomPlayer()
+    local list = Players:GetPlayers()
+    if #list == 0 then return nil end
+    return list[math.random(1, #list)]
+end
+
+local DISASTERS = {
+    {"A tornado is coming! Get away from it!", function()
+        local t = Disasters:Tornado(Vector3.new(-90, 0, math.random(-40, 40)), {
+            Strength = 3, Duration = ROUND_SECONDS, ThrowAfter = 2, ExplodeOnImpact = true })
+        t.Velocity = Vector3.new(7, 0, 0)       -- it crosses the island
+        local target = randomPlayer()
+        if target then t:Follow(target) t.FollowSpeed = 6 end
+        return t
+    end},
+    {"Lightning storm! Don't stand still!", function()
+        task.spawn(function()
+            for strike = 1, math.floor((ROUND_SECONDS - 2) / 1.2) do
+                task.wait(1.2)
+                local victim = randomPlayer()
+                if victim and math.random() < 0.35 then
+                    Disasters:Lightning(victim, { Damage = 60 })
+                else
+                    Disasters:Lightning(randomSpot(), { Radius = 8 })
+                end
+            end
+        end)
+    end},
+    {"TSUNAMI! Get to high ground!", function()
+        return Disasters:Tsunami(Vector3.new(0, 0, -150), Vector3.new(0, 0, 1), {
+            Height = 16, Width = 260, Speed = 22, Distance = 320, Damage = 20 })
+    end},
+    {"Earthquake! Watch your footing!", function()
+        return Disasters:Earthquake(7.6, { Duration = ROUND_SECONDS - 5, Ragdoll = true, Damage = 3 })
+    end},
+}
+
+-- The leaderboard: Survived (rounds you lived through).
+Players.PlayerAdded:Connect(function(player)
+    local stats = Instance.new("Folder")
+    stats.Name = "leaderstats"
+    stats.Parent = player
+    local survived = Instance.new("IntValue")
+    survived.Name = "Survived"
+    survived.Parent = stats
+end)
+
+Disasters.Exploded:Connect(function(disaster, character, player)
+    if player then Gui.Message(player.Name .. " went flying and exploded!", 3) end
+end)
+
+while true do
+    Gui.Message("Next disaster in " .. BREAK_SECONDS .. " seconds...", BREAK_SECONDS)
+    task.wait(BREAK_SECONDS)
+    local pick = DISASTERS[math.random(1, #DISASTERS)]
+    -- Who is in this round (alive right now).
+    local playing = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        local humanoid = player.Character and player.Character:FindFirstChild("Humanoid")
+        if humanoid and humanoid.Health > 0 then playing[player] = humanoid end
+    end
+    Gui.Message(pick[1], 4)
+    pick[2]()
+    task.wait(ROUND_SECONDS)
+    Disasters:StopAll()
+    -- A point for everyone who made it.
+    local names = {}
+    for player, humanoid in pairs(playing) do
+        if player.Parent and humanoid.Health > 0 then
+            local stats = player:FindFirstChild("leaderstats")
+            if stats then stats.Survived.Value = stats.Survived.Value + 1 end
+            table.insert(names, player.Name)
+        end
+    end
+    Gui.Message(#names > 0 and ("Survivors: " .. table.concat(names, ", ")) or "Nobody survived!", 5)
+    task.wait(5)
+    for _, player in ipairs(Players:GetPlayers()) do player:LoadCharacter() end
+end
+)";
+
+void house(Scene& scene, SceneNode* parent, glm::vec3 at, glm::vec3 color) {
+    SceneNode* m = model(scene, "House", parent);
+    auto wall = [&](glm::vec3 pos, glm::vec3 size, glm::vec3 c, Material mat) {
+        SceneNode* w = part(scene, m, "Wall", Cube, at + pos, size, c, mat);
+        w->anchored = true;
+        Attribute b; b.name = "Breakable"; b.type = Attribute::Bool; b.b = true;
+        w->attributes.push_back(b);
+    };
+    wall({0, 0.1f, 0}, {14, 0.2f, 12}, {0.55f, 0.45f, 0.35f}, Material::Wood);
+    wall({0, 4, -6}, {14, 8, 0.6f}, color, Material::Brick);
+    wall({-7, 4, 0}, {0.6f, 8, 12}, color, Material::Brick);
+    wall({7, 4, 0}, {0.6f, 8, 12}, color, Material::Brick);
+    wall({-4.5f, 4, 6}, {5, 8, 0.6f}, color, Material::Brick);
+    wall({4.5f, 4, 6}, {5, 8, 0.6f}, color, Material::Brick);
+    wall({0, 6.5f, 6}, {4, 3, 0.6f}, color, Material::Brick);
+    wall({0, 8.3f, 0}, {15, 0.6f, 13}, {0.35f, 0.2f, 0.18f}, Material::Wood);
+}
+
+void disasterSurvival(Scene& scene) {
+    if (SceneNode* base = scene.root()->findChild("Baseplate")) scene.removeNode(base);
+    SceneNode* island = model(scene, "Island");
+    SceneNode* ground = part(scene, island, "Ground", Cube, {0, -1, 0}, {180, 2, 180}, {0.36f, 0.6f, 0.28f}, Material::Grass);
+    ground->anchored = true;
+    SceneNode* beach = part(scene, island, "Beach", Cube, {0, -1.6f, 0}, {220, 2, 220}, {0.86f, 0.8f, 0.6f}, Material::Sand);
+    beach->anchored = true;
+    SceneNode* sea = part(scene, island, "Water", Cube, {0, -3.0f, 0}, {900, 3, 900}, {0.15f, 0.42f, 0.62f}, Material::Glass);
+    sea->anchored = true;
+    sea->canCollide = false;
+    sea->transparency = 0.35f;
+    house(scene, island, {-30, 0, -20}, {0.8f, 0.78f, 0.72f});
+    house(scene, island, {25, 0, -30}, {0.75f, 0.55f, 0.45f});
+    house(scene, island, {30, 0, 25}, {0.7f, 0.75f, 0.8f});
+    // A hill to run up when the water comes.
+    SceneNode* hill = part(scene, island, "Hill", Cube, {-35, 3, 40}, {30, 8, 30}, {0.4f, 0.55f, 0.3f}, Material::Grass);
+    hill->anchored = true;
+    SceneNode* ramp = part(scene, island, "HillRamp", Cube, {-35, 3, 18}, {12, 1, 22}, {0.45f, 0.4f, 0.3f}, Material::Wood);
+    ramp->transform.rotation = {-20, 0, 0};
+    ramp->anchored = true;
+    // Loose crates for the tornado to throw around.
+    for (int i = 0; i < 6; ++i) {
+        SceneNode* c = part(scene, island, "Crate", Cube, {-10.0f + 4.0f * i, 1, 10.0f + (i % 2) * 3.0f}, {2, 2, 2}, {0.6f, 0.45f, 0.25f}, Material::Wood);
+        c->anchored = false;
+    }
+    if (SceneNode* spawn = scene.root()->findChild("SpawnLocation")) {
+        spawn->transform.position = {0, 0.1f, 0};
+    }
+    script(scene, nullptr, "DisasterRounds", kDisasterRounds);
+    scene.environment().clockTime = 16.0f;
+    title(scene, "Natural Disaster Survival", "Every round a tornado, lightning storm, tsunami or earthquake hits the island. Survive to score!");
+}
+
 } // namespace
 
 const std::vector<Info>& list() {
@@ -347,6 +493,7 @@ const std::vector<Info>& list() {
         {Kind::Tycoon, "Tycoon", "Claim a plot, collect Cash from droppers on a belt and buy more droppers"},
         {Kind::SwordFight, "Sword Fight", "An arena where everyone gets a classic sword, with Wipeouts on the leaderboard"},
         {Kind::Racing, "Racing", "An oval track with cars and a lap timer that keeps your best lap"},
+        {Kind::DisasterSurvival, "Disaster Survival", "An island hit by a tornado, lightning, a tsunami or an earthquake every round; survivors score"},
     };
     return all;
 }
@@ -358,6 +505,7 @@ void build(Scene& scene, Kind kind) {
         case Kind::Tycoon: tycoon(scene); break;
         case Kind::SwordFight: swordFight(scene); break;
         case Kind::Racing: racing(scene); break;
+        case Kind::DisasterSurvival: disasterSurvival(scene); break;
     }
 }
 

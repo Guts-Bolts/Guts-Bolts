@@ -76,6 +76,22 @@ inline glm::vec2 step(const glm::vec2& v, const glm::vec2& move, float walkSpeed
     return out;
 }
 
+// Standing on something the liquid ran over lately (Liquid::isWet): is it slippery
+// right here? A water slide's floor pieces are: the stream thins out but the slide
+// stays slick all the way down. But "wet" is kept for a whole part, and one splash
+// that lands on a big flat floor (a 240-stud baseplate under a fountain) used to make
+// the whole map slippery for 20 seconds: you slid about everywhere, even standing
+// still. So a big flat floor is only slippery where there's water on it right now.
+//   groundSize   the part's size (its box in the world)
+//   upright      how level it is (1 = flat; the up axis's y)
+//   dropsHere    how many drops of liquid are around your feet (Liquid::sample)
+constexpr float kWetWholePart = 24.0f;   // parts up to this many studs across are wet all over
+inline bool wetUnderfoot(const glm::vec3& groundSize, float upright, int dropsHere) {
+    if (dropsHere > 0) return true;                       // standing in it
+    if (upright < 0.9995f) return true;                   // a slope (a slide): wet all the way down
+    return std::max(groundSize.x, groundSize.z) <= kWetWholePart;   // a small piece: wet all over
+}
+
 // Riding something: where a point that moved along with the part we stand on is now.
 // `before` and `now` are the part's world matrix last frame and this frame.
 //

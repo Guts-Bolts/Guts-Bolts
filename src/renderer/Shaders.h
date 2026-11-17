@@ -1408,7 +1408,7 @@ uniform sampler2D uTex;
 uniform bool  uHasTex;
 uniform float uGlow;          // LightEmission
 uniform vec3  uLight;         // the scene's light (unlit ribbons still dim at night)
-uniform int   uSoft;          // 0 hard edges; 1 fades out to both sides (rain, lightning); 2 a soft ring (a splash)
+uniform int   uSoft;          // 0 hard edges; 1 fades out to both sides (rain, lightning); 2 a soft ring (a splash); 4 moving water
 uniform float uExtra;         // extra brightness on top (lightning: bright enough to bloom)
 uniform vec2  uFlow;          // uSoft 3: how far the pattern has turned and risen (a tornado, a rain shaft)
 out vec4 FragColor;
@@ -1421,6 +1421,13 @@ void main() {
         float n = fbm(vec2(cos(a), sin(a)) * 2.2 + vec2(vUV.y * 5.0 + uFlow.x, uFlow.x * 0.6 - vUV.y * 9.0 + uFlow.y));
         c.a *= smoothstep(0.2, 0.75, n * 0.8 + 0.35);
         c.rgb *= 0.6 + 0.7 * n;
+    }
+    if (uSoft == 4) {
+        // Moving water (a tsunami): streaks and foam drifting along it.
+        float n = fbm(vUV * vec2(0.35, 0.6) + uFlow);
+        float m = fbm(vUV * vec2(1.3, 2.1) - uFlow * 1.7);
+        c.rgb *= 0.78 + 0.45 * n;
+        c.rgb = mix(c.rgb, vec3(0.92), smoothstep(0.62, 0.8, m) * 0.35);
     }
     if (uSoft == 1) {
         float x = abs(vUV.x * 2.0 - 1.0);

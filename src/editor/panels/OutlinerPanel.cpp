@@ -286,6 +286,7 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
         {"Materials", {"MaterialVariant", "SurfaceAppearance"}},
         {"Particles", {"ParticleEmitter", "Fire", "Smoke", "Sparkles"}},
         {"Water", {"Water", "WaterSource", "FluidVolume", "FluidSystem", "FluidEmitter"}},
+        {"Natural Disasters", {"TornadoSpawner", "LightningSpawner", "TsunamiSpawner", "EarthquakeSpawner"}},
         {"Constraints", {"Attachment", "Bone", "HingeConstraint", "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint",
                           "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
         {"Body Movers (classic)", {"BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce"}},

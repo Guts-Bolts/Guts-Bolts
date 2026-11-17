@@ -1309,11 +1309,12 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             }
         // An earthquake (Storms.h): the ground is thrown about under everything loose.
         // Seen from the ground, that is everything being pushed the other way.
-        if (storm && scene.storms().quake > 0.0f) {
-            const glm::vec3 jolt = -Storms::quakeAccel(scene.storms());
-            const bool strong = glm::length(jolt) > g * 0.25f;
+        if (storm && (scene.storms().quake > 0.0f || Disasters::any(scene))) {
             for (auto& b : bodies) {
                 if (!b.dynamic || glm::length(b.v) > 30.0f) continue;   // (things flying through the air don't feel the ground)
+                const glm::vec3 jolt = -Storms::groundJolt(scene, b.pos);   // (with the Disasters service's quakes)
+                if (glm::length(jolt) < 1e-3f) continue;
+                const bool strong = glm::length(jolt) > g * 0.25f;
                 if (!b.awake) {
                     if (!strong) continue;
                     b.awake = true; b.node->sleepTime = 0.0f;

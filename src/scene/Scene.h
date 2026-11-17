@@ -3,6 +3,7 @@
 #include "SceneNode.h"
 #include "Environment.h"
 #include "Storms.h"
+#include "Disasters.h"
 #include "Player.h"
 #include "Npc.h"
 #include "Water.h"
@@ -181,7 +182,7 @@ struct RemoteCharacter {
     bool        humanoidDirty = false;   // a script changed it: tell its owner
     double      editedAt = -1.0;         // when a script last changed it
     bool        alive = true;
-    struct Kill { float force; glm::vec3 impulse; };
+    struct Kill { float force; glm::vec3 impulse; float trip = 0.0f; };   // trip: knocked over (alive) for that many seconds
     std::vector<Kill> kills;             // violent deaths to send to its owner
     // Their camera options, once a script on the host changed them (sent to them).
     bool          cameraSet = false;
@@ -229,6 +230,9 @@ public:
     // Severe weather while it runs (Storms.h): not saved.
     Storms::State&       storms() { return m_storms; }
     const Storms::State& storms() const { return m_storms; }
+    // Natural disasters games start (Disasters.h): not saved.
+    Disasters::State&       disasters() { return m_disasters; }
+    const Disasters::State& disasters() const { return m_disasters; }
     WorldSettings& world()       { return m_world; }
     const WorldSettings& world() const { return m_world; }
     GameInfo&      info()        { return m_info; }
@@ -342,6 +346,7 @@ private:
     Environment                m_env;
     WorldSettings              m_world;
     Storms::State              m_storms;
+    Disasters::State m_disasters;
     GameInfo                   m_info;
     std::vector<RemoteCharacter> m_remotes;
     std::unordered_map<uint64_t, Look> m_looks;
