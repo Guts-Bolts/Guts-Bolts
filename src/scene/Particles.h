@@ -44,6 +44,7 @@ struct Particle {
     glm::vec3 tangent{0.0f};            // (stains: which way the part's side runs, so it turns with it)
     float     alpha = 1.0f;             // footprints and smears get fainter
     int       mark = 0;                 // not blood: 1 a dry mark (prints in snow, tyre tracks, bullet holes, bruises), 2 a wet one
+    uint32_t  net = 0;                  // multiplayer: a blood stain on the floor or a wall, as the host numbered it (0 = not sent)
     // Gibs (Chunk):
     int       gib = 0;                  // 0 meat, 1 bone
     glm::vec3 skin{-1.0f};              // a piece of a body part: its colour on one side (negative = plain meat)
@@ -52,6 +53,32 @@ struct Particle {
 };
 
 enum class GoreKind { Blood, Oil };
+
+// Multiplayer blood (the host decides; everyone sees the same).
+// A GoreEvent is one call that throws blood about (a spray, a spurt, a stain on a body
+// part...), with the dice roll (`seed`) it used: a joined player makes the very same drops
+// from it. Body parts are kept as a place on the part itself (so it lands on the same spot
+// of the same arm, wherever that arm is on this screen).
+struct GoreEvent {
+    enum Op : uint8_t { Spray, Gibs, Burst, Spurt, Ooze, Stain, Wound };
+    Op        op = Spray;
+    GoreKind  kind = GoreKind::Blood;
+    uint32_t  seed = 0;
+    glm::vec3 a{0.0f}, b{0.0f}, c{0.0f};   // where / which way / extra (see ParticleSystem::replay)
+    float     x = 0.0f, y = 0.0f;          // how many, how hard, how big...
+    uint64_t  part = 0;                    // Burst, Stain, Wound: the body part (0 = none)
+    glm::vec3 color{0.5f, 0.02f, 0.03f};   // whose blood (Humanoid.BloodColor)
+    float     amount = 1.0f;               // and how much of it (BloodAmount)
+};
+
+// A blood stain on the floor or a wall as the host has it (sent to everyone, so the pools
+// are the same on every screen).
+struct NetSplat {
+    uint32_t  id = 0;
+    glm::vec3 pos{0.0f}, normal{0.0f, 1.0f, 0.0f}, size{0.1f}, color{0.5f, 0.02f, 0.03f};
+    float     rot = 0.0f, seed = 0.0f, spread = 0.0f, life = 1.0f, age = 0.0f, alpha = 1.0f;
+    int       look = 0;
+};
 
 // Bloody shoes: walk through a pool and the next steps leave red footprints,
 // fainter each step. A Player and every NPC carry one.
@@ -178,6 +205,28 @@ public:
     static constexpr int kMaxParticles = 2500;
     static constexpr int kMaxSplats    = 700;
 
+    // --- Multiplayer -----------------------------------------------------------
+    // Solo: a game on its own. Host: blood happens here, and every call is written
+    //   down (takeEvents) for the joined players, and so is every stain on the floor
+    //   (syncSplats). Replica: a joined player. Blood only comes from the host: this
+    //   computer's own calls do nothing, drops from the host's calls fly but leave no
+    //   stains of their own (the host says where the stains are).
+    enum class Role { Solo, Host, Replica };
+    void setRole(Role r) { m_role = r; if (r != Role::Host) { m_events.clear(); m_sentSplats.clear(); } }
+    Role role() const { return m_role; }
+    std::vector<GoreEvent> takeEvents() { std::vector<GoreEvent> e; e.swap(m_events); return e; }
+    // Host: the floor and wall stains that are new or changed since last time (at most
+    // `most`; the rest wait for next time), and the ones that have gone.
+    void syncSplats(std::vector<NetSplat>& changed, std::vector<uint32_t>& gone, int most);
+    // Every floor and wall stain there is now (someone just joined).
+    void allSplats(std::vector<NetSplat>& out) const;
+    // Replica: do what the host did. `findPart` turns a GoreEvent's part into ours.
+    void replay(const GoreEvent& e, const std::function<const SceneNode*(uint64_t)>& findPart);
+    void applySplats(const std::vector<NetSplat>& changed, const std::vector<uint32_t>& gone);
+    // GoreEvents keep body-part places on the part itself: these turn them back and forth.
+    static GoreEvent toPartSpace(GoreEvent e, const SceneNode* part);
+    static GoreEvent fromPartSpace(GoreEvent e, const SceneNode* part);
+
 private:
     void add(const Particle& p);
     // A chunk flying, tumbling, bouncing off things and sliding to a stop (bleeding as it goes).
@@ -195,4 +244,18 @@ private:
     WaterSink m_waterSink;
     int   m_waterSent = 0;
     void  toLiquid(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel);
+    // Multiplayer (see Role):
+    Role  m_role = Role::Solo;
+    int   m_depth = 0;          // >0: inside a gore call (calls it makes aren't written down again)
+    bool  m_replaying = false;  // doing a call the host sent
+    std::vector<GoreEvent> m_events;
+    uint32_t m_nextNet = 1;
+    float    m_clock = 0.0f;
+    struct Sent { glm::vec3 pos, color; float spread, sizeX, life, at, alpha; };
+    std::unordered_map<uint32_t, Sent> m_sentSplats;
+    // Start of every gore call: false = don't (a joined player's own blood). Writes the call
+    // down on the host. Pair with a Depth.
+    bool gate(GoreEvent e, const SceneNode* part = nullptr);
+    struct Depth { int& d; explicit Depth(int& x) : d(x) { ++d; } ~Depth() { --d; } };
+    static NetSplat toNet(const Particle& p);
 };

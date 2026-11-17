@@ -43,6 +43,8 @@ test('ContentForge download stays off until the release is really on the mirror'
   const cf = read('website/products/contentforge.html');
   const js = read('website/products/product.js');
   assert.match(cf, /class="dl off" data-release-check="\/download\/products\/contentforge\/latest\/ContentForge-Windows\.zip"/);
+  assert.match(cf, /class="dl off" data-release-check="\/download\/products\/contentforge\/latest\/ContentForge-Setup\.exe"/);
+  assert.match(cf, /class="dl off" data-release-check="\/download\/products\/contentforge\/latest\/ContentForge-Mac\.dmg"/);
   assert.match(js, /method: 'HEAD'/);
   assert.match(js, /classList\.remove\('off'\)/);
 });

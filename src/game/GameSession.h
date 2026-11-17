@@ -29,7 +29,7 @@ public:
 
     explicit GameSession(Scene* scene);
 
-    void setRole(Role r) { m_role = r; m_scripts.setNetworked(r != Role::Solo); }
+    void setRole(Role r);   // (also tells the blood who decides: ParticleSystem::Role)
     // Network ownership (your own car's physics on your own computer):
     //  * joined (Client): the parts of the vehicle we're driving; we move them ourselves
     //    and tell the host where they are (NetGame). Empty when we're not driving.

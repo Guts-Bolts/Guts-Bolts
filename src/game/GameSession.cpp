@@ -45,6 +45,14 @@ void GameSession::setInputTracePath(const std::string& path) {
     }
 }
 
+void GameSession::setRole(Role r) {
+    m_role = r;
+    m_scripts.setNetworked(r != Role::Solo);
+    // Multiplayer blood: the host decides where it all goes; joined players are shown it.
+    m_scene->particles().setRole(r == Role::Host ? ParticleSystem::Role::Host
+                               : r == Role::Client ? ParticleSystem::Role::Replica : ParticleSystem::Role::Solo);
+}
+
 GameSession::GameSession(Scene* scene) : m_scene(scene), m_scripts(scene) {
     m_scripts.setPhysics(&m_physics);
     if (ScriptEngine::testHooks)   // (tests: what the mouse would do)
