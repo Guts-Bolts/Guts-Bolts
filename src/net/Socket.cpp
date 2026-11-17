@@ -813,10 +813,10 @@ void Connection::simulate(bool on) {
 #else
     if (on && !m_sim) m_sim = std::make_unique<NetSim::Pipe>();
     else if (!on && m_sim) {   // let what it held go now, in order
-        const double far = simClock() + 1e9;
-        m_sim->releaseOut(m_out, far);
+        const double later = simClock() + 1e9;
+        m_sim->releaseOut(m_out, later);
         std::string msg, keep;
-        while (m_sim->popIn(msg, far)) {
+        while (m_sim->popIn(msg, later)) {
             uint32_t n = (uint32_t)msg.size();
             unsigned char hdr[4] = {(unsigned char)(n >> 24), (unsigned char)(n >> 16), (unsigned char)(n >> 8), (unsigned char)n};
             keep.append((const char*)hdr, 4);
