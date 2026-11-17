@@ -259,4 +259,5 @@ private:
     nlohmann::json m_joinData, m_teleport;
     bool         m_voiceAllowed = false;
     int          m_voiceTold = -1;    // whether we told the host we're listening (-1 = not yet)
+    bool         m_hostGore = false;  // the host sends its blood as it happens (GoreEvents and stains), not as old-style "fx"
 };

@@ -1175,6 +1175,12 @@ foreach(app GutsAndBolts GutsAndBoltsPlayer)
                 "$<TARGET_FILE_DIR:${app}>/catalog"
         VERBATIM)
 endforeach()
+# Both programs land in the same folder, so two copies into the same games/ and catalog/
+# at once could trip over each other ("No such file or directory" on macOS). One after
+# the other.
+if(TARGET GutsAndBolts AND TARGET GutsAndBoltsPlayer)
+    add_dependencies(GutsAndBoltsPlayer GutsAndBolts)
+endif()
 
 # When building with MinGW, the executable depends on runtime DLLs that live in
 # the compiler's bin directory (libstdc++, libgcc, glfw3, glew). Copy them next
@@ -1574,6 +1580,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(BodiesGoreLightTests PRIVATE gb_engine)
     add_test(NAME BodiesGoreLightTests COMMAND BodiesGoreLightTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    # Blood that shows up, and is the same on every player's screen (the host decides).
+    add_executable(BloodSyncTests tests/BloodSyncTests.cpp)
+    target_link_libraries(BloodSyncTests PRIVATE gb_engine)
+    add_test(NAME BloodSyncTests COMMAND BloodSyncTests)
     # Shiny parts mirroring the world, height fog, round cylinders that roll, air and wind.
     add_executable(MirrorsMistRollingTests tests/MirrorsMistRollingTests.cpp)
     target_link_libraries(MirrorsMistRollingTests PRIVATE gb_engine)
