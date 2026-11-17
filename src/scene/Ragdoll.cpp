@@ -300,13 +300,14 @@ void Ragdoll::removeCaps(Scene& scene) {
 }
 
 void Ragdoll::solve(const Physics& physics) {
-    // How far the floor and walls pushed each point out this step. Pushing a point out of
-    // something is a correction, not a throw: without this, a hand or foot that ended up
-    // deep in a part (a body falling onto a corner, two limbs wedged in a gap) came out
-    // with all that distance as speed, and the body was flung across the map or kept
-    // twitching.
-    glm::vec3 pushed[kPointCount];
-    for (glm::vec3& v : pushed) v = glm::vec3(0.0f);
+    // How fast each point was going before the sticks, joints, floor and walls had their
+    // say. Those only put the body right (keep it in one piece, push it out of things):
+    // they mustn't make it go faster. Without this, a hand or foot that ended up deep in
+    // a part (a body falling onto a corner, a leg wedged in a gap) came out with all that
+    // distance as speed, dragging the rest along: the body was flung across the map or
+    // kept twitching.
+    float before[kPointCount];
+    for (size_t i = 0; i < kPointCount && i < m_points.size(); ++i) before[i] = glm::length(m_points[i].pos - m_points[i].prev);
     for (int iter = 0; iter < 10; ++iter) {
         for (const auto& s : m_sticks) {
             if (!s.alive) continue;
@@ -322,10 +323,8 @@ void Ragdoll::solve(const Physics& physics) {
             Point& p = m_points[i];
             glm::vec3 n;
             if (iter == 0) p.touching = false;
-            const glm::vec3 was = p.pos;
             bool hit = physics.resolveSphere(p.pos, p.radius, &n);
             if (hit) { p.touching = true; p.contactN = n; }
-            if (hit && i < kPointCount) pushed[i] += p.pos - was;
             if (hit && iter == 9) {
                 // Friction: slow sliding along the surface.
                 glm::vec3 v = p.pos - p.prev;
@@ -335,15 +334,12 @@ void Ragdoll::solve(const Physics& physics) {
             }
         }
     }
-    // Leaving a surface no faster than a small bounce (and never faster than it hit it).
-    const float maxOut = 3.0f * kStep;
-    for (size_t i = 0; i < m_points.size() && i < kPointCount; ++i) {
-        const float len = glm::length(pushed[i]);
-        if (len < 1e-6f) continue;
+    // No faster than before (plus a little: a limb can still swing).
+    for (size_t i = 0; i < kPointCount && i < m_points.size(); ++i) {
         Point& p = m_points[i];
-        const glm::vec3 n = pushed[i] / len;
-        const float out = glm::dot(p.pos - p.prev, n);
-        if (out > maxOut) p.prev += n * (out - maxOut);
+        const glm::vec3 v = p.pos - p.prev;
+        const float now = glm::length(v), most = before[i] + 2.0f * kStep;
+        if (now > most) p.prev = p.pos - v * (most / now);
     }
 }
 

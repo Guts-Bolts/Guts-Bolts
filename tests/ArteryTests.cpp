@@ -24,6 +24,7 @@
 
 #include <imgui.h>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -231,6 +232,7 @@ int main(int argc, char** argv) {
             rd.update(1.0f / 60.0f, s, phys);
             const glm::vec3 c = rd.center();
             if (i > 2) fastest = std::max(fastest, glm::length(c - was) * 60.0f);
+            if (std::getenv("ARTERY_DEBUG") && i < 40) std::printf("%d %.2f %.2f %.2f  v=%.1f\n", i, c.x, c.y, c.z, glm::length(c - was) * 60.0f);
             was = c;
         }
         check(fastest < 15.0f, "a body stuck inside a part comes out of it gently (top speed " + std::to_string(fastest) + ")");

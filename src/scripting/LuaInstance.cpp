@@ -3695,7 +3695,7 @@ int hum_cutArtery(lua_State* L) {
     glm::vec3 local(0.0f, 0.0f, 0.5f);
     const std::string& n = part->name;
     const bool left = n.rfind("Left", 0) == 0, right = n.rfind("Right", 0) == 0;
-    if (n == "Head") local = {0.0f, -0.35f, 0.3f};
+    if (n == "Head") local = {0.0f, -0.3f, 0.45f};
     else if (n == "Torso" || n == "UpperTorso") local = {0.1f, 0.42f, 0.5f};
     else if (left || right) local = {left ? 0.3f : -0.3f, n.find("Leg") != std::string::npos ? 0.25f : 0.1f, 0.5f};
     Artery::cut(h, *part, glm::vec3(part->worldMatrix() * glm::vec4(local, 1.0f)), seconds);
