@@ -56,6 +56,7 @@ struct Npc {
     bool  zombie = false;               // arms stretched out in front
 
     float     lastHealth = 100.0f;
+    Artery::Stagger stagger;          // bleeding out from an artery: lurching about (Artery.h)
     bool      dead = false;
     float     deadTime = 0.0f;
     float     pendingForce = 0.0f;

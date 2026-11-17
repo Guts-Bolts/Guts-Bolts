@@ -2571,6 +2571,7 @@ int inst_index(lua_State* L) {
         if (is(k, "Dismemberment")) { lua_pushboolean(L, w.dismemberment); return 1; }
         if (is(k, "LiquidBlood")) { lua_pushboolean(L, w.liquidBlood); return 1; }
         if (is(k, "SoftTissue"))  { lua_pushboolean(L, w.softTissue); return 1; }
+        if (is(k, "ArterialBleeding")) { lua_pushboolean(L, w.arteries); return 1; }
         if (is(k, "GlobalWind"))  { LuaApi::pushVector3(L, w.globalWind); return 1; }
         if (is(k, "EarthquakeIntensity")) { lua_pushnumber(L, E(L)->scene()->environment().quake); return 1; }
         // workspace:StartEarthquake(magnitude 1-9.5, seconds = 20), workspace:StopEarthquake()
@@ -3153,6 +3154,7 @@ int inst_set(lua_State* L) {
         if (is(k, "Dismemberment")) { w.dismemberment = lua_toboolean(L, 3); return 0; }
         if (is(k, "LiquidBlood")) { w.liquidBlood = lua_toboolean(L, 3); return 0; }
         if (is(k, "SoftTissue"))  { w.softTissue = lua_toboolean(L, 3); return 0; }
+        if (is(k, "ArterialBleeding")) { w.arteries = lua_toboolean(L, 3); return 0; }
         if (is(k, "GlobalWind"))  { w.globalWind = glm::clamp(LuaApi::checkVector3(L, 3), glm::vec3(-500.0f), glm::vec3(500.0f)); return 0; }
         if (is(k, "AirDensity"))  { w.airDensity = glm::clamp((float)luaL_checknumber(L, 3), 0.0f, 10.0f); return 0; }
         if (is(k, "Injuries"))    { w.injuries = lua_toboolean(L, 3); return 0; }
@@ -3664,9 +3666,46 @@ int hum_takeDamage(lua_State* L) {
             }
             h.health = glm::clamp(h.health - damage, 0.0f, h.maxHealth);
         }
+        // Through the neck, the inside of a thigh or an arm: an open artery (Artery.h).
+        // The host decides it here; the spurts and the bleeding out follow from the Humanoid.
+        Artery::onHit(scene, h, scene.findById(rootId), *hitPart, hitPoint, projectileVelocity);
     } else {
         h.health = glm::clamp(h.health - damage, 0.0f, h.maxHealth);
     }
+    touched(L);
+    return 0;
+}
+
+// humanoid:CutArtery(part [, seconds]): open an artery in that body part (a part of this
+// character, or its name), bleeding to death in `seconds` (10) unless it's stopped.
+int hum_cutArtery(lua_State* L) {
+    Scene& scene = *E(L)->scene();
+    Humanoid& h = hum(L);
+    SceneNode* character = scene.findById(humRoot(L));
+    if (!character) return 0;
+    SceneNode* part = nullptr;
+    if (lua_type(L, 2) == LUA_TSTRING) part = character->findChild(lua_tostring(L, 2), true);
+    else if (!lua_isnoneornil(L, 2)) part = LuaApi::checkNode(L, 2);
+    else part = character->findChild("Head", true);
+    if (!part || !part->isPart() || !character->isAncestorOf(part))
+        return luaL_error(L, "CutArtery needs a body part of this character (or its name)");
+    const float seconds = (float)luaL_optnumber(L, 3, Artery::kDefaultBleedOut);
+    if (h.health <= 0.0f) return 0;
+    // Where: the artery in that part (the inside of a limb, the bottom of the head...).
+    glm::vec3 local(0.0f, 0.0f, 0.5f);
+    const std::string& n = part->name;
+    const bool left = n.rfind("Left", 0) == 0, right = n.rfind("Right", 0) == 0;
+    if (n == "Head") local = {0.0f, -0.35f, 0.3f};
+    else if (n == "Torso" || n == "UpperTorso") local = {0.1f, 0.42f, 0.5f};
+    else if (left || right) local = {left ? 0.3f : -0.3f, n.find("Leg") != std::string::npos ? 0.25f : 0.1f, 0.5f};
+    Artery::cut(h, *part, glm::vec3(part->worldMatrix() * glm::vec4(local, 1.0f)), seconds);
+    touched(L);
+    return 0;
+}
+
+// humanoid:StopBleeding(): a tourniquet / a medkit. The artery closes (health already lost stays lost).
+int hum_stopBleeding(lua_State* L) {
+    hum(L).artery.clear();
     touched(L);
     return 0;
 }
@@ -4028,6 +4067,20 @@ int hum_index(lua_State* L) {
     if (is(k, "HealthChanged")) { LuaApi::pushSignal(L, SignalKind::HealthChanged, humRoot(L)); return 1; }
     if (is(k, "TakeDamage")) { lua_pushcfunction(L, hum_takeDamage); return 1; }
     if (is(k, "BreakJoints")) { lua_pushcfunction(L, hum_breakJoints); return 1; }
+    // Arterial bleeding (Artery.h).
+    if (is(k, "CutArtery"))   { lua_pushcfunction(L, hum_cutArtery); return 1; }
+    if (is(k, "StopBleeding")) { lua_pushcfunction(L, hum_stopBleeding); return 1; }
+    if (is(k, "BleedingOut")) { lua_pushboolean(L, hum(L).artery.on && hum(L).health > 0.0f); return 1; }
+    if (is(k, "Artery")) {   // which one is open ("Neck", "Left Thigh"...), or nil
+        const ArteryWound& w = hum(L).artery;
+        if (w.on) lua_pushstring(L, w.name.c_str()); else lua_pushnil(L);
+        return 1;
+    }
+    if (is(k, "BleedOutTime")) {   // seconds left before it bleeds to death (0 = not bleeding)
+        const ArteryWound& w = hum(L).artery;
+        lua_pushnumber(L, w.on && hum(L).health > 0.0f ? std::max(0.0f, w.bleedOut - w.time) : 0.0f);
+        return 1;
+    }
     if (is(k, "EquipTool"))   { lua_pushcfunction(L, hum_equipTool); return 1; }
     if (is(k, "UnequipTools")) { lua_pushcfunction(L, hum_unequipTools); return 1; }
     if (is(k, "IsA"))        { lua_pushcfunction(L, hum_isA); return 1; }

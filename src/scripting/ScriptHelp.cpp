@@ -126,6 +126,8 @@ const std::vector<Entry>& all() {
          "Shoots a line; result.Instance, .Position, .Normal (nil if it hits nothing)", false},
         {"FireBullet", "workspace:FireBullet(origin, velocity, {Damage, Range, Ignore, Pierce, Ricochet}?) -> result",
          "A real bullet: drops, drifts in the wind, goes through wood and glass, bounces off metal; hurts who it hits", false},
+        {"CutArtery", "humanoid:CutArtery(part [, seconds])", "Opens an artery: blood spurts with each heartbeat, they stagger and bleed to death in `seconds` (10)", false},
+        {"StopBleeding", "humanoid:StopBleeding()", "Closes an open artery (a medkit, a tourniquet); check humanoid.BleedingOut", false},
         {"GetInjury", "humanoid:GetInjury(\"Left Leg\") -> number", "How hurt a limb is (0 fine .. 1 badly), with workspace.Injuries on", false},
         {"GetPartBoundsInRadius", "workspace:GetPartBoundsInRadius(position, radius, params?) -> {BasePart}", "Parts near a spot", false},
         {"GetPartBoundsInBox", "workspace:GetPartBoundsInBox(cframe, size, params?) -> {BasePart}", "Parts in a box", false},

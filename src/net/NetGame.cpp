@@ -17,6 +17,8 @@
 #include "../scene/Serializer.h"
 #include "../scene/Physics.h"
 #include "../scene/Gore.h"
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/euler_angles.hpp>
 #include "../renderer/MeshLibrary.h"
 #include "../core/Log.h"
 #include "../core/Audio.h"
@@ -205,11 +207,35 @@ float lerpAngle(float a, float b, float t) {
     float d = std::fmod(b - a + 540.0f, 360.0f) - 180.0f;   // the short way round
     return a + d * t;
 }
+// A Transform's turn as a quaternion (Transform::matrix: Z * Y * X, degrees) and back.
+glm::quat turnOf(const glm::vec3& deg) {
+    const glm::vec3 r = glm::radians(deg);
+    return glm::angleAxis(r.z, glm::vec3(0, 0, 1)) * glm::angleAxis(r.y, glm::vec3(0, 1, 0)) * glm::angleAxis(r.x, glm::vec3(1, 0, 0));
+}
+glm::vec3 degreesOf(const glm::quat& q) {
+    float z, y, x;
+    glm::extractEulerAngleZYX(glm::mat4_cast(q), z, y, x);
+    return glm::degrees(glm::vec3(x, y, z));
+}
 Transform lerpTransform(const Transform& a, const Transform& b, float t) {
     Transform o;
     o.position = glm::mix(a.position, b.position, t);
-    o.rotation = {lerpAngle(a.rotation.x, b.rotation.x, t), lerpAngle(a.rotation.y, b.rotation.y, t),
-                  lerpAngle(a.rotation.z, b.rotation.z, t)};
+    // Turning: the real in-between turn (the short way round). Blending the three angles
+    // one by one went wrong for anything tipped on its side: a body part lying flat (a
+    // ragdoll on the floor) sits where the angles flip about, so the blend spun it right
+    // round between two poses that were almost the same: dead bodies twitched and
+    // thrashed on everyone else's screen.
+    if (a.rotation == b.rotation) o.rotation = b.rotation;
+    else if (std::abs(a.rotation.x - b.rotation.x) < 1e-3f && std::abs(a.rotation.z - b.rotation.z) < 1e-3f) {
+        o.rotation = {b.rotation.x, lerpAngle(a.rotation.y, b.rotation.y, t), b.rotation.z};   // (just turning round: the usual case)
+    } else {
+        glm::quat qa = turnOf(a.rotation), qb = turnOf(b.rotation);
+        if (glm::dot(qa, qb) < 0.0f) qb = -qb;
+        // (Past the newest pose, keep turning the same way, but not far.)
+        const float tt = std::clamp(t, 0.0f, 1.25f);
+        const glm::quat q = glm::slerp(qa, qb, tt);
+        o.rotation = degreesOf(glm::normalize(q));
+    }
     o.scale = glm::mix(a.scale, b.scale, t);
     return o;
 }
@@ -223,9 +249,27 @@ CharacterPose lerpPose(const CharacterPose& a, const CharacterPose& b, float t) 
     return o;
 }
 
+// An open artery (Artery.h): [part, name, local xyz, out xyz, time, bleedOut], or 0.
+json arteryJson(const ArteryWound& w) {
+    if (!w.on) return 0;
+    return json::array({w.part, w.name, w.local.x, w.local.y, w.local.z, w.out.x, w.out.y, w.out.z, w.time, w.bleedOut});
+}
+void arteryFrom(ArteryWound& w, const json& j) {
+    if (!j.is_array() || j.size() < 10 || !j[0].is_string() || !j[1].is_string()) { w.clear(); return; }
+    for (size_t i = 2; i < 10; ++i) if (!j[i].is_number()) { w.clear(); return; }
+    w.on = true;
+    w.part = j[0].get<std::string>().substr(0, 100);
+    w.name = j[1].get<std::string>().substr(0, 40);
+    w.local = glm::clamp(glm::vec3(j[2].get<float>(), j[3].get<float>(), j[4].get<float>()), glm::vec3(-0.5f), glm::vec3(0.5f));
+    w.out = glm::clamp(glm::vec3(j[5].get<float>(), j[6].get<float>(), j[7].get<float>()), glm::vec3(-1.0f), glm::vec3(1.0f));
+    w.time = std::clamp(j[8].get<float>(), 0.0f, 1e4f);
+    w.bleedOut = std::clamp(j[9].get<float>(), 0.5f, 1e4f);
+}
+
 json humanoidJson(const Humanoid& h) {
     return {{"health", h.health}, {"maxHealth", h.maxHealth}, {"walkSpeed", h.walkSpeed},
-            {"jumpPower", h.jumpPower}, {"jumpHeight", h.jumpHeight}, {"useJumpPower", h.useJumpPower}};
+            {"jumpPower", h.jumpPower}, {"jumpHeight", h.jumpHeight}, {"useJumpPower", h.useJumpPower},
+            {"art", arteryJson(h.artery)}};
 }
 void humanoidFrom(Humanoid& h, const json& j) {
     h.maxHealth = j.value("maxHealth", h.maxHealth);
@@ -234,6 +278,7 @@ void humanoidFrom(Humanoid& h, const json& j) {
     h.jumpPower = j.value("jumpPower", h.jumpPower);
     h.jumpHeight = j.value("jumpHeight", h.jumpHeight);
     h.useJumpPower = j.value("useJumpPower", h.useJumpPower);
+    if (j.contains("art")) arteryFrom(h.artery, j["art"]);   // (an older host never sends one)
 }
 
 // A player's camera options (CameraMode and zoom limits).
@@ -1206,7 +1251,8 @@ void NetServer::handle(Client& c, const std::string& text) {
         guardMove(c, *rc, pose.root.position, !rc->alive || m.value("dead", false) || seated || rc->humanoid.platformStand);
         double now = m_session->scripts().time();
         // Their own damage (e.g. fall damage) counts, unless a script just changed it.
-        if (now - rc->editedAt > 0.5 && m.contains("health") && m["health"].is_number()) {
+        // (Not while an artery the host opened is bleeding them out: the host has their health then.)
+        if (now - rc->editedAt > 0.5 && !rc->humanoid.artery.on && m.contains("health") && m["health"].is_number()) {
             rc->humanoid.health = m["health"].get<float>();
         }
         bool dead = m.value("dead", false);
@@ -1224,6 +1270,7 @@ void NetServer::handle(Client& c, const std::string& text) {
         } else if (!dead && !rc->alive) {
             rc->alive = true;
             rc->humanoid.health = rc->humanoid.maxHealth;
+            rc->humanoid.artery.clear();   // (a fresh body)
             m_session->joinerRespawned(c.rootId);
         }
         // Their keys for the VehicleSeat they're in (it must be near them).

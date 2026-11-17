@@ -133,6 +133,9 @@ struct WorldSettings {
     bool       liquidBlood = false;
     // Dents from hits on bodies slowly spring back (soft tissue); very big hits tear.
     bool       softTissue  = true;
+    // Shots through the neck, inner thigh or inner arm open an artery: pulsing spurts, the
+    // character staggers about and bleeds to death (Artery.h). Follows Gore.
+    bool       arteries    = true;
     // Wind for cloth, flags and capes (Roblox's Workspace.GlobalWind), studs / second.
     glm::vec3  globalWind{0.0f};
     // The air (Roblox's Workspace.AirDensity, same units as part densities): loose parts
