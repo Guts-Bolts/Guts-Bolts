@@ -108,6 +108,7 @@ int main(int argc, char** argv) {
         const float fps = 60.0f;
         p->root()->transform.position = glm::vec3(8.3f, 80.2f, 1.2f);
         MoveGuard before, after;   // (before: not knowing about water)
+        after.slickHere = [&](const glm::vec3& at) { return Player::slickAt(scene, at); };   // (as the host sets it up)
         int pulledBefore = 0, pulledAfter = 0;
         float fastest = 0.0f;
         glm::vec3 last = p->position();
@@ -122,7 +123,7 @@ int main(int argc, char** argv) {
                 const glm::vec3 at = p->position();
                 const float ws = p->humanoid().walkSpeed, js = p->humanoid().launchSpeed(scene.world().gravity), g = scene.world().gravity;
                 if (before.check(1, at, t, ws, js, g, false) != MoveGuard::Verdict::Ok) ++pulledBefore;
-                if (after.check(1, at, t, ws, js, g, false, Player::slickAt(scene, at)) != MoveGuard::Verdict::Ok) {
+                if (after.check(1, at, t, ws, js, g, false) != MoveGuard::Verdict::Ok) {
                     ++pulledAfter;
                     std::printf("      pulled back at %.1fs (%.1f %.1f %.1f)\n", t, at.x, at.y, at.z);
                 }

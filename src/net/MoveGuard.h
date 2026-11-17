@@ -34,6 +34,9 @@ public:
     // Is there any part close to this spot (a floor under it, a wall or ladder beside it)?
     // Only asked when someone seems to hang in the air. Null = never flying.
     std::function<bool(const glm::vec3& at)> nearSomething;
+    // Is someone standing here in water, in a stream or on a water slide (Player::slickAt)?
+    // Only asked when they go faster than walking allows. Null = never.
+    std::function<bool(const glm::vec3& at)> slickHere;
 
     // One report of where a character is. `free` = don't judge this one (in a seat,
     // dead, ragdolled): just remember it. gravity in studs/s^2, jumpSpeed = how fast a

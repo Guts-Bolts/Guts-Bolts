@@ -830,11 +830,11 @@ void NetServer::guardMove(Client& c, RemoteCharacter& rc, const glm::vec3& pos, 
             return found;
         };
     }
-    const float g = m_scene->world().gravity;
     // On a water slide, in a pool or a stream: the water can take them faster than they walk.
-    const bool slick = Player::slickAt(*m_scene, pos);
+    if (!m_guard.slickHere) m_guard.slickHere = [this](const glm::vec3& at) { return Player::slickAt(*m_scene, at); };
+    const float g = m_scene->world().gravity;
     const MoveGuard::Verdict v = m_guard.check(c.rootId, pos, m_session->scripts().time(), rc.humanoid.walkSpeed,
-                                               rc.humanoid.launchSpeed(g), g, free, slick);
+                                               rc.humanoid.launchSpeed(g), g, free);
     if (v == MoveGuard::Verdict::Ok) return;
     const glm::vec3 back = m_guard.lastGood(c.rootId);
     c.conn->send(json{{"t", "moveback"}, {"p", vec3(back)}, {"why", MoveGuard::words(v)}}.dump());

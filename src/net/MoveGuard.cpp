@@ -54,6 +54,13 @@ MoveGuard::Verdict MoveGuard::check(uint64_t who, const glm::vec3& pos, double t
     // On a water slide or in a stream (or just off one: the speed carries on for a moment)
     // the water takes them faster than they can walk, and the keys still add their walking.
     if (slick) k.slickUntil = t + 1.5;
+    if (slickHere && t > k.slickUntil - 0.75) {
+        // (Only asked when they're going faster than walking allows: it looks around the scene.)
+        const float dryMax = (walkSpeed * 1.5f + 6.0f) * slack;
+        const double win = t - k.windowT;
+        if (flat(pos, k.last) > dryMax * (float)dt || (win > 0.25 && flat(pos, k.windowFrom) > dryMax * (float)win))
+            if (slickHere(pos)) k.slickUntil = t + 1.5;
+    }
     const bool wet = t < k.slickUntil;
     const float maxSpeed = (std::max(walkSpeed * 1.5f, wet ? kSlickSpeed + walkSpeed : 0.0f) + 6.0f) * slack;
 
