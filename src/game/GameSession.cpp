@@ -592,6 +592,8 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         // Supercells, tornadoes and downbursts: the host decides, everyone follows (Storms.h).
         if (!client) Storms::simulate(*m_scene, dt);
         Storms::follow(*m_scene, dt);
+        // Natural disasters games start (Disasters.h): the host decides who's hit, everyone sees them.
+        Disasters::update(*m_scene, dt, !client);
         // Their roar: louder the stronger it is, coming from where it is.
         auto roar = [&](int& handle, float amount, const glm::vec3& at, float pitch) {
             if (amount <= 0.02f) {
@@ -603,10 +605,21 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
             else { Audio::setVolume(handle, volume); Audio::setPosition(handle, at); }
         };
         const Storms::State& storm = m_scene->storms();
-        roar(m_tornadoSound, storm.tornado / 3.0f + (storm.tornado > 0.0f ? 0.25f : 0.0f), storm.tornadoPos + glm::vec3(0.0f, 12.0f, 0.0f), 0.62f);
-        if (storm.quake > 0.02f) {
+        {   // (the nearest tornado: the weather's, or one a script started)
+            float amount = storm.tornado / 3.0f + (storm.tornado > 0.0f ? 0.25f : 0.0f);
+            glm::vec3 at = storm.tornadoPos;
+            float best = storm.tornado > 0.0f ? glm::length(storm.tornadoPos - Audio::listenerPosition()) : 1e9f;
+            for (const Disasters::Disaster& d : m_scene->disasters().list) {
+                if (d.kind != Disasters::Kind::Tornado || d.fade <= 0.0f) continue;
+                const float dist = glm::length(d.pos - Audio::listenerPosition());
+                if (dist < best) { best = dist; at = d.pos; amount = (std::max(0.5f, d.strength) / 3.0f + 0.25f) * d.fade; }
+            }
+            roar(m_tornadoSound, amount, at + glm::vec3(0.0f, 12.0f, 0.0f), 0.62f);
+        }
+        const float quakeHere = storm.quake + Disasters::quakeAt(*m_scene, Audio::listenerPosition());
+        if (quakeHere > 0.02f) {
             const glm::vec3 ears = Audio::listenerPosition();
-            const float volume = std::clamp(0.25f + storm.quake * 1.2f, 0.0f, 1.0f);
+            const float volume = std::clamp(0.25f + quakeHere * 1.2f, 0.0f, 1.0f);
             if (!m_quakeSound || !Audio::isPlaying(m_quakeSound)) m_quakeSound = Audio::play("quake_rumble", volume, 0.9f, true, &ears);
             else { Audio::setVolume(m_quakeSound, volume); Audio::setPosition(m_quakeSound, ears); }
         } else if (m_quakeSound) { Audio::stop(m_quakeSound); m_quakeSound = 0; }

@@ -44,6 +44,9 @@ public:
     glm::vec3 strikeAt() const { return m_strikeAt; }
     // True once, when a strike's thunder reaches the camera: how loud (0..1) and from where.
     bool takeThunder(float& volume, glm::vec3& from);
+    // A bolt down onto `ground` now (the Disasters service's lightning), seen from `eye`.
+    // strength 0..2: how bright and loud.
+    void strikeHere(const glm::vec3& ground, const glm::vec3& eye, float strength = 1.0f);
     // Seconds until the next bolt (Storm only). Tests set it to 0 to strike now.
     float nextStrike = 6.0f;
     static constexpr float kNearStrike = 60.0f, kFarStrike = 300.0f;   // studs from the camera

@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
     int fw = 0, fh = 0;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &fw, &fh);
 
-    check(GameTemplates::list().size() == 4, "there are four templates");
+    check(GameTemplates::list().size() == 5, "there are five templates");
     for (const GameTemplates::Info& info : GameTemplates::list()) {
         const std::string name = info.name;
         std::vector<Log::Entry> lines;
@@ -58,6 +58,7 @@ int main(int argc, char** argv) {
         if (info.kind == GameTemplates::Kind::Tycoon) check(countNamed(scene, "Dropper1") == 1 && countNamed(scene, "Collector") == 1, name + ": droppers and a collector");
         if (info.kind == GameTemplates::Kind::SwordFight) check(countNamed(scene, "Sword") == 1, name + ": a sword for everyone");
         if (info.kind == GameTemplates::Kind::Racing) check(countNamed(scene, "Car") == 3 && countNamed(scene, "FinishLine") == 1, name + ": cars and a finish line");
+        if (info.kind == GameTemplates::Kind::DisasterSurvival) check(countNamed(scene, "House") == 3 && countNamed(scene, "DisasterRounds") == 1, name + ": houses and the disaster rounds");
 
         // It saves and loads back.
         const std::string saved = Serializer::saveScene(scene);

@@ -4,6 +4,7 @@
 #include "SceneNode.h"
 #include "Terrain.h"
 #include "Shatter.h"
+#include "Disasters.h"
 
 #include <algorithm>
 #include <cmath>
@@ -103,12 +104,22 @@ void stopEarthquake(Scene& scene) {
 
 glm::vec3 quakeAccel(const State& st) {
     if (st.quake <= 0.0f) return glm::vec3(0.0f);
+    return quakePattern(st) * st.quake;
+}
+
+glm::vec3 groundJolt(const Scene& scene, const glm::vec3& p) {
+    const State& st = scene.storms();
+    const float level = st.quake + Disasters::quakeAt(scene, p);
+    return level > 0.0f ? quakePattern(st) * level : glm::vec3(0.0f);
+}
+
+glm::vec3 quakePattern(const State& st) {
     const float t = st.quakeClock;
     // A few waves on top of each other, so it never repeats neatly. Mostly sideways.
     const float x = std::sin(t * 13.2f) + 0.6f * std::sin(t * 23.3f + 1.3f) + 0.4f * std::sin(t * 33.1f + 0.4f);
     const float z = std::sin(t * 11.7f + 2.1f) + 0.6f * std::sin(t * 20.9f + 0.2f) + 0.4f * std::sin(t * 36.7f + 4.0f);
     const float y = std::sin(t * 17.9f + 0.7f) * 0.35f;
-    return glm::vec3(x, y, z) * (st.quake * 95.0f);
+    return glm::vec3(x, y, z) * 95.0f;
 }
 
 float cameraShake(const Scene& scene, const glm::vec3& at) {
@@ -119,7 +130,7 @@ float cameraShake(const Scene& scene, const glm::vec3& at) {
         const float core = coreRadius(st.tornado);
         shake += 0.25f * st.tornado * (1.0f - smooth(core, core * 8.0f, r));
     }
-    return shake;
+    return shake + Disasters::cameraShake(scene, at);
 }
 
 float hailAt(const Scene& scene, const glm::vec3& p) {
@@ -325,7 +336,7 @@ void snap(Scene& scene) {
 
 bool active(const Scene& scene) {
     const State& st = scene.storms();
-    return st.tornado > 0.0f || st.downburst > 0.0f || st.quake > 0.0f;
+    return st.tornado > 0.0f || st.downburst > 0.0f || st.quake > 0.0f || Disasters::any(scene);
 }
 
 glm::vec3 tornadoWind(const State& st, const glm::vec3& p) {
@@ -379,7 +390,7 @@ glm::vec3 downburstWind(const State& st, const glm::vec3& p) {
 
 glm::vec3 windAt(const Scene& scene, const glm::vec3& p) {
     const State& st = scene.storms();
-    return scene.world().globalWind + tornadoWind(st, p) + downburstWind(st, p);
+    return scene.world().globalWind + tornadoWind(st, p) + downburstWind(st, p) + Disasters::wind(scene, p);
 }
 
 float airBoost(const Scene& scene, const glm::vec3& p) {
@@ -394,12 +405,12 @@ float airBoost(const Scene& scene, const glm::vec3& p) {
         const float r = glm::length(glm::vec2(p.x - st.downburstPos.x, p.z - st.downburstPos.z));
         boost += 12.0f * st.downburst * (1.0f - smooth(kDownburstRadius * 2.0f, kDownburstRadius * 6.0f, r));
     }
-    return boost;
+    return boost + Disasters::airBoost(scene, p);
 }
 
 glm::vec3 characterPush(const Scene& scene, const glm::vec3& p, const glm::vec3& velocity) {
     const State& st = scene.storms();
-    glm::vec3 push = quakeAccel(st);   // (the ground moving under your feet)
+    glm::vec3 push = groundJolt(scene, p) + Disasters::characterPush(scene, p, velocity);   // (the ground moving under your feet; disasters)
     const glm::vec3 wind = tornadoWind(st, p) + downburstWind(st, p);
     if (glm::length(wind) < 12.0f) return push;   // (a breeze doesn't move a person)
     // Like the air on parts: the push grows with the square of how much faster the

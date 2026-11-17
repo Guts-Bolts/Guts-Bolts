@@ -1110,7 +1110,8 @@ void NetServer::handle(Client& c, const std::string& text) {
         if (m.contains("seat") && m["seat"].is_number_unsigned())
             if (SceneNode* seat = m_scene->findById(m["seat"].get<uint64_t>()))
                 seated = glm::length(glm::vec3(seat->worldMatrix()[3]) - pose.root.position) < 8.0f;
-        guardMove(c, *rc, pose.root.position, !rc->alive || m.value("dead", false) || seated || rc->humanoid.platformStand);
+        guardMove(c, *rc, pose.root.position, !rc->alive || m.value("dead", false) || seated || rc->humanoid.platformStand ||
+                                             Disasters::near(*m_scene, pose.root.position));   // (a tornado or a wave really does carry them)
         double now = m_session->scripts().time();
         // Their own damage (e.g. fall damage) counts, unless a script just changed it.
         if (now - rc->editedAt > 0.5 && m.contains("health"))
@@ -1467,6 +1468,15 @@ std::string NetServer::worldMessage(bool) {
 
     std::string env = Serializer::environmentToString(m_scene->environment());
     if (env != m_lastEnv) { msg["env"] = env; m_lastEnv = env; }
+    // Natural disasters (Disasters.h): the list, about ten times a second while any run.
+    {
+        Disasters::State& ds = m_scene->disasters();
+        if ((ds.publish -= 0.05f) <= 0.0f || ds.list.empty() != ds.published.empty()) {
+            ds.publish = 0.1f;
+            std::string list = Disasters::encode(ds);
+            if (list != ds.published) { msg["dis"] = list; ds.published = std::move(list); }
+        }
+    }
     // The camera setting (scripts can change Workspace.Orthographic while playing).
     const WorldSettings& ws = m_scene->world();
     json cam = {{"ortho", ws.orthographic}, {"size", ws.orthographicSize}, {"player", cameraJson(ws.playerCamera)}};
@@ -1668,7 +1678,9 @@ void NetServer::sendTick() {
             }
             for (auto& k : rc->kills) {
                 m_guard.excuse(c->rootId, m_session->scripts().time() + 3.0);   // (a launch moves them fast, for real)
-                c->conn->send(json{{"t", "kill"}, {"force", k.force}, {"impulse", vec3(k.impulse)}}.dump());
+                json kill{{"t", "kill"}, {"force", k.force}, {"impulse", vec3(k.impulse)}};
+                if (k.trip > 0.0f) kill["trip"] = k.trip;   // (knocked over by a disaster, still alive)
+                c->conn->send(kill.dump());
             }
             rc->kills.clear();
             // player:LoadCharacter(): they respawn themselves.
@@ -2084,6 +2096,7 @@ void NetClient::handle(const std::string& text) {
                 if (SceneNode* n = m_scene->findById(d.get<uint64_t>()))
                     if (!m_scene->isCharacterPart(n)) drop(n);
         if (m.contains("env")) Serializer::environmentFromString(m_scene->environment(), m["env"].get<std::string>());
+        if (m.contains("dis") && m["dis"].is_string()) Disasters::decode(*m_scene, m["dis"].get<std::string>());
         if (m.contains("terrain")) m_scene->terrain().fromJson(m["terrain"]);
         if (m.contains("cgt")) m_scene->world().collisionGroups = Serializer::collisionGroupsFromJson(m["cgt"]);
         // Our own character's collision group (a script on the host put it in one), so
@@ -2248,7 +2261,8 @@ void NetClient::handle(const std::string& text) {
         float force = m.value("force", 0.0f);
         glm::vec3 impulse = vec3(m.value("impulse", json()));
         if (force >= 0.0f) me->kill(force, impulse);
-        else               me->launch(me->velocity() + impulse);
+        else if (glm::length(impulse) > 1e-4f) me->launch(me->velocity() + impulse);
+        if (force < 0.0f && m.value("trip", 0.0f) > 0.0f) me->trip(std::min(m.value("trip", 0.0f), 15.0f), glm::vec3(180.0f, 0.0f, 0.0f));
         return;
     }
     if (t == "left") {

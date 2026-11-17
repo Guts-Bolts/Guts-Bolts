@@ -188,8 +188,10 @@ private:
     void drawSprites(Scene& scene, const Camera& camera);
     // Rain and snow (Lighting.Weather): the falling drops, and how wet / snowy things are.
     WeatherSim m_weather;
+    uint32_t   m_lastBolt = 0;   // the last Disasters bolt drawn
     double     m_weatherClock = 0.0;
     void drawWeather(Scene& scene, const Camera& camera);
+    void drawTsunamis(Scene& scene, const Camera& camera, float time);   // the Disasters service's waves
     void drawStorms(Scene& scene, const Camera& camera);     // a tornado's funnel and dust, a downburst's rain shaft
     void ribbonBuffers();                                    // (makes the strip buffers the first time)
     unsigned int m_cloudNoise = 0;                           // the 3D clouds' lumps (a repeating block)
