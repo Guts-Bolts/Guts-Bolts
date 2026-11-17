@@ -1175,6 +1175,12 @@ foreach(app GutsAndBolts GutsAndBoltsPlayer)
                 "$<TARGET_FILE_DIR:${app}>/catalog"
         VERBATIM)
 endforeach()
+# Both programs land in the same folder, so two copies into the same games/ and catalog/
+# at once could trip over each other ("No such file or directory" on macOS). One after
+# the other.
+if(TARGET GutsAndBolts AND TARGET GutsAndBoltsPlayer)
+    add_dependencies(GutsAndBoltsPlayer GutsAndBolts)
+endif()
 
 # When building with MinGW, the executable depends on runtime DLLs that live in
 # the compiler's bin directory (libstdc++, libgcc, glfw3, glew). Copy them next
