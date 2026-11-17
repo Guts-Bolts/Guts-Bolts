@@ -1441,7 +1441,7 @@ json settingsJson(Scene& scene) {
                   {"fallDamageSpeed", ws.fallDamageSpeed}, {"spawnForceField", ws.spawnForceField},
                   {"fallDamageScale", ws.fallDamageScale}, {"bloodColor", vec(ws.bloodColor)},
                   {"bloodAmount", ws.bloodAmount}, {"bloodStay", ws.bloodStay},
-                  {"liquidBlood", ws.liquidBlood}, {"softTissue", ws.softTissue},
+                  {"liquidBlood", ws.liquidBlood}, {"softTissue", ws.softTissue}, {"arteries", ws.arteries},
                   {"injuries", ws.injuries}, {"stamina", ws.stamina}, {"fireSpread", ws.fireSpread},
                   {"acoustics", ws.acoustics}, {"impactSounds", ws.impactSounds},
                   {"globalWind", {ws.globalWind.x, ws.globalWind.y, ws.globalWind.z}}, {"airDensity", ws.airDensity},
@@ -1514,6 +1514,7 @@ void applySettings(Scene& scene, const json& j) {
         w.bloodStay         = get<float>(j["world"], "bloodStay", w.bloodStay);
         w.liquidBlood       = get<bool>(j["world"], "liquidBlood", w.liquidBlood);
         w.softTissue        = get<bool>(j["world"], "softTissue", w.softTissue);
+        w.arteries          = get<bool>(j["world"], "arteries", w.arteries);
         w.injuries          = get<bool>(j["world"], "injuries", w.injuries);
         w.stamina           = get<bool>(j["world"], "stamina", w.stamina);
         w.fireSpread        = get<bool>(j["world"], "fireSpread", w.fireSpread);

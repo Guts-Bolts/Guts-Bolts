@@ -210,6 +210,11 @@ void drawGameRules(WorldSettings& w) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Dents from hits slowly spring back out, and very big hits tear.\n"
                           "Heads are hard, bellies are soft. Off = dents stay until respawning.");
+    PG::Checkbox("Arterial Bleeding", &w.arteries);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("A shot through the neck, the inside of a thigh or the inside of an arm\n"
+                          "opens an artery: blood spurts with every heartbeat, the character\n"
+                          "staggers about holding it, collapses and bleeds to death (about 10 s).");
     PG::Checkbox("Injuries", &w.injuries);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("A hurt leg limps (and walks slower), a hurt arm or side is held.\n"

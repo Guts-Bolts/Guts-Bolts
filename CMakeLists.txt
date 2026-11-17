@@ -539,6 +539,7 @@ add_library(gb_engine STATIC
     src/scene/Cloth.cpp
     src/scene/Gore.cpp
     src/scene/SoftTissue.cpp
+    src/scene/Artery.cpp
     src/scene/Shatter.cpp
     src/scene/Slice.cpp
     src/scene/SoftBody.cpp
@@ -1605,6 +1606,9 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(BloodSyncTests tests/BloodSyncTests.cpp)
     target_link_libraries(BloodSyncTests PRIVATE gb_engine)
     add_test(NAME BloodSyncTests COMMAND BloodSyncTests)
+    add_executable(ArteryTests tests/ArteryTests.cpp)
+    target_link_libraries(ArteryTests PRIVATE gb_engine)
+    add_test(NAME ArteryTests COMMAND ArteryTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
     # Shiny parts mirroring the world, height fog, round cylinders that roll, air and wind.
     add_executable(MirrorsMistRollingTests tests/MirrorsMistRollingTests.cpp)
     target_link_libraries(MirrorsMistRollingTests PRIVATE gb_engine)

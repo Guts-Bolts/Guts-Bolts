@@ -30,7 +30,7 @@ public:
     // Put parts inside accessory models back where they were in them (call before the
     // character is put back together: respawning, getting up). Then stop().
     void release(Scene& scene);
-    void stop() { m_active = false; m_held = false; m_points.clear(); m_sticks.clear(); m_bones.clear(); m_stumps.clear(); }
+    void stop() { m_active = false; m_held = false; m_fading = false; m_asleep = false; m_still = 0.0f; m_points.clear(); m_sticks.clear(); m_bones.clear(); m_stumps.clear(); }
     // The cut ends (Gore::cutEnd) put on when limbs came off: taken off by release / unhide.
     const std::vector<uint64_t>& cutEnds() const { return m_caps; }
     bool active() const { return m_active; }
@@ -45,6 +45,13 @@ public:
     void      setHeld(bool on) { m_held = on; }
     bool      held() const { return m_held; }
     glm::vec3 velocity() const;                             // of the body as a whole (studs / second)
+    // Bleeding out from an artery (Artery.h), alive: too weak to get up, curled round the
+    // wound, one hand pressed on it. `wound` is where it is now (world space).
+    void      setBleeding(const glm::vec3& wound);
+    bool      bleeding() const { return m_fading; }
+    // Dead and gone still: the body has stopped moving and is no longer simulated until
+    // something under it changes (it doesn't twitch, jitter or creep about).
+    bool      asleep() const { return m_asleep; }
 
     // Cut a limb loose: 0 L arm, 1 R arm, 2 L leg, 3 R leg, 4 head.
     void dismember(Scene& scene, int limb);
@@ -117,4 +124,11 @@ private:
     std::vector<uint64_t> m_caps;            // cut ends on the body and the loose pieces
     void      removeCaps(Scene& scene);
     float     m_gravity = 60.0f;   // (set from the world's gravity when it starts)
+    bool      m_fading = false;            // alive but bleeding out (setBleeding)
+    // Resting: a dead body that has stopped stays exactly where it is (see asleep()).
+    bool      m_asleep = false;
+    float     m_still = 0.0f;               // how long it has been nearly still
+    float     m_wakeCheck = 0.0f;
+    int       m_sleepGround = 0;            // points resting on something when it went to sleep
+    void      sleepCheck(float dt, const Physics& physics);
 };

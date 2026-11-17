@@ -146,6 +146,8 @@ const std::vector<Entry>& all() {
         {"Exploded", "disaster.Exploded:Connect(function(character, player) ... end)", "Someone a tornado threw blew up on landing", false},
         {"Killed", "disaster.Killed:Connect(function(character, player) ... end)", "The disaster killed someone (also Disasters.Killed for any of them)", false},
         {"Hit", "disaster.Hit:Connect(function(character, player) ... end)", "It caught someone (struck, picked up, washed away, shaken)", false},
+        {"CutArtery", "humanoid:CutArtery(part [, seconds])", "Opens an artery: blood spurts with each heartbeat, they stagger and bleed to death in `seconds` (10)", false},
+        {"StopBleeding", "humanoid:StopBleeding()", "Closes an open artery (a medkit, a tourniquet); check humanoid.BleedingOut", false},
         {"GetInjury", "humanoid:GetInjury(\"Left Leg\") -> number", "How hurt a limb is (0 fine .. 1 badly), with workspace.Injuries on", false},
         {"GetPartBoundsInRadius", "workspace:GetPartBoundsInRadius(position, radius, params?) -> {BasePart}", "Parts near a spot", false},
         {"GetPartBoundsInBox", "workspace:GetPartBoundsInBox(cframe, size, params?) -> {BasePart}", "Parts in a box", false},

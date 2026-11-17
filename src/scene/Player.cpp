@@ -640,6 +640,9 @@ void Player::respawn(bool firstSpawn) {
     m_injuries.clear();
     m_stamina.reset();
     m_feet.reset();
+    m_humanoid.artery.clear();   // (a fresh body: no open artery)
+    m_stagger.reset();
+    m_staggerBlend = 0.0f;
     for (auto& c : r->children) {
         auto it = m_rest.find(c->id);
         if (it != m_rest.end()) c->transform = it->second;
@@ -1300,7 +1303,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     // Knocked over (tripped, flung) or PlatformStand: the controls do nothing.
     const bool knocked = tripped();
     // (No keys pushed: a script's humanoid:Move(direction) walks us instead.)
-    const glm::vec3 moveDir = (knocked || !m_nativeControlsEnabled)
+    glm::vec3 moveDir = (knocked || !m_nativeControlsEnabled)
         ? (knocked ? glm::vec3(0.0f) : m_scriptMove)
         : glm::length(moveIn) > 1e-4f ? moveIn : m_scriptMove;
     const bool jump = knocked ? false : ((m_nativeControlsEnabled && jumpIn) || m_scriptJump);
@@ -1315,6 +1318,10 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         m_spawnFF = 0;
     }
 
+    // Bleeding out (an open artery, Artery.h): the health trickles away (no "hit" for
+    // each drop of it: on a joined player's computer it arrives from the host bit by bit).
+    if (bleedingOut() && m_humanoid.health < m_lastHealth && m_lastHealth - m_humanoid.health < m_humanoid.maxHealth * 0.06f)
+        m_lastHealth = m_humanoid.health;
     // Took damage since last frame (scripts, traps, explosions)?
     if (m_humanoid.health < m_lastHealth - 1e-4f) {
         bleed(m_lastHealth - m_humanoid.health);
@@ -1327,6 +1334,29 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     }
     m_lastHealth = m_humanoid.health;
     if (m_humanoid.health <= 0.0f) { startDeath(); return; }
+
+    // Bleeding out: the body staggers about (lurching one way, the legs hurrying after it),
+    // hunched over the wound, slower and slower, until the legs go and it drops.
+    if (bleedingOut()) {
+        const float sev = Artery::severity(m_humanoid.artery, m_humanoid.health, m_humanoid.maxHealth);
+        if (m_stagger.seed == 0.0f) m_stagger.seed = 0.01f + rand01() * 0.98f;
+        const float yaw = glm::radians(r->transform.rotation.y);
+        m_stagger.step(dt, sev, glm::vec3(std::sin(yaw), 0.0f, std::cos(yaw)));
+        m_staggerBlend = approach(m_staggerBlend, 1.0f, 3.0f, dt);
+        if (!knocked && !m_seatId) moveDir = moveDir * (1.0f - 0.55f * sev) + m_stagger.drift * m_staggerBlend;
+        const WorldSettings& w = m_scene->world();
+        if (sev >= Artery::kCollapse && !m_ragdoll.active() && w.deathStyle == DeathStyle::Ragdoll && !m_gyro &&
+            !m_swimming && !m_climbing && part("Torso") && part("Head")) {
+            if (sitting()) standUp(false);
+            m_tripTime = 1.0f;
+            startKnockdown();
+        }
+        if (m_ragdoll.active())
+            if (SceneNode* wp = part(m_humanoid.artery.part.c_str())) m_ragdoll.setBleeding(Artery::worldPoint(m_humanoid.artery, *wp));
+    } else if (m_staggerBlend > 0.0f) {
+        m_staggerBlend = approach(m_staggerBlend, 0.0f, 3.0f, dt);   // (the bleeding was stopped)
+        if (m_staggerBlend <= 0.0f) m_stagger.reset();
+    }
 
     // Knocked over as a ragdoll: the body's muscles try to catch the fall; once it
     // has come to rest (and the trip time is up) we get back up.
@@ -1341,9 +1371,9 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         m_ragdoll.setHeld(held);
         m_ragdoll.update(dt, *m_scene, physics);
         m_knockTime += dt;
-        if (m_ragdoll.lying()) m_tripTime = std::max(0.0f, m_tripTime - dt);   // (the clock runs once we're down)
+        if (m_ragdoll.lying() && !bleedingOut()) m_tripTime = std::max(0.0f, m_tripTime - dt);   // (the clock runs once we're down)
         if (m_ragdoll.center().y < m_scene->world().fallenPartsHeight) m_humanoid.health = 0.0f;
-        else if (!held && ((m_tripTime <= 0.0f && m_ragdoll.settled()) || m_knockTime > 8.0f)) getUp();
+        else if (!held && !bleedingOut() && ((m_tripTime <= 0.0f && m_ragdoll.settled()) || m_knockTime > 8.0f)) getUp();
         return;
     }
 
@@ -1449,6 +1479,8 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     // Hurt legs and tired legs are slower (Realism.h).
     if (m_scene->world().injuries) speed *= m_injuries.speedScale();
     if (m_scene->world().stamina) speed *= m_stamina.speedScale();
+    // Bleeding out: weaker and slower.
+    if (bleedingOut()) speed *= Artery::speedScale(Artery::severity(m_humanoid.artery, m_humanoid.health, m_humanoid.maxHealth));
 
     // Gravity + jumping.
     if (m_climbing) {
@@ -1757,12 +1789,14 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         if (std::abs(m_swimPitch) < 0.05f) m_swimPitch = 0.0f;
         if (std::abs(m_swimRoll) < 0.05f) m_swimRoll = 0.0f;
     }
-    r->transform.rotation.x = m_tilt + m_swimPitch;
+    // Bleeding out: hunched over (turning about the feet, so it leans rather than floats).
+    const float hunch = m_swimming || knocked ? 0.0f : m_stagger.pitch * m_staggerBlend;
+    r->transform.rotation.x = m_tilt + hunch + m_swimPitch;
     r->transform.rotation.z = m_swimRoll;
     if (m_swimPitch != 0.0f || m_swimRoll != 0.0f) {
         // Keep the middle of the body where it was: move the feet (the root) round it.
         Transform upright;
-        upright.rotation = glm::vec3(m_tilt, r->transform.rotation.y, 0.0f);
+        upright.rotation = glm::vec3(m_tilt + hunch, r->transform.rotation.y, 0.0f);
         upright.scale = r->transform.scale;
         Transform turned = upright;
         turned.rotation = r->transform.rotation;
@@ -2246,6 +2280,27 @@ void Player::animate(float dt, float groundSpeed, bool grounded) {
             pose[arm].out = pose[arm].out * (1.0f - k) - 28.0f * k;   // across the body
         }
     }
+    // Bleeding out: a hand pressed on the wound (the other hand, if it's in an arm), the
+    // free arm out for balance, knees wobbling.
+    if (m_staggerBlend > 0.01f && down < 0.5f && m_climbBlend + m_swimBlend < 0.5f) {
+        const std::string& wn = m_humanoid.artery.name;
+        int arm = 1;
+        LimbPose hold{-38.0f, -30.0f};                                   // across to the side / chest
+        if (wn == "Neck")            hold = {-150.0f, -38.0f};           // up to the neck
+        else if (wn == "Left Arm")   arm = 1;
+        else if (wn == "Right Arm")  arm = 0;
+        else if (wn == "Left Thigh")  { arm = 0; hold = {-14.0f, -10.0f}; }   // down on the thigh
+        else if (wn == "Right Thigh") { arm = 1; hold = {-14.0f, -10.0f}; }
+        if (arm == 1 && m_holdBlend > 0.5f) arm = 0;   // (the right hand has the tool)
+        const float k = m_staggerBlend * (1.0f - 0.5f * m_sitBlend);
+        pose[arm].pitch += (hold.pitch - pose[arm].pitch) * k;
+        pose[arm].out += (hold.out - pose[arm].out) * k;
+        const int other = 1 - arm;
+        if (!(other == 1 && m_holdBlend > 0.5f)) pose[other].out += 22.0f * k * std::abs(m_stagger.drift.x + m_stagger.drift.z);
+        const float wobble = std::sin(m_aliveTime * 6.1f) * 6.0f * k;
+        pose[2].out += 5.0f * k + wobble;
+        pose[3].out += 5.0f * k - wobble;
+    }
     if (m_scene->world().stamina) {
         const float puff = m_stamina.breathless();
         if (puff > 0.05f) {
@@ -2364,6 +2419,8 @@ void Player::startDeath() {
     if (m_scene->world().deathStyle == DeathStyle::Ragdoll) {
         glm::vec3 vel(m_velocity.x, std::max(m_velocity.y, -30.0f), m_velocity.z);
         m_ragdoll.start(*m_scene, r, vel, m_pendingImpulse, m_pendingForce);
+        if (m_humanoid.artery.on)   // bled to death: the hand stays on the wound
+            if (SceneNode* wp = part(m_humanoid.artery.part.c_str())) m_ragdoll.setBleeding(Artery::worldPoint(m_humanoid.artery, *wp));
         m_pendingForce = 0.0f;
         m_pendingImpulse = glm::vec3(0.0f);
         return;

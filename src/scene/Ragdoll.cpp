@@ -75,8 +75,9 @@ void Ragdoll::start(Scene& scene, SceneNode* root, const glm::vec3& velocity,
     m_alive    = alive;
     m_time     = 0.0f;
     m_phase    = rnd(0.0f, 6.28f);
-    // A violent death kills outright (limp almost at once); otherwise the body fights for a moment.
-    m_throes   = force > 0.75f ? 0.4f : rnd(2.5f, 4.0f);
+    // A violent death kills outright (limp almost at once); otherwise the body fights for a
+    // moment. (Only a moment: a dead body that keeps thrashing about looks like a glitch.)
+    m_throes   = force > 0.75f ? 0.4f : rnd(0.8f, 1.4f);
     m_protect  = glm::length(impulse) > 4.0f ? 0.8f : 0.0f;
     m_goreKind = m_look.kind;
     m_gravity  = scene.world().gravity;
@@ -230,6 +231,8 @@ void Ragdoll::dismember(Scene& scene, int limb) {
     if (limb < 0 || limb > 4 || m_cut[limb]) return;
     ParticleSystem::Look tint(scene.particles(), m_look.color, m_look.amount);
     m_cut[limb] = true;
+    m_asleep = false;
+    m_still = 0.0f;
     if (limb == 4) m_throes = 0.0f;   // no head, no fight
     for (auto& s : m_sticks)
         if (s.limb == limb && !(limb == 4 && ((s.a == Head && s.b == HeadTop) || (s.a == HeadTop && s.b == Head))))
@@ -297,6 +300,14 @@ void Ragdoll::removeCaps(Scene& scene) {
 }
 
 void Ragdoll::solve(const Physics& physics) {
+    // How fast each point was going before the sticks, joints, floor and walls had their
+    // say. Those only put the body right (keep it in one piece, push it out of things):
+    // they mustn't make it go faster. Without this, a hand or foot that ended up deep in
+    // a part (a body falling onto a corner, a leg wedged in a gap) came out with all that
+    // distance as speed, dragging the rest along: the body was flung across the map or
+    // kept twitching.
+    float before[kPointCount];
+    for (size_t i = 0; i < kPointCount && i < m_points.size(); ++i) before[i] = glm::length(m_points[i].pos - m_points[i].prev);
     for (int iter = 0; iter < 10; ++iter) {
         for (const auto& s : m_sticks) {
             if (!s.alive) continue;
@@ -308,7 +319,8 @@ void Ragdoll::solve(const Physics& physics) {
             m_points[s.b].pos -= corr;
         }
         jointLimits();
-        for (auto& p : m_points) {
+        for (size_t i = 0; i < m_points.size(); ++i) {
+            Point& p = m_points[i];
             glm::vec3 n;
             if (iter == 0) p.touching = false;
             bool hit = physics.resolveSphere(p.pos, p.radius, &n);
@@ -321,6 +333,13 @@ void Ragdoll::solve(const Physics& physics) {
                 p.prev = p.pos - (vt * kSlide + (glm::dot(v, n) < 0.0f ? -vn * 0.2f : vn));
             }
         }
+    }
+    // No faster than before (plus a little: a limb can still swing).
+    for (size_t i = 0; i < kPointCount && i < m_points.size(); ++i) {
+        Point& p = m_points[i];
+        const glm::vec3 v = p.pos - p.prev;
+        const float now = glm::length(v), most = before[i] + 2.0f * kStep;
+        if (now > most) p.prev = p.pos - v * (most / now);
     }
 }
 
@@ -341,10 +360,13 @@ void Ragdoll::update(float dt, Scene& scene, const Physics& physics) {
     if (!m_active) return;
     // Small, fixed steps: a body thrown hard doesn't pass through the floor, and it
     // moves the same however fast the computer is.
-    m_accum += std::min(dt, 1.0f / 15.0f);
-    int steps = 0;
-    while (m_accum >= kStep && steps < 8) { m_accum -= kStep; step(kStep, physics); ++steps; }
-    if (steps == 8) m_accum = 0.0f;
+    sleepCheck(dt, physics);
+    if (!m_asleep) {
+        m_accum += std::min(dt, 1.0f / 15.0f);
+        int steps = 0;
+        while (m_accum >= kStep && steps < 8) { m_accum -= kStep; step(kStep, physics); ++steps; }
+        if (steps == 8) m_accum = 0.0f;
+    }
     if (m_gore && m_hidden.empty()) {   // (blown to pieces: the chunks do the bleeding)
         ParticleSystem::Look tint(scene.particles(), m_look.color, m_look.amount);
         bleed(scene, dt);
@@ -487,6 +509,7 @@ void Ragdoll::explode(Scene& scene, const glm::vec3& velocity, float force) {
         m_hidden.push_back(n->id);
     }
     for (int i = 0; i < 5; ++i) m_cut[i] = true;   // (nothing holds together any more)
+    m_asleep = false;
     for (auto& s : m_sticks) s.alive = s.limb < 0;
     m_stumps.clear();
 }
@@ -535,6 +558,7 @@ void Ragdoll::muscles(float dt, const Physics& physics) {
     // A knocked-over character keeps its strength; a dying one weakens, then goes limp.
     float strength = m_alive ? 1.0f : std::clamp(1.0f - m_time / std::max(m_throes, 1e-3f), 0.0f, 1.0f);
     if (m_held) strength = 0.2f;   // held down: floppy, just enough to keep the limbs from folding up
+    if (m_alive && m_fading) strength = 0.55f;   // bleeding out: weak, and too far gone to get up
     if (strength <= 0.01f) return;
     if (!m_alive) strength = strength * strength * (3.0f - 2.0f * strength);   // (fades out smoothly)
 
@@ -567,7 +591,7 @@ void Ragdoll::muscles(float dt, const Physics& physics) {
         want[3] = {0.15f, -1.0f, -swing};
     } else if (m_held) {
         // Held down: just lying there, limbs relaxed (no pushing up off the floor).
-    } else if (!airborne && m_alive) {
+    } else if (!airborne && m_alive && !m_fading) {
         // Down on the floor and about to get up: hands push against it, knees come in.
         glm::vec3 down = toLocal * glm::vec3(0, -1, 0);
         want[0] = down + glm::vec3(-0.4f, 0.0f, 0.3f);
@@ -575,10 +599,12 @@ void Ragdoll::muscles(float dt, const Physics& physics) {
         want[2] = {-0.15f, -0.75f, 0.6f};
         want[3] = {0.15f, -0.75f, 0.6f};
     } else if (!airborne) {
-        // Dying on the floor: the legs kick and curl up, the arms paw about...
-        float w = std::sin(t * 2.6f + m_phase), w2 = std::sin(t * 3.4f + m_phase * 1.7f);
-        want[2] = {-0.12f, -0.9f, 0.25f + 0.5f * w};
-        want[3] = {0.12f, -0.9f, 0.25f - 0.5f * w2};
+        // Dying on the floor: the legs draw up and push weakly, the arms paw about...
+        // (bleeding out: slowly, curling up round the wound)
+        const float slow = m_fading ? 0.55f : 1.0f, size = m_fading ? 0.3f : 0.5f;
+        float w = std::sin(t * 2.6f * slow + m_phase), w2 = std::sin(t * 3.4f * slow + m_phase * 1.7f);
+        want[2] = {-0.12f, -0.9f, 0.25f + size * w + (m_fading ? 0.35f : 0.0f)};
+        want[3] = {0.12f, -0.9f, 0.25f - size * w2 + (m_fading ? 0.35f : 0.0f)};
         want[0] = {-0.5f, -0.6f + 0.4f * w2, 0.5f};
         want[1] = {0.5f, -0.6f + 0.4f * w, 0.5f};
         // ...and one hand clutches the wound (the hand from the other side reaches across).
@@ -646,7 +672,11 @@ void Ragdoll::jointLimits() {
                 lim.y = std::min(lim.y, 0.35f);
                 lim.z = std::max(lim.z, -0.55f);
                 lim.x = i == 2 ? std::clamp(lim.x, -0.75f, 0.15f) : std::clamp(lim.x, -0.15f, 0.75f);
-                if (lim != l && glm::length(lim) > 1e-4f) bot.pos = top.pos + F * glm::normalize(lim) * len;
+                if (lim != l && glm::length(lim) > 1e-4f) {
+                    const glm::vec3 to = top.pos + F * glm::normalize(lim) * len;
+                    bot.prev += (to - bot.pos) * 0.8f;   // (a stop, not a kick: the joint doesn't spring back)
+                    bot.pos = to;
+                }
             }
         }
         // Out of the torso, the shortest way.
@@ -657,6 +687,52 @@ void Ragdoll::jointLimits() {
             glm::vec3 push(0.0f);
             push[ax] = (l[ax] >= 0.0f ? 1.0f : -1.0f) * pen[ax];
             bot.pos += F * push;
+            bot.prev += F * push * 0.8f;   // (same: pushed out of the body, not thrown out of it)
         }
+    }
+}
+
+void Ragdoll::setBleeding(const glm::vec3& wound) {
+    if (!m_active || m_points.size() < kPointCount) return;
+    m_fading = true;
+    m_hasWound = true;
+    m_wound = glm::transpose(torsoFrame()) * (wound - center());
+    // (Clutching a wound on the arm you'd clutch with: the other hand does it.)
+    if (glm::length(m_wound) > 1.6f) m_wound *= 1.6f / glm::length(m_wound);
+}
+
+// Dead bodies come to rest and stay there. Once the throes are over and it has hardly moved
+// for a moment, the body stops being simulated (it can't creep, jitter or twitch any more);
+// if what it lies on goes away (a floor deleted, a car driving off), it wakes up and falls.
+void Ragdoll::sleepCheck(float dt, const Physics& physics) {
+    if (m_points.size() < kPointCount) return;
+    if (m_alive) { m_asleep = false; m_still = 0.0f; return; }
+    if (m_asleep) {
+        if ((m_wakeCheck -= dt) > 0.0f) return;
+        m_wakeCheck = 0.25f;
+        int n = 0;
+        for (const auto& p : m_points)
+            if (physics.solidAt(p.pos - glm::vec3(0, p.radius + 0.12f, 0))) ++n;
+        if (n + 2 < m_sleepGround || n == 0) {   // the ground went away under it
+            m_asleep = false;
+            m_still = 0.0f;
+            for (auto& p : m_points) p.prev = p.pos;
+        }
+        return;
+    }
+    if (m_time < m_throes + 0.3f || m_onGround < 3) { m_still = 0.0f; return; }
+    float fastest = 0.0f;
+    for (const auto& p : m_points) fastest = std::max(fastest, glm::length(p.pos - p.prev) / kStep);
+    m_still = fastest < 0.9f ? m_still + dt : 0.0f;
+    // Nearly still: help it settle (soak up the last little rocking), then stop.
+    if (m_still > 0.0f)
+        for (auto& p : m_points) p.prev = glm::mix(p.prev, p.pos, std::min(1.0f, dt * 6.0f));
+    if (m_still > 0.45f) {
+        m_asleep = true;
+        m_wakeCheck = 0.25f;
+        m_sleepGround = 0;
+        for (const auto& p : m_points)
+            if (physics.solidAt(p.pos - glm::vec3(0, p.radius + 0.12f, 0))) ++m_sleepGround;
+        for (auto& p : m_points) p.prev = p.pos;
     }
 }

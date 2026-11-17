@@ -1,5 +1,6 @@
 #pragma once
 #include "Realism.h"
+#include "Artery.h"
 #include <map>
 #include <algorithm>
 #include <cmath>
@@ -44,6 +45,8 @@ struct Humanoid {
     float maxSlopeAngle = 56.6f;
     float stepHeight() const { return std::max(0.0f, hipHeight) * 0.75f; }
     float minGroundY() const { return std::cos(glm::radians(std::clamp(maxSlopeAngle, 0.0f, 89.0f))); }
+    // An open artery (Artery.h): bleeding out. The host decides it and sends it along.
+    ArteryWound artery;
 };
 
 // The six body colours of an R6 character.
@@ -177,6 +180,11 @@ public:
     static bool deformPartAtImpact(SceneNode* hitPart, const glm::vec3& point,
                                    const glm::vec3& normal, const glm::vec3& projectileVelocity, Scene* scene = nullptr);
     bool isDead() const { return m_dead; }
+    // Health an open artery took (Artery::update): no "hit" for every drop of it.
+    void bledOut(float lost) { if (lost > 0.0f) m_lastHealth -= lost; }
+    // Bleeding out from an artery: staggering about (Artery::Stagger), then down for good.
+    bool bleedingOut() const { return m_humanoid.artery.on && !m_dead; }
+    const Artery::Stagger& stagger() const { return m_stagger; }
     bool hasForceField() const;
     // player:LoadCharacter(): a fresh body at a spawn right now (dead or alive).
     void  loadCharacter() { respawn(); }
@@ -382,6 +390,8 @@ private:
     // down; roll leaning into turns), turned about the middle of the body (kSwimPivot up from
     // the feet). m_poseShift = how far that moved the root this frame (taken back next frame).
     float m_swimPitch = 0.0f, m_swimRoll = 0.0f, m_lastYaw = 0.0f;
+    Artery::Stagger m_stagger;        // bleeding out: lurching about (Artery.h)
+    float m_staggerBlend = 0.0f;      // (eases in, and out if the bleeding is stopped)
     glm::vec3 m_poseShift{0.0f};
     static constexpr float kSwimPivot = 1.1f;
     float m_drip = 0.0f, m_dripTimer = 0.0f;   // dripping wet after swimming (leaves wet footprints)

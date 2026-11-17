@@ -217,6 +217,16 @@ void NpcSystem::step(Npc& n, SceneNode* r, float dt, Scene& scene, Physics& phys
             dir = d / len * std::min(1.0f, len / std::max(0.1f, h.walkSpeed * dt) );
         }
     }
+    // Bleeding out (an artery, Artery.h): staggering, slower and slower.
+    float walkScale = 1.0f;
+    if (h.artery.on) {
+        const float sev = Artery::severity(h.artery, h.health, h.maxHealth);
+        if (n.stagger.seed == 0.0f) n.stagger.seed = 0.01f + rand01() * 0.98f;
+        const float yaw = glm::radians(r->transform.rotation.y);
+        n.stagger.step(dt, sev, glm::vec3(std::sin(yaw), 0.0f, std::cos(yaw)));
+        dir = dir * (1.0f - 0.55f * sev) + n.stagger.drift;
+        walkScale = Artery::speedScale(sev);
+    }
     dir.y = 0.0f;
     float len = glm::length(dir);
     bool moving = len > 1e-4f;
@@ -241,7 +251,7 @@ void NpcSystem::step(Npc& n, SceneNode* r, float dt, Scene& scene, Physics& phys
     n.jump = false;
     n.velocity.y -= scene.world().gravity * dt;
 
-    glm::vec3 delta = horiz * h.walkSpeed * dt;
+    glm::vec3 delta = horiz * h.walkSpeed * walkScale * dt;
     delta.x += n.velocity.x * dt;
     delta.z += n.velocity.z * dt;
     delta.y = n.velocity.y * dt;
@@ -308,6 +318,9 @@ void NpcSystem::startDeath(Npc& n, SceneNode* r, Scene& scene) {
 
     if (scene.world().deathStyle == DeathStyle::Ragdoll) {
         n.ragdoll.start(scene, r, n.velocity, n.pendingImpulse, n.pendingForce);
+        if (n.humanoid.artery.on)   // bled to death: a hand stays on the wound
+            if (SceneNode* wp = r->findChild(n.humanoid.artery.part, true))
+                n.ragdoll.setBleeding(Artery::worldPoint(n.humanoid.artery, *wp));
         return;
     }
     // Classic: the pieces fall apart (moved into world space so each can tumble).
