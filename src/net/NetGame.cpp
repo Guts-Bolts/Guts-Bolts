@@ -17,6 +17,7 @@
 #include "../scene/Serializer.h"
 #include "../scene/Physics.h"
 #include "../scene/Player.h"
+#include "../scene/Gore.h"
 #include "../renderer/MeshLibrary.h"
 #include "../core/Log.h"
 #include "../core/Audio.h"
@@ -73,6 +74,96 @@ json vec3(const glm::vec3& v) { return json::array({v.x, v.y, v.z}); }
 glm::vec3 vec3(const json& j) {
     if (!j.is_array() || j.size() < 3) return glm::vec3(0.0f);
     return {j[0].get<float>(), j[1].get<float>(), j[2].get<float>()};
+}
+
+// --- Multiplayer blood (ParticleSystem::Role) ----------------------------------------
+// Numbers go as whole thousandths: much shorter than the float's every digit.
+inline long long q3(float v) { return std::llround((double)v * 1000.0); }
+inline float     uq3(const json& j) { return j.is_number() ? (float)(j.get<double>() / 1000.0) : 0.0f; }
+inline glm::vec3 uq3(const json& a, size_t i) { return {uq3(a[i]), uq3(a[i + 1]), uq3(a[i + 2])}; }
+
+// One GoreEvent: [op, kind, seed, a xyz, b xyz, c xyz, x, y, part, partName, colour rgb, amount].
+// A body part of a character goes as (the character, the part's name): a joined player's
+// own character has other ids on their computer.
+json goreEventJson(Scene& scene, const GoreEvent& e) {
+    uint64_t part = 0;
+    std::string partName;
+    if (e.part)
+        if (SceneNode* n = scene.findById(e.part)) {
+            part = n->id;
+            for (SceneNode* r = n->parent; r; r = r->parent)
+                if (scene.isCharacterRoot(r->id)) { part = r->id; partName = n->name; break; }
+        }
+    return json::array({(int)e.op, (int)e.kind, e.seed, q3(e.a.x), q3(e.a.y), q3(e.a.z), q3(e.b.x), q3(e.b.y), q3(e.b.z),
+                        q3(e.c.x), q3(e.c.y), q3(e.c.z), q3(e.x), q3(e.y), part, partName,
+                        q3(e.color.r), q3(e.color.g), q3(e.color.b), q3(e.amount)});
+}
+bool goreEventFrom(const json& j, GoreEvent& e, uint64_t& part, std::string& partName) {
+    if (!j.is_array() || j.size() < 20 || !j[0].is_number_integer() || !j[2].is_number_unsigned() ||
+        !j[14].is_number_unsigned() || !j[15].is_string()) return false;
+    for (size_t i : {3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18, 19}) if (!j[i].is_number()) return false;
+    const int op = j[0].get<int>();
+    if (op < GoreEvent::Spray || op > GoreEvent::Wound) return false;
+    e.op = (GoreEvent::Op)op;
+    e.kind = j[1].get<int>() == (int)GoreKind::Oil ? GoreKind::Oil : GoreKind::Blood;
+    e.seed = j[2].get<uint32_t>();
+    e.a = uq3(j, 3); e.b = uq3(j, 6); e.c = uq3(j, 9);
+    e.x = uq3(j[12]); e.y = uq3(j[13]);
+    part = j[14].get<uint64_t>();
+    partName = j[15].get<std::string>().substr(0, 100);
+    e.color = glm::clamp(uq3(j, 16), glm::vec3(0.0f), glm::vec3(1.0f));
+    e.amount = std::clamp(uq3(j[19]), 0.0f, 5.0f);
+    return true;
+}
+// One stain on the floor or a wall: [id, pos, normal, size, colour, turn, seed, spread, life, age, alpha, look].
+json netSplatJson(const NetSplat& s) {
+    return json::array({s.id, q3(s.pos.x), q3(s.pos.y), q3(s.pos.z), q3(s.normal.x), q3(s.normal.y), q3(s.normal.z),
+                        q3(s.size.x), q3(s.size.y), q3(s.size.z), q3(s.color.r), q3(s.color.g), q3(s.color.b),
+                        std::lround(s.rot * 10.0f), q3(s.seed), q3(s.spread), std::lround(s.life * 10.0f),
+                        std::lround(s.age * 10.0f), q3(s.alpha), s.look});
+}
+bool netSplatFrom(const json& j, NetSplat& s) {
+    if (!j.is_array() || j.size() < 20 || !j[0].is_number_unsigned()) return false;
+    for (size_t i = 1; i < 20; ++i) if (!j[i].is_number()) return false;
+    s.id = j[0].get<uint32_t>();
+    s.pos = uq3(j, 1); s.normal = uq3(j, 4); s.size = uq3(j, 7); s.color = uq3(j, 10);
+    s.rot = (float)j[13].get<double>() / 10.0f;
+    s.seed = uq3(j[14]); s.spread = uq3(j[15]);
+    s.life = (float)j[16].get<double>() / 10.0f;
+    s.age = (float)j[17].get<double>() / 10.0f;
+    s.alpha = uq3(j[18]);
+    s.look = j[19].get<int>();
+    return std::isfinite(s.pos.x) && std::isfinite(s.pos.y) && std::isfinite(s.pos.z);
+}
+json netSplatsJson(const std::vector<NetSplat>& list) {
+    json a = json::array();
+    for (const NetSplat& s : list) a.push_back(netSplatJson(s));
+    return a;
+}
+void applyNetSplats(Scene& scene, const json& changed, const json& gone) {
+    std::vector<NetSplat> list;
+    std::vector<uint32_t> ids;
+    if (changed.is_array())
+        for (const auto& j : changed) {
+            NetSplat s;
+            if (netSplatFrom(j, s) && list.size() < 2000) list.push_back(s);
+        }
+    if (gone.is_array())
+        for (const auto& j : gone) if (j.is_number_unsigned() && ids.size() < 4000) ids.push_back(j.get<uint32_t>());
+    scene.particles().applySplats(list, ids);
+}
+// A character the host can see got hurt: blood from its middle (like Player::bleed without a hit point).
+void bleedRig(Scene& scene, SceneNode* rig, float damage) {
+    if (!rig || !scene.goreEnabled() || damage <= 0.0f) return;
+    SceneNode* torso = rig->findChild("Torso");
+    if (!torso) torso = rig->findChild("UpperTorso", true);
+    if (!torso) return;
+    Gore::Scope look(scene, torso);
+    if (!look.on()) return;
+    const glm::vec3 at = glm::vec3(torso->worldMatrix()[3]);
+    const int count = std::clamp((int)(damage * 0.5f), 3, 30);
+    scene.particles().spray(look.kind(), at, glm::vec3(0, 0.5f, 0), count, 2.5f);
+    scene.particles().stain(look.kind(), torso, at, std::clamp(0.3f + damage * 0.02f, 0.3f, 1.0f));
 }
 
 json transformJson(const Transform& t) {
@@ -307,7 +398,7 @@ glm::vec3 spawnPoint(Scene& scene) {
     return scene.player() ? scene.player()->spawn() : glm::vec3(0.0f);
 }
 
-void replayFx(Scene& scene, const json& list) {
+void replayFx(Scene& scene, const json& list, bool hostGore) {
     if (!list.is_array()) return;
     ParticleSystem& ps = scene.particles();
     for (const auto& f : list) {
@@ -325,9 +416,10 @@ void replayFx(Scene& scene, const json& list) {
                 break;
             }
             case FxEvent::Sparks:    ps.sparks(p, (int)amount); break;
-            case FxEvent::Blood:     if (scene.goreEnabled()) ps.spray(GoreKind::Blood, p, {0, 1, 0}, (int)amount, 3.0f); break;
-            case FxEvent::Oil:       if (scene.goreEnabled()) ps.spray(GoreKind::Oil, p, {0, 1, 0}, (int)amount, 3.0f); break;
-            case FxEvent::Gibs:      if (scene.goreEnabled()) ps.gibs(scene.goreKind(), p, {0, 2, 0}, (int)amount); break;
+            // (a host that sends its blood as it happens: these are only for older players)
+            case FxEvent::Blood:     if (scene.goreEnabled() && !hostGore) ps.spray(GoreKind::Blood, p, {0, 1, 0}, (int)amount, 3.0f); break;
+            case FxEvent::Oil:       if (scene.goreEnabled() && !hostGore) ps.spray(GoreKind::Oil, p, {0, 1, 0}, (int)amount, 3.0f); break;
+            case FxEvent::Gibs:      if (scene.goreEnabled() && !hostGore) ps.gibs(scene.goreKind(), p, {0, 2, 0}, (int)amount); break;
             case FxEvent::Sound: {
                 std::string name = f.value("s", std::string());
                 // From a Sound object: its pitch, effects and SoundGroup (as the host has them).
@@ -1079,6 +1171,7 @@ void NetServer::handle(Client& c, const std::string& text) {
         }
         c.conn->send(json{{"t", "welcome"}, {"version", kVersion}, {"you", rig->id}, {"name", name}, {"host", proof},
                           {"hostChar", hostChar}, {"uid", c.id + 1}, {"voice", voiceAllowed()},
+                          {"gore", 1}, {"sp", [&] { std::vector<NetSplat> all; m_scene->particles().allSplats(all); return netSplatsJson(all); }()},
                           {"scene", scene},
                           {"humanoid", humanoidJson(rc.humanoid)}, {"players", players}}.dump());
         // Everyone already in the scene snapshot counts as known.
@@ -1116,16 +1209,20 @@ void NetServer::handle(Client& c, const std::string& text) {
         guardMove(c, *rc, pose.root.position, !rc->alive || m.value("dead", false) || seated || rc->humanoid.platformStand);
         double now = m_session->scripts().time();
         // Their own damage (e.g. fall damage) counts, unless a script just changed it.
-        if (now - rc->editedAt > 0.5 && m.contains("health"))
+        if (now - rc->editedAt > 0.5 && m.contains("health") && m["health"].is_number()) {
             rc->humanoid.health = m["health"].get<float>();
+        }
         bool dead = m.value("dead", false);
         if (dead && rc->alive) {
             rc->alive = false;
             rc->humanoid.health = 0.0f;
             if (SceneNode* rig = m_scene->findById(c.rootId))
                 if (SceneNode* torso = rig->findChild("Torso"))
+                {
                     m_scene->pushFx(m_scene->goreKind() == GoreKind::Blood ? FxEvent::Blood : FxEvent::Oil,
-                                    glm::vec3(torso->worldMatrix()[3]), 30.0f);
+                                    glm::vec3(torso->worldMatrix()[3]), 30.0f);   // (older players)
+                    bleedRig(*m_scene, rig, 60.0f);                                 // (everyone else: the real thing)
+                }
             m_session->scripts().fireDied(c.rootId);
         } else if (!dead && !rc->alive) {
             rc->alive = true;
@@ -1508,6 +1605,22 @@ std::string NetServer::worldMessage(bool) {
         msg["fx"] = fx;
         m_scene->fxQueue.clear();
     }
+    // Blood: what happened since last time, and the stains on floors and walls that are
+    // new or changed (a pool spreading, a smear running down a wall) or gone.
+    {
+        ParticleSystem& ps = m_scene->particles();
+        std::vector<GoreEvent> events = ps.takeEvents();
+        if (!events.empty()) {
+            json gx = json::array();
+            for (const GoreEvent& e : events) if (gx.size() < 200) gx.push_back(goreEventJson(*m_scene, e));
+            msg["gx"] = gx;
+        }
+        std::vector<NetSplat> changed;
+        std::vector<uint32_t> gone;
+        ps.syncSplats(changed, gone, 64);
+        if (!changed.empty()) msg["sp"] = netSplatsJson(changed);
+        if (!gone.empty()) msg["spx"] = gone;
+    }
     return msg.dump();
 }
 
@@ -1555,6 +1668,21 @@ void NetServer::sendTick() {
                             host->focusPoint(), 30.0f);
         wasDead = host->isDead();
     }
+
+    // Joined players' feet walk through blood here too, so their footprints are the same for everyone.
+    // And when they get hurt (a script here, or a fall on their own computer), they bleed here,
+    // so everyone sees the same blood.
+    if (m_scene->goreEnabled())
+        for (auto& rc : m_scene->remotes())
+            if (SceneNode* r = rc.alive ? m_scene->findById(rc.rootId) : nullptr) {
+                const float health = rc.humanoid.health;
+                if (rc.bledHealth >= 0.0f && rc.bledHealth - health > 0.5f && health > 0.0f) bleedRig(*m_scene, r, rc.bledHealth - health);
+                rc.bledHealth = health;
+                const glm::vec3 at = r->transform.position;
+                const bool grounded = std::abs(at.y - rc.feetY) < 0.06f;   // (not rising or falling)
+                rc.feetY = at.y;
+                m_scene->particles().walk(rc.feet, m_scene->goreKind(), at, grounded);
+            }
 
     std::string world = worldMessage(false);
     json w = json::parse(world);
@@ -1904,6 +2032,7 @@ void NetClient::handle(const std::string& text) {
         SceneNode::reserveId(kLocalIdBase);
         m_myServerRoot = m.value("you", (uint64_t)0);
         m_voiceAllowed = m.value("voice", false);
+        m_hostGore = m.value("gore", 0) == 1;
         if (SceneNode* mine = m_scene->findById(m_myServerRoot)) m_scene->removeNode(mine);
 
         // The host's character is just another model here; build our own.
@@ -2104,7 +2233,27 @@ void NetClient::handle(const std::string& text) {
             g.message = m["gui"].value("msg", std::string());
             g.messageTime = m["gui"].value("time", 0.0f);
         }
-        if (m.contains("fx")) replayFx(*m_scene, m["fx"]);
+        if (m.contains("fx")) replayFx(*m_scene, m["fx"], m_hostGore);
+        // The host's blood: the same drops from the same calls, and its stains where it says.
+        if (m.contains("gx") && m["gx"].is_array() && m_scene->goreEnabled()) {
+            ParticleSystem& ps = m_scene->particles();
+            int done = 0;
+            for (const auto& j : m["gx"]) {
+                GoreEvent e;
+                uint64_t part = 0;
+                std::string partName;
+                if (++done > 400 || !goreEventFrom(j, e, part, partName)) continue;
+                const SceneNode* where = nullptr;
+                if (part) {
+                    // A character's part: our own character has its own ids here.
+                    SceneNode* n = m_scene->findById(me && part == m_myServerRoot ? me->rootId() : part);
+                    where = n && !partName.empty() ? n->findChild(partName, true) : n;
+                }
+                e.part = where ? where->id : 0;
+                ps.replay(e, [where](uint64_t) { return where; });
+            }
+        }
+        if (m.contains("sp") || m.contains("spx")) applyNetSplats(*m_scene, m.value("sp", json()), m.value("spx", json()));
         if (m.contains("mylk") && me) me->wear(m["mylk"]);   // a script on the host dressed us
         if (m.contains("chars")) {
             bool newRigs = false;
