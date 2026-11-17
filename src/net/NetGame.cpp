@@ -16,6 +16,7 @@
 #include "../scene/SceneNode.h"
 #include "../scene/Serializer.h"
 #include "../scene/Physics.h"
+#include "../scene/Player.h"
 #include "../scene/Gore.h"
 #include "../renderer/MeshLibrary.h"
 #include "../core/Log.h"
@@ -921,6 +922,8 @@ void NetServer::guardMove(Client& c, RemoteCharacter& rc, const glm::vec3& pos, 
             return found;
         };
     }
+    // On a water slide, in a pool or a stream: the water can take them faster than they walk.
+    if (!m_guard.slickHere) m_guard.slickHere = [this](const glm::vec3& at) { return Player::slickAt(*m_scene, at); };
     const float g = m_scene->world().gravity;
     const MoveGuard::Verdict v = m_guard.check(c.rootId, pos, m_session->scripts().time(), rc.humanoid.walkSpeed,
                                                rc.humanoid.launchSpeed(g), g, free);

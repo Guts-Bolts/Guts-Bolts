@@ -1239,6 +1239,25 @@ bool Player::isWater(const SceneNode* n) {
     return n->isPart() && !n->canCollide && (n->name == "Water" || nameHas(n, "Water") || flagged(n, "Water"));
 }
 
+bool Player::slickAt(Scene& scene, const glm::vec3& feet) {
+    WaterSystem& water = scene.water();
+    if (waterAt(scene, feet + glm::vec3(0.0f, 1.2f, 0.0f))) return true;
+    if (water.liquid().count() && water.liquid().sample(feet + glm::vec3(0.0f, 0.5f, 0.0f), 2.5f) > 0) return true;
+    // Standing on a slide: a "Slippery" part, or a piece the liquid ran over lately (not a
+    // whole baseplate: see CharacterFooting::wetUnderfoot).
+    bool slick = false;
+    scene.forEach([&](SceneNode* n) {
+        if (slick || !n->isPart() || !n->canCollide || scene.isCharacterPart(n)) return;
+        const bool slippery = std::find(n->tags.begin(), n->tags.end(), "Slippery") != n->tags.end() || water.liquid().isWet(n->id);
+        if (!slippery) return;
+        const AABB b = Physics::worldBounds(n);
+        if (std::max(b.max.x - b.min.x, b.max.z - b.min.z) > CharacterFooting::kWetWholePart * 2.0f) return;
+        slick = feet.x >= b.min.x - 1.0f && feet.x <= b.max.x + 1.0f && feet.z >= b.min.z - 1.0f && feet.z <= b.max.z + 1.0f &&
+                feet.y >= b.min.y - 1.0f && feet.y <= b.max.y + 2.0f;
+    });
+    return slick;
+}
+
 bool Player::waterAt(Scene& scene, const glm::vec3& p, float* top, glm::vec3* flow, glm::vec3* color) {
     WaterSystem& waves = scene.water();
     bool found = false;
@@ -1401,9 +1420,11 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     // Real liquid (FluidSource): a stream carries you along; deep enough, you swim in it.
     bool stream = false;
     glm::vec3 streamVel(0.0f);
+    int dropsHere = 0;   // (how much liquid is right around our feet)
     if (waves.liquid().count()) {
         float top;
         const int n = waves.liquid().sample(pos + glm::vec3(0.0f, 0.5f, 0.0f), 1.4f, &streamVel, &top);
+        dropsHere = n;
         if (n >= 5) {
             stream = true;
             m_wet = 2.0f;
@@ -1511,9 +1532,16 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     if (!wet && m_grounded && m_groundId) {
         // Standing on something the liquid ran over lately, or something slippery (tag
         // "Slippery": a water slide, ice).
-        if (waves.liquid().isWet(m_groundId)) wet = true;
-        else if (SceneNode* g = m_scene->findById(m_groundId))
-            wet = std::find(g->tags.begin(), g->tags.end(), "Slippery") != g->tags.end();
+        // (A big flat floor the liquid splashed onto somewhere, like the baseplate, is only
+        // slippery where the water actually is: see CharacterFooting::wetUnderfoot.)
+        if (SceneNode* g = m_scene->findById(m_groundId)) {
+            if (std::find(g->tags.begin(), g->tags.end(), "Slippery") != g->tags.end()) wet = true;
+            else if (waves.liquid().isWet(m_groundId)) {
+                const AABB gb = Physics::worldBounds(g);
+                glm::vec3 up = glm::normalize(glm::vec3(g->worldMatrix()[1]));
+                wet = CharacterFooting::wetUnderfoot(gb.max - gb.min, std::abs(up.y), dropsHere);
+            }
+        }
     }
     // (Before working out this frame's move, so the push counts straight away.)
     const bool sliding = wet && !m_swimming && !m_climbing;

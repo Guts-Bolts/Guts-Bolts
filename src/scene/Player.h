@@ -179,6 +179,7 @@ public:
     void      setSpawn(const glm::vec3& p) { m_spawn = p; }
     glm::vec3 spawn() const { return m_spawn; }
     glm::vec3 position() const;
+    uint64_t groundId() const { return m_groundId; }   // the part we stand on (0 = none)
     glm::vec3 focusPoint() const;     // where the play camera should look (the head)
     void      faceYaw(float degrees) { m_faceLock = true; m_faceYaw = degrees; }   // first person: turn to the camera
     // VR: the player's real head and hands, from the headset. The head turns the
@@ -309,6 +310,9 @@ public:
     void setSwimInput(float look, bool down) { m_swimLook = look; m_swimDown = down; }
     // Is this point in water (a Water part, waves, a flood)? The surface above it, how
     // the water flows and its colour.
+    // Could the water be carrying someone standing at `feet` faster than they walk? In a
+    // pool or a stream, or on a water slide (for the host's anti-cheat, MoveGuard).
+    static bool slickAt(Scene& scene, const glm::vec3& feet);
     static bool waterAt(Scene& scene, const glm::vec3& p, float* top = nullptr, glm::vec3* flow = nullptr,
                         glm::vec3* color = nullptr);
     static constexpr float kFloatHeight = 1.45f;   // floating: the water comes up to here (the shoulders)
