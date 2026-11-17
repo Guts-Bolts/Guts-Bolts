@@ -192,6 +192,9 @@ struct RemoteCharacter {
     bool        respawnNow = false;      // a script called player:LoadCharacter(): tell them to respawn
     std::string kick;                    // a script called player:Kick(reason): send them away ("" = no)
     bool        kicked = false;
+    BloodyFeet  feet;                    // the host walks their feet through blood too (footprints everyone sees)
+    float       feetY = 0.0f;            // (where their feet were last tick: on the ground or not)
+    float       bledHealth = -1.0f;      // their health when the host last checked (lower now: they bleed)
 };
 
 // A visual effect to show on every player's screen (multiplayer).

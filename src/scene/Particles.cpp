@@ -12,6 +12,7 @@
 #include <cmath>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace {
@@ -74,6 +75,9 @@ void ParticleSystem::add(const Particle& p) {
 }
 
 void ParticleSystem::spray(GoreKind kind, const glm::vec3& pos, const glm::vec3& dir, int count, float speed) {
+    { GoreEvent e; e.op = GoreEvent::Spray; e.kind = kind; e.a = pos; e.b = dir; e.x = (float)count; e.y = speed;
+      if (!gate(e)) return; }
+    Depth depth(m_depth);
     count = (int)std::round(count * m_bloodAmount);
     for (int i = 0; i < count; ++i) {
         Particle p;
@@ -118,6 +122,9 @@ void ParticleSystem::waterSpray(const glm::vec3& pos, int count, float speed, co
 }
 
 void ParticleSystem::gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel, int count) {
+    { GoreEvent e; e.op = GoreEvent::Gibs; e.kind = kind; e.a = pos; e.b = vel; e.x = (float)count;
+      if (!gate(e)) return; }
+    Depth depth(m_depth);
     for (int i = 0; i < count; ++i) {
         Particle p;
         if (kind == GoreKind::Blood) {
@@ -158,6 +165,9 @@ void ParticleSystem::gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
 
 void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3& vel, float violence) {
     if (!part) return;
+    { GoreEvent e; e.op = GoreEvent::Burst; e.kind = kind; e.a = glm::vec3(part->worldMatrix()[3]); e.b = vel; e.x = violence;
+      if (!gate(e, part)) return; }
+    Depth depth(m_depth);
 
     // Region-aware wound profiles shape the initial spray without changing damage or hitboxes.
     std::string region = part->name;
@@ -339,6 +349,9 @@ float turnAlong(const glm::vec3& n, const glm::vec3& v) {
 } // namespace
 
 void ParticleSystem::spurt(GoreKind kind, const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& inherit, float strength) {
+    { GoreEvent e; e.op = GoreEvent::Spurt; e.kind = kind; e.a = pos; e.b = dir; e.c = inherit; e.x = strength;
+      if (!gate(e)) return; }
+    Depth depth(m_depth);
     strength = std::clamp(strength, 0.0f, 1.5f);
     int count = (int)std::round((5 + strength * 9) * m_bloodAmount);
     glm::vec3 d = glm::length(dir) > 1e-4f ? glm::normalize(dir) : glm::vec3(0, 1, 0);
@@ -360,6 +373,9 @@ void ParticleSystem::spurt(GoreKind kind, const glm::vec3& pos, const glm::vec3&
 }
 
 void ParticleSystem::ooze(GoreKind kind, const glm::vec3& pos, const glm::vec3& inherit) {
+    { GoreEvent e; e.op = GoreEvent::Ooze; e.kind = kind; e.a = pos; e.c = inherit;
+      if (!gate(e)) return; }
+    Depth depth(m_depth);
     if (rnd(0, 1) > m_bloodAmount) return;
     Particle p;
     p.kind  = Particle::Drop;
@@ -375,6 +391,7 @@ void ParticleSystem::ooze(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
 
 void ParticleSystem::smear(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel, const glm::vec3& normal, float width, float wet) {
     if (wet <= 0.02f) return;
+    if (m_role == Role::Replica && !m_replaying) return;   // (the host's smears come as stains)
     glm::vec3 n = glm::length(normal) > 1e-4f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
     glm::vec3 along = vel - n * glm::dot(vel, n);
     if (glm::length(along) < 1e-3f) return;
@@ -405,7 +422,7 @@ float ParticleSystem::wetBloodAt(const glm::vec3& pos, float radius, float take)
         if (glm::dot(d, d) > reach * reach) continue;
         float amount = (1.0f - q.age / fresh) * std::clamp(q.size.x / 0.6f, 0.15f, 1.0f) * q.alpha;
         best = std::max(best, amount);
-        if (take > 0.0f && q.look == 0) {   // a little of the pool goes with you
+        if (take > 0.0f && q.look == 0 && m_role != Role::Replica) {   // a little of the pool goes with you
             q.size.x *= 1.0f - take * 0.3f;
             q.size.z *= 1.0f - take * 0.3f;
             q.spread *= 1.0f - take * 0.3f;
@@ -416,6 +433,7 @@ float ParticleSystem::wetBloodAt(const glm::vec3& pos, float radius, float take)
 
 void ParticleSystem::footprint(GoreKind kind, const glm::vec3& pos, const glm::vec3& dir, float wet) {
     if (wet <= 0.04f) return;
+    if (m_role == Role::Replica && !m_replaying) return;   // (the host's footprints come as stains)
     glm::vec3 d(dir.x, 0.0f, dir.z);
     if (glm::length(d) < 1e-4f) return;
     Particle p;
@@ -455,6 +473,7 @@ void ParticleSystem::mark(const glm::vec3& pos, const glm::vec3& normal, const g
 void ParticleSystem::bruise(const SceneNode* part, const glm::vec3& at, float size, float life) {
     if (!part) return;
     const size_t before = m_items.size();
+    Depth depth(m_depth);   // (a bruise is each screen's own, not blood the host sends)
     stain(GoreKind::Blood, part, at, size);
     if (m_items.size() == before) return;   // (an old stain just grew)
     Particle& p = m_items.back();
@@ -478,6 +497,7 @@ void ParticleSystem::soak(float dt, const std::function<bool(uint64_t part)>& cl
 }
 
 void ParticleSystem::walk(BloodyFeet& feet, GoreKind kind, const glm::vec3& at, bool onGround) {
+    if (m_role == Role::Replica) return;   // (the host walks everyone's feet through the blood)
     if (!feet.started) { feet.last = at; feet.started = true; return; }
     glm::vec3 step = at - feet.last;
     step.y = 0.0f;
@@ -503,6 +523,9 @@ void ParticleSystem::walk(BloodyFeet& feet, GoreKind kind, const glm::vec3& at, 
 
 void ParticleSystem::stain(GoreKind kind, const SceneNode* part, const glm::vec3& at, float size) {
     if (!part) return;
+    { GoreEvent e; e.op = GoreEvent::Stain; e.kind = kind; e.a = at; e.x = size;
+      if (!gate(e, part)) return; }
+    Depth depth(m_depth);
     glm::mat4 M = part->worldMatrix();
     glm::vec3 l = glm::vec3(glm::inverse(M) * glm::vec4(at, 1.0f));
     // Onto the side of the part nearest the point.
@@ -543,6 +566,9 @@ void ParticleSystem::wound(GoreKind kind, const SceneNode* part, const glm::vec3
                            const glm::vec3& normal, const glm::vec3& tangent,
                            float width, float length) {
     if (!part || width <= 0.0f || length <= 0.0f) return;
+    { GoreEvent e; e.op = GoreEvent::Wound; e.kind = kind; e.a = at; e.b = normal; e.c = tangent; e.x = width; e.y = length;
+      if (!gate(e, part)) return; }
+    Depth depth(m_depth);
     const glm::mat4 M = part->worldMatrix();
     const glm::mat3 R(M);
     if (std::abs(glm::determinant(R)) < 1e-7f) return;
@@ -720,6 +746,8 @@ void ParticleSystem::explosion(const glm::vec3& pos, float radius) {
 
 void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
     m_splatSound -= dt;
+    m_clock += dt;
+    const bool replica = m_role == Role::Replica;
     std::vector<Particle> born;   // made during the loop (added after, so the list doesn't move under us)
     for (size_t i = 0; i < m_items.size(); ++i) {
         Particle& p = m_items[i];
@@ -733,6 +761,7 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                 p.size.z = p.size.x * ratio;
             }
             if (p.onPart) continue;   // a stain on a body part: follow() moves it
+            if (replica && !p.mark) continue;   // the host runs it down walls and off edges (and tells us)
             // A fresh pool that reaches the edge of what it's on runs over it and drips off.
             if (p.look == 0 && p.normal.y > 0.9f && p.drips > 0.0f && p.age < dryTime() * 0.4f) {
                 p.dripTimer -= dt;
@@ -773,6 +802,7 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                 if (p.trail > 0.2f) {
                     p.trail = 0.0f;
                     Particle mark = p;
+                    mark.net = 0;   // (a new stain of its own)
                     mark.slide = 0.0f;
                     mark.spread = 0.0f;
                     mark.size.x *= 0.55f;
@@ -839,7 +869,26 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
         AABB box{p.pos - h, p.pos + h};
         float push = physics.pushUp(box);
         bool hitWall = physics.solidAt(p.pos);
+        // A fast drop can fall right through the top of the floor in one step: it's then
+        // inside the floor, which looked like hitting a wall, so it stuck there as a
+        // sideways stain hidden under the ground. If it came down through a top (it was
+        // above it a step ago), it's the floor it hit.
+        if (push <= 0.0f && hitWall && p.kind == Particle::Drop && p.vel.y < 0.0f) {
+            const float was = p.pos.y - p.vel.y * dt;   // (how high it was a step ago)
+            float top = p.pos.y;
+            while (top < was && physics.solidAt(glm::vec3(p.pos.x, top, p.pos.z))) top += 0.02f;
+            if (top <= was + 1e-4f && !physics.solidAt(glm::vec3(p.pos.x, top, p.pos.z))) push = top - (p.pos.y - h.y);
+        }
         if (push > 0.0f || hitWall) {
+            if (p.kind == Particle::Drop && replica) {
+                // A joined player: the host says where this lands (its stain comes over the network).
+                p.life = 0.0f;
+                if (m_splatSound <= 0.0f) {
+                    Audio::play("splat", 0.25f, 0.8f + 0.4f * (rnd(0, 1)), false, &p.pos);
+                    m_splatSound = 0.07f;
+                }
+                continue;
+            }
             if (p.kind == Particle::Drop) {
                 if (push > 0.0f) {
                     // Splash onto the floor. Landing in a pool makes the pool bigger instead.
@@ -1003,13 +1052,154 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
     if (m_splats - fading > kMaxSplats) {
         int over = m_splats - fading - kMaxSplats;
         for (auto& p : m_items)
-            if (over > 0 && p.kind == Particle::Splat && !p.onPart && p.life > 1.0f) { p.life = 1.0f; --over; }
+            if (over > 0 && p.kind == Particle::Splat && !p.onPart && p.life > 1.0f && !(replica && p.net)) { p.life = 1.0f; --over; }
     }
 
     m_splats = 0;
     auto end = std::remove_if(m_items.begin(), m_items.end(), [](const Particle& p) { return p.life <= 0.0f; });
     m_items.erase(end, m_items.end());
     for (auto& p : m_items) if (p.kind == Particle::Splat) ++m_splats;
+}
+
+// --- Multiplayer blood --------------------------------------------------------------
+
+bool ParticleSystem::gate(GoreEvent e, const SceneNode* part) {
+    if (m_depth > 0) return true;                               // (part of a call already let through)
+    if (m_role == Role::Replica && !m_replaying) return false;  // a joined player's blood comes from the host
+    if (m_role != Role::Host) return true;
+    // The host: roll the dice from a fresh seed, and write the call down with it, so
+    // every joined player can make exactly the same drops.
+    static std::mt19937 seeds{std::random_device{}()};
+    e.seed = seeds() | 1u;
+    rng().seed(e.seed);
+    e.color = m_bloodColor;
+    e.amount = m_bloodAmount;
+    if (part) e = toPartSpace(e, part), e.part = part->id;
+    // (oozing wounds can call this a lot: a bounded list, the oldest drips go first)
+    if (m_events.size() >= 400) m_events.erase(m_events.begin());
+    m_events.push_back(e);
+    return true;
+}
+
+GoreEvent ParticleSystem::toPartSpace(GoreEvent e, const SceneNode* part) {
+    if (!part || (e.op != GoreEvent::Stain && e.op != GoreEvent::Wound)) return e;
+    const glm::mat4 inv = glm::inverse(part->worldMatrix());
+    e.a = glm::vec3(inv * glm::vec4(e.a, 1.0f));
+    if (e.op == GoreEvent::Wound) {
+        e.b = glm::vec3(inv * glm::vec4(e.b, 0.0f));
+        e.c = glm::vec3(inv * glm::vec4(e.c, 0.0f));
+    }
+    return e;
+}
+
+GoreEvent ParticleSystem::fromPartSpace(GoreEvent e, const SceneNode* part) {
+    if (!part || (e.op != GoreEvent::Stain && e.op != GoreEvent::Wound)) return e;
+    const glm::mat4 M = part->worldMatrix();
+    e.a = glm::vec3(M * glm::vec4(e.a, 1.0f));
+    if (e.op == GoreEvent::Wound) {
+        e.b = glm::vec3(M * glm::vec4(e.b, 0.0f));
+        e.c = glm::vec3(M * glm::vec4(e.c, 0.0f));
+    }
+    return e;
+}
+
+void ParticleSystem::replay(const GoreEvent& e, const std::function<const SceneNode*(uint64_t)>& findPart) {
+    const SceneNode* part = e.part && findPart ? findPart(e.part) : nullptr;
+    if ((e.op == GoreEvent::Stain || e.op == GoreEvent::Wound) && !part) return;   // (not here any more)
+    const GoreEvent w = fromPartSpace(e, part);
+    Look look(*this, e.color, e.amount);
+    m_replaying = true;
+    rng().seed(e.seed);
+    const int n = (int)std::clamp(w.x, 0.0f, 300.0f);
+    switch (w.op) {
+        case GoreEvent::Spray: spray(w.kind, w.a, w.b, n, std::clamp(w.y, 0.0f, 40.0f)); break;
+        case GoreEvent::Gibs:  gibs(w.kind, w.a, w.b, std::min(n, 60)); break;
+        case GoreEvent::Burst:
+            if (part) burst(w.kind, part, w.b, std::clamp(w.x, 0.0f, 3.0f));
+            else {   // (the piece is already gone here: the same mess, from where it was)
+                gibs(w.kind, w.a, w.b * 0.5f, 6);
+                spray(w.kind, w.a, glm::vec3(0, 1, 0), 30 + (int)(w.x * 40.0f), 4.0f + w.x * 6.0f);
+            }
+            break;
+        case GoreEvent::Spurt: spurt(w.kind, w.a, w.b, w.c, w.x); break;
+        case GoreEvent::Ooze:  ooze(w.kind, w.a, w.c); break;
+        case GoreEvent::Stain: stain(w.kind, part, w.a, std::clamp(w.x, 0.0f, 2.0f)); break;
+        case GoreEvent::Wound: wound(w.kind, part, w.a, w.b, w.c, std::clamp(w.x, 0.0f, 2.0f), std::clamp(w.y, 0.0f, 3.0f)); break;
+    }
+    m_replaying = false;
+}
+
+NetSplat ParticleSystem::toNet(const Particle& p) {
+    NetSplat s;
+    s.id = p.net; s.pos = p.pos; s.normal = p.normal; s.size = p.size; s.color = p.color;
+    s.rot = p.rot.y; s.seed = p.seed; s.spread = p.spread; s.life = p.life; s.age = p.age;
+    s.alpha = p.alpha; s.look = p.look;
+    return s;
+}
+
+void ParticleSystem::syncSplats(std::vector<NetSplat>& changed, std::vector<uint32_t>& gone, int most) {
+    std::unordered_set<uint32_t> here;
+    here.reserve(m_sentSplats.size() + 64);
+    for (Particle& p : m_items) {
+        if (p.kind != Particle::Splat || p.onPart || p.mark) continue;   // (body stains come as GoreEvents; marks are each screen's own)
+        if (!p.net) {
+            if ((int)changed.size() >= most) continue;                  // (next time)
+            p.net = m_nextNet++;
+            if (!m_nextNet) m_nextNet = 1;
+        }
+        here.insert(p.net);
+        auto it = m_sentSplats.find(p.net);
+        bool send = it == m_sentSplats.end();
+        if (!send) {
+            const Sent& s = it->second;
+            const float expected = s.life - (m_clock - s.at);
+            send = glm::distance(s.pos, p.pos) > 0.03f || std::abs(s.spread - p.spread) > 0.03f ||
+                   p.size.x < s.sizeX - 0.04f || std::abs(p.life - expected) > 0.75f ||
+                   std::abs(s.alpha - p.alpha) > 0.05f || glm::distance(s.color, p.color) > 0.03f;
+        }
+        if (!send || (int)changed.size() >= most) continue;
+        changed.push_back(toNet(p));
+        m_sentSplats[p.net] = Sent{p.pos, p.color, p.spread, p.size.x, p.life, m_clock, p.alpha};
+    }
+    for (auto it = m_sentSplats.begin(); it != m_sentSplats.end();) {
+        if (!here.count(it->first)) { gone.push_back(it->first); it = m_sentSplats.erase(it); }
+        else ++it;
+    }
+}
+
+void ParticleSystem::allSplats(std::vector<NetSplat>& out) const {
+    for (const Particle& p : m_items)
+        if (p.kind == Particle::Splat && !p.onPart && !p.mark && p.net) out.push_back(toNet(p));
+}
+
+void ParticleSystem::applySplats(const std::vector<NetSplat>& changed, const std::vector<uint32_t>& gone) {
+    std::unordered_map<uint32_t, size_t> at;
+    for (size_t i = 0; i < m_items.size(); ++i) if (m_items[i].net) at[m_items[i].net] = i;
+    for (uint32_t id : gone) {
+        auto it = at.find(id);
+        if (it != at.end()) m_items[it->second].life = 0.0f;   // (merged into a bigger pool, or dried up)
+    }
+    std::vector<Particle> fresh;
+    for (const NetSplat& s : changed) {
+        if (!s.id) continue;
+        auto it = at.find(s.id);
+        Particle q;
+        Particle& p = it != at.end() ? m_items[it->second] : q;
+        const bool isNew = it == at.end();
+        p.kind = Particle::Splat; p.net = s.id; p.wet = true; p.onPart = 0; p.mark = 0;
+        p.pos = s.pos; p.normal = glm::length(s.normal) > 1e-4f ? glm::normalize(s.normal) : glm::vec3(0, 1, 0);
+        p.size = glm::clamp(s.size, glm::vec3(0.0f), glm::vec3(4.0f));
+        p.color = glm::clamp(s.color, glm::vec3(0.0f), glm::vec3(1.0f));
+        p.rot = glm::vec3(0.0f, s.rot, 0.0f);
+        p.seed = s.seed; p.spread = std::clamp(s.spread, 0.0f, 4.0f);
+        p.life = std::clamp(s.life, 0.0f, 1e5f); p.maxLife = std::max(p.maxLife, p.life);
+        p.age = std::max(0.0f, s.age); p.alpha = std::clamp(s.alpha, 0.0f, 1.0f);
+        p.look = std::clamp(s.look, 0, 3);
+        p.vel = p.spin = glm::vec3(0.0f);
+        p.slide = 0.0f; p.drips = 0.0f;
+        if (isNew) fresh.push_back(q);
+    }
+    for (const Particle& p : fresh) add(p);   // (after: adding can move the list about)
 }
 
 // --- ParticleEmitter, Fire, Smoke, Sparkles -----------------------------------------

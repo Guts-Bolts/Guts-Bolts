@@ -2148,6 +2148,12 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         };
         m_particleBatches = 0;
         copies[0].clear(); copies[1].clear();
+        // Both sides: a stain is a thin flat box and only its top is kept (the shader
+        // throws the rest away), but the shared cube's top and bottom are wound the other
+        // way round from its other sides. With back faces culled, the top was thrown away
+        // too, so no blood showed anywhere. (Gibs are closed boxes: their nearest side
+        // still wins the depth test.)
+        glDisable(GL_CULL_FACE);
         InstanceData d;
         for (const Particle& p : parts) {
             if (tooFar(p.pos, 1.0f)) continue;
@@ -2169,6 +2175,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         flush();
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
+        glEnable(GL_CULL_FACE);
     }
 
     glEnable(GL_BLEND);
