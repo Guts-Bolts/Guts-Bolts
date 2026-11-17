@@ -38,7 +38,12 @@ public:
     // One report of where a character is. `free` = don't judge this one (in a seat,
     // dead, ragdolled): just remember it. gravity in studs/s^2, jumpSpeed = how fast a
     // jump launches them (Humanoid::launchSpeed).
-    Verdict check(uint64_t who, const glm::vec3& pos, double t, float walkSpeed, float jumpSpeed, float gravity, bool free);
+    // `slick` = they're on a water slide, in a stream or on wet ground right now: wet things
+    // are slippery and the water carries you (up to Player's 40 studs/s), so that much
+    // speed is fine there.
+    Verdict check(uint64_t who, const glm::vec3& pos, double t, float walkSpeed, float jumpSpeed, float gravity, bool free,
+                  bool slick = false);
+    static constexpr float kSlickSpeed = 40.0f;   // the fastest a slide or a stream takes you (Player.cpp)
 
     // Where to put them back (the last spot that looked fine).
     glm::vec3 lastGood(uint64_t who) const;
@@ -60,6 +65,7 @@ private:
         float     airLowest = 0.0f;  // lowest height while hanging there
         double    excusedUntil = 0.0;
         double    nextAirCheck = 0.0;
+        double    slickUntil = 0.0;  // on a slide / in a stream lately (a second after counts too)
     };
     Rules m_rules;
     std::unordered_map<uint64_t, Track> m_people;

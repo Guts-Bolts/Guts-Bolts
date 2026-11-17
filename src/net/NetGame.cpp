@@ -16,6 +16,7 @@
 #include "../scene/SceneNode.h"
 #include "../scene/Serializer.h"
 #include "../scene/Physics.h"
+#include "../scene/Player.h"
 #include "../renderer/MeshLibrary.h"
 #include "../core/Log.h"
 #include "../core/Audio.h"
@@ -830,8 +831,10 @@ void NetServer::guardMove(Client& c, RemoteCharacter& rc, const glm::vec3& pos, 
         };
     }
     const float g = m_scene->world().gravity;
+    // On a water slide, in a pool or a stream: the water can take them faster than they walk.
+    const bool slick = Player::slickAt(*m_scene, pos);
     const MoveGuard::Verdict v = m_guard.check(c.rootId, pos, m_session->scripts().time(), rc.humanoid.walkSpeed,
-                                               rc.humanoid.launchSpeed(g), g, free);
+                                               rc.humanoid.launchSpeed(g), g, free, slick);
     if (v == MoveGuard::Verdict::Ok) return;
     const glm::vec3 back = m_guard.lastGood(c.rootId);
     c.conn->send(json{{"t", "moveback"}, {"p", vec3(back)}, {"why", MoveGuard::words(v)}}.dump());

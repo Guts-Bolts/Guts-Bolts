@@ -1488,6 +1488,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(StillWaterTests PRIVATE gb_engine)
     add_test(NAME StillWaterTests COMMAND StillWaterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    add_executable(SplashPoolTests tests/SplashPoolTests.cpp)
+    target_link_libraries(SplashPoolTests PRIVATE gb_engine)
+    add_test(NAME SplashPoolTests COMMAND SplashPoolTests "${CMAKE_SOURCE_DIR}/games/Mega Water Slide.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
     add_executable(CharacterTests tests/CharacterTests.cpp)
     target_link_libraries(CharacterTests PRIVATE gb_engine)
     add_test(NAME CharacterTests COMMAND CharacterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
