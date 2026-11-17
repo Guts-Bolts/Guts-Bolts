@@ -106,6 +106,16 @@ int main(int argc, char** argv) {
     check(p->playEmote("Robot") && playingTrack(scene, p) == "Robot", "\"/e robot\" finds the equipped Robot");
     check(p->playEmote("dance"), "the built-in Dance still works too");
 
+    // --- What it was like before: the names went missing, so every slot was "Emote" ---
+    l.slots[0].name = l.slots[1].name = l.slots[3].name = "Emote";
+    int before = 0;
+    for (const auto& e : Emotes::menu()) if (e.title == "Emote") ++before;
+    check(before == 3, "(the old bug, recreated) with the names lost, the menu shows \"Emote\" placeholders");
+    p->playEmote(Emotes::menu()[1].name);
+    play(session, 0.3f);
+    check(playingTrack(scene, p) == "Emote" && p->emote() == "emote",
+          "(the old bug, recreated) and picking slot 2 just plays whatever slot 1 is");
+
     std::cout << (failures ? "FAILED: " + std::to_string(failures) : std::string("all passed")) << "\n";
     return failures ? 1 : 0;
 }
