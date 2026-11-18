@@ -221,7 +221,10 @@ jobs:
       - name: Run native CTest regression suite
         run: ctest --test-dir build --output-on-failure
       - name: Test server-authoritative vehicle spawning with multiple players
-        run: python3 tools/test_vehicle_spawning.py --build build --players 2 --seconds 45
+        # The late joiner comes in halfway, so it gets half of --seconds. On a slow runner the
+        # first players took 22 s to join and a car request 11 s to reach the server, which
+        # left Player3 no time at 45 s.
+        run: python3 tools/test_vehicle_spawning.py --build build --players 2 --seconds 60
       - name: Package
         run: |
           mkdir -p GutsAndBolts-Linux

@@ -170,6 +170,7 @@ private:
     bool objectModal(const glm::mat4& view, const glm::mat4& proj, const glm::vec2& imgMin, const glm::vec2& imgSize);
     struct ObjectModalItem { uint64_t id; Transform start; glm::mat4 world; };
     std::vector<ObjectModalItem> m_objItems;
+    std::vector<uint64_t> m_objHits;   // what the moved things already touched (Collisions)
     bool m_objOn = false;
     bool drawModeMenu(ImVec2 imgPos);   // true while the mouse is on it
     // Armatures: bones drawn over the view; returns the bone whose joint is under the mouse.

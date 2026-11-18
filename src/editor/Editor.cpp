@@ -2491,6 +2491,38 @@ void Editor::testCollisions() {
     ViewportPanel::stopAtCollisions(*m_scene, movers, before, hit0, false);
     std::snprintf(buf, sizeof(buf), "COLLIDE free turn: A.rotY = %.1f (45.0)", a->transform.rotation.y);
     Log::info(buf);
+
+    // The terrain is solid too: flat ground at y = 2, a 2-stud block dragged down from
+    // y = 10 to y = -5 stops resting on top of it (middle at y = 3).
+    m_scene->terrain().create(32, Terrain::kDefaultCell, 2.0f, TerrainMaterial::Grass);
+    SceneNode* c = block("C", 30.0f);
+    c->transform.position.y = 10.0f;
+    movers = {c};
+    before = {c->transform};
+    hit0 = ViewportPanel::collisionsOf(*m_scene, movers);
+    c->transform.position.y = -5.0f;
+    ViewportPanel::stopAtCollisions(*m_scene, movers, before, hit0, true);
+    std::snprintf(buf, sizeof(buf), "COLLIDE terrain: C.y = %.3f (resting = 3.000)", c->transform.position.y);
+    Log::info(buf);
+
+    // Hills: a block dragged down onto a slope ends up sitting on it (for the picture).
+    m_scene->removeNode(c);
+    m_scene->terrain().generate(48, Terrain::kDefaultCell, 7, 0.7f);
+    SceneNode* d = block("D", 22.0f);
+    d->transform.position = {22.0f, 300.0f, 14.0f};
+    d->transform.scale = {4.0f, 3.0f, 4.0f};
+    movers = {d};
+    before = {d->transform};
+    hit0 = ViewportPanel::collisionsOf(*m_scene, movers);
+    d->transform.position.y = -100.0f;
+    ViewportPanel::stopAtCollisions(*m_scene, movers, before, hit0, true);
+    float ground = 0.0f;
+    m_scene->terrain().heightAt(22.0f, 14.0f, ground);
+    std::snprintf(buf, sizeof(buf), "COLLIDE hills: D bottom = %.2f, ground under its middle = %.2f (bottom >= ground)",
+                  d->transform.position.y - 1.5f, ground);
+    Log::info(buf);
+    m_scene->select(d);
+    m_viewport->frameOn(d->transform.position);
 }
 
 void Editor::testSelect(const std::string& names) {
