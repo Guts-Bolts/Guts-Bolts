@@ -36,6 +36,9 @@ and arteries that spurt with every heartbeat.
 ## Fixes
 - Water slides stop teleporting you, dry ground stays dry, and pools and
   big waves stop going spiky.
+- Moving characters no longer leave a faint afterimage behind them.
+- Water slides stop randomly throwing you off: water flows the same way
+  every time.
 - Equipped emotes show up as themselves in games.
 - No more "undefined" text on website pages.
 - Better sound decoding, and dedicated servers start up reliably.
