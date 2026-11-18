@@ -2197,8 +2197,8 @@ void Editor::togglePlay() {
         m_state.objectModal = ObjectModal::None;
         // Everything shows in a playtest (Stop hides it again: the ids are kept).
         for (uint64_t id : m_editorHidden) if (SceneNode* n = m_scene->findById(id)) n->editorHidden = false;
-        // Remember the world exactly as it is, so Stop can put it back.
-        m_playSnapshot = Serializer::saveScene(*m_scene);
+        // Remember the world exactly as it is, so Stop can put it back (PlaySnapshot.h).
+        m_playSnapshot.take(*m_scene);
         m_playing = true;
         m_viewport->setSession(m_session.get());
         m_viewport->focus();
@@ -2216,9 +2216,14 @@ void Editor::togglePlay() {
         m_session->setRunOnly(false);
         m_viewport->setSession(nullptr);
         m_playing = false;
-        Serializer::loadScene(*m_scene, m_playSnapshot);
+        // Back to exactly what you built: parts, scripts' changes, Lighting and weather,
+        // terrain (to the last bit), with no storm or disaster left over.
+        m_playSnapshot.restore(*m_scene);
+        if (const std::string left = m_playSnapshot.differences(*m_scene); !left.empty())
+            Log::warn("Stop couldn't put everything back: " + left);
         m_scene->select(m_scene->findById(sel));
-        m_committed = m_playSnapshot;
+        m_committed = m_playSnapshot.text();
+        m_playSnapshot.clear();
         m_links.remember(*m_scene);
         m_state.mode = StudioMode::Build;
         m_state.simPaused = false;

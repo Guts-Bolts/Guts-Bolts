@@ -590,29 +590,66 @@ void main() {
         rough = 0.75;
     }
     else if (gMaterial == 9) {                                    // terrain: a mix of grounds (Terrain.h)
-        float n1 = fbm(vWorldPos.xz * 0.35), n2 = vnoise(vWorldPos.xz * 4.0);
+        vec2 p = vWorldPos.xz;
+        float px = length(fwidth(vWorldPos));                    // one pixel, in studs
+        float macro = fbm(p * 0.011 + 3.7);                       // big patches, so the ground never looks tiled
+        float n1 = fbm(p * 0.35), n2 = vnoise(p * 4.0);
         float strata = 0.5 + 0.5 * sin(vWorldPos.y * 1.7 + n1 * 4.0);
-        // How much of each: grass, dirt, sand, rock, snow, mud. A little noise on
-        // the weights so the edges between grounds are ragged, not straight.
+        // How much of each: grass, dirt, sand, rock, snow, mud.
         float w[6] = float[6](vBlend.x, vBlend.y, vBlend.z, vBlend.w, vUV.x, vUV.y);
-        vec3 col[6] = vec3[6](mix(vec3(0.27, 0.45, 0.16), vec3(0.40, 0.58, 0.22), n1),
-                              mix(vec3(0.40, 0.29, 0.19), vec3(0.52, 0.39, 0.26), n1),
-                              mix(vec3(0.80, 0.72, 0.50), vec3(0.90, 0.83, 0.62), n1),
-                              mix(vec3(0.36, 0.35, 0.34), vec3(0.52, 0.50, 0.47), strata * 0.6 + n2 * 0.4),
-                              mix(vec3(0.86, 0.89, 0.94), vec3(0.98, 0.98, 1.0), n1),
-                              mix(vec3(0.22, 0.16, 0.10), vec3(0.32, 0.24, 0.15), n1));
-        float rr[6] = float[6](0.9, 0.95, 0.9, 0.85, 0.6, 0.35);
+        // Cliffs are bare rock whatever was painted there: grass, sand and snow don't hold
+        // on steep ground (a little dirt clings on the way up).
+        float steep = 1.0 - smoothstep(0.52, 0.78, N.y + (n1 - 0.5) * 0.12);
+        for (int i = 0; i < 6; ++i) w[i] *= 1.0 - steep * 0.92;
+        w[3] += steep * 0.8;
+        w[1] += steep * 0.12;
+        // Close-up detail for each ground: pebbles, grass blades, sand ripples, cracks.
+        vec2 cid;
+        vec3 peb = voronoi(p * 2.4, cid);                         // little stones (dirt, mud)
+        vec3 crk = voronoi(p * vec2(0.45, 0.9) + vec2(vWorldPos.y * 0.3, 0.0), cid);   // rock: cracked slabs
+        float fBlade = fadeAt(px, 0.06), fPeb = fadeAt(px, 0.25), fRip = fadeAt(px, 0.9), fCrk = fadeAt(px, 0.6);
+        float blades = vnoise(p * 30.0) * 0.6 + vnoise(p * 61.0) * 0.4;
+        float clumps = vnoise(p * 2.7);
+        float pebble = (1.0 - smoothstep(0.18, 0.34, peb.x)) * step(0.45, peb.z);
+        float ripple = sin(dot(p, vec2(1.9, 0.7)) + fbm(p * 0.25) * 6.0);
+        float crack = lineAA(crk.y, 0.035, px * 0.6);
+        vec3 col[6];
+        col[0] = mix(mix(vec3(0.24, 0.42, 0.13), vec3(0.38, 0.56, 0.20), n1), vec3(0.52, 0.55, 0.26), smoothstep(0.55, 0.8, macro) * 0.7);   // grass (drier patches)
+        col[0] *= mix(1.0, 0.62 + 0.62 * blades, fBlade * 0.8) * (0.85 + 0.25 * clumps);
+        col[1] = mix(vec3(0.38, 0.27, 0.17), vec3(0.50, 0.38, 0.25), n1);                     // dirt with pebbles
+        col[1] = mix(col[1], vec3(0.55, 0.52, 0.48) * (0.8 + 0.4 * peb.z), pebble * fPeb * 0.8);
+        col[2] = mix(vec3(0.80, 0.71, 0.49), vec3(0.91, 0.84, 0.63), n1) * (0.94 + 0.06 * ripple * fRip);   // sand ripples
+        col[3] = mix(vec3(0.34, 0.33, 0.32), vec3(0.54, 0.52, 0.48), strata * 0.6 + n2 * 0.4);  // rock: layers, cracks
+        col[3] *= mix(1.0, 0.55, crack * fCrk) * (0.85 + 0.3 * crk.z * fCrk);
+        col[4] = mix(vec3(0.84, 0.88, 0.94), vec3(0.98, 0.98, 1.0), n1);                       // snow
+        col[5] = mix(vec3(0.20, 0.15, 0.09), vec3(0.30, 0.22, 0.14), n1);                      // mud
+        col[5] = mix(col[5], vec3(0.36, 0.33, 0.30), pebble * fPeb * 0.4);
+        float rr[6] = float[6](0.92, 0.95, 0.9, 0.82, 0.55, 0.3);
+        // Each ground's own bumps. Where two meet, the taller one shows through (rock
+        // pokes out of grass, pebbles out of sand) instead of a blurry fade.
+        float hh[6];
+        hh[0] = 0.45 + 0.25 * blades * fBlade + 0.2 * clumps;
+        hh[1] = 0.35 + 0.45 * pebble + 0.1 * n2;
+        hh[2] = 0.30 + 0.12 * ripple * fRip;
+        hh[3] = 0.55 + 0.35 * (1.0 - crack) * crk.z;
+        hh[4] = 0.60 + 0.15 * n1;
+        hh[5] = 0.20 + 0.2 * pebble;
+        float best = 0.0;
+        for (int i = 0; i < 6; ++i) best = max(best, w[i] + hh[i] * 0.6);
         vec3 c = vec3(0.0);
-        float r = 0.0, total = 0.0;
+        float r = 0.0, total = 0.0, hgt = 0.0;
         for (int i = 0; i < 6; ++i) {
-            float k = pow(clamp(w[i] + (n2 - 0.5) * 0.35 * w[i] * (1.0 - w[i]) * 4.0, 0.0, 1.0), 2.0);
+            float k = max(w[i] + hh[i] * 0.6 - best + 0.22, 0.0) * step(0.001, w[i]);
             c += lin(col[i]) * k;
             r += rr[i] * k;
+            hgt += hh[i] * k;
             total += k;
         }
         albedo = total > 1e-4 ? c / total : lin(col[0]);
         rough = total > 1e-4 ? r / total : 0.9;
-        albedo *= mix(1.0, 0.85 + 0.3 * n2, detail);
+        hgt = total > 1e-4 ? hgt / total : 0.5;
+        albedo *= mix(1.0, 0.85 + 0.3 * n2, detail) * (0.9 + 0.2 * macro);
+        N = bump(N, hgt * 0.035 * detail);
     }
     else if (gMaterial == 4) { rough = 0.04; }                    // glass
     else if (gMaterial == 5) {                                    // concrete speckle

@@ -111,9 +111,10 @@ void EnvironmentPanel::render() {
 
     if (PG::CollapsingHeader("Weather", open)) {
         int w = std::clamp(e.weather, 0, kWeatherCount - 1);
-        const char* shown[kWeatherCount] = {"Clear sky", "Rain", "Snow", "Thunderstorm", "Supercell (tornado storm)"};   // (Lighting.Weather: Clear, Rain, Snow, Storm, Supercell)
+        const char* shown[kWeatherCount] = {"Clear sky", "Rain", "Snow", "Thunderstorm", "Supercell (tornado storm)",
+                                            "Fog", "Blizzard", "Sandstorm"};   // (Lighting.Weather: Clear, Rain, Snow, Storm, Supercell, Fog, Blizzard, Sandstorm)
         if (PG::Combo("Weather##kind", &w, shown, kWeatherCount)) e.weather = w;
-        help("Rain makes everything wet with puddles, snow settles on tops, and a thunderstorm is heavy rain under a dark sky with lightning and thunder. Scripts can change it with Lighting.Weather");
+        help("Rain makes everything wet with puddles, snow settles on tops, and a thunderstorm is heavy rain under a dark sky with lightning and thunder. Fog is a thick mist on the ground, a blizzard is snow blown sideways by a hard wind, and a sandstorm is blowing orange dust (both push loose parts and players). In a running game a new weather rolls in over a few seconds. Scripts can change it with Lighting.Weather");
         PG::SliderFloat("Intensity##weather", &e.weatherAmount, 0.0f, 1.0f);
         help("From a few drops (0) to a storm (1)");
         int ct = std::clamp(e.cloudType, 0, kCloudTypeCount - 1);
