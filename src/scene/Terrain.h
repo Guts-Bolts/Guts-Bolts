@@ -18,10 +18,24 @@ inline constexpr int kTerrainMaterialCount = 6;
 inline const char* const kTerrainMaterialNames[kTerrainMaterialCount] =
     {"Grass", "Dirt", "Sand", "Rock", "Snow", "Mud"};
 
+// The kinds of land Generate can make (TerrainShape.cpp).
+//  Hills      rolling green hills (the classic one)
+//  Mountains  sharp ridges and peaks with snow on top, carved by rain into valleys
+//  Islands    islands in a sea (the ground goes under y = 0: add water at 0), with beaches
+//  Canyons    flat-topped mesas and deep, winding canyons in layered rock and sand
+//  Dunes      a desert of long sand dunes
+//  Plains     wide, nearly flat grassland with gentle swells and muddy hollows
+enum class TerrainStyle { Hills, Mountains, Islands, Canyons, Dunes, Plains };
+inline constexpr int kTerrainStyleCount = 6;
+inline const char* const kTerrainStyleNames[kTerrainStyleCount] =
+    {"Hills", "Mountains", "Islands", "Canyons", "Dunes", "Plains"};
+
 class Terrain {
 public:
     // What a brush does where you drag it.
-    enum class Brush { Raise, Lower, Smooth, Flatten, Paint };
+    // Erode: rain running over the ground where you drag, washing soil down into gullies.
+    enum class Brush { Raise, Lower, Smooth, Flatten, Paint, Erode };
+    static constexpr int kBrushCount = 6;
 
     static constexpr int   kMinCells    = 16;
     static constexpr int   kMaxCells    = 256;    // 256 x 4 studs = 1,024 studs across
@@ -39,9 +53,28 @@ public:
     // Start over: a flat square of `cells` x `cells` squares at `height`.
     void create(int cells, float cellSize, float height, TerrainMaterial m);
     void clear();   // no terrain at all
+    // Become an exact copy of `other` (every height to the last bit, not rounded like a
+    // saved file). Studio's Stop uses it to put the terrain back as it was before Play.
+    // The version still goes up, so the renderer rebuilds it.
+    void copyFrom(const Terrain& other);
+    // True when both have the very same grid, heights and grounds.
+    bool sameAs(const Terrain& other) const;
     // Rolling hills (the Generate button). `hills` 0..1 = how bumpy, `seed` = which
     // hills. Steep slopes come out rock, high tops snow and low ground sand.
     void generate(int cells, float cellSize, uint32_t seed, float hills);
+    // Any kind of land (Hills is the same as generate()). `hills` 0..1 = how big.
+    void generateStyle(TerrainStyle style, int cells, float cellSize, uint32_t seed, float hills);
+
+    // Weathering, like years of real rain (TerrainShape.cpp). Thousands of raindrops run
+    // downhill, picking up soil where they speed up and dropping it where they slow down:
+    // that carves gullies and valleys down slopes and leaves flat, fanned-out ground at
+    // the bottom. Then loose ground on slopes steeper than it can stand slides down.
+    // `amount` 0..1 = how long it rains. Only inside the circle when `radius` > 0.
+    void erode(float amount, uint32_t seed = 1, glm::vec2 center = glm::vec2(0.0f), float radius = 0.0f);
+    // Paint the ground by its shape: rock on cliffs, snow on high peaks, sand by the sea
+    // (y = 0) and in the lowest dry places, mud in wet hollows, dirt on slopes, grass
+    // elsewhere. Keeps nothing that was painted before.
+    void autoPaint(uint32_t seed = 7);
 
     // --- Reading it ---
     // The ground height at (x, z). False when that's outside the terrain.

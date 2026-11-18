@@ -73,6 +73,7 @@ struct EditorState {
     int   terrainMaterial = 0;       // TerrainMaterial (what Paint paints)
     float terrainHills = 0.5f;       // Generate: how bumpy
     int   terrainGenSize = 1;        // Generate: 0 = 256, 1 = 512, 2 = 1024 studs across
+    int   terrainStyle = 0;          // Generate: TerrainStyle (Hills, Mountains, Islands...)
 
     // Animation Editor: the rig being animated (clicks pick its parts, not the whole model).
     unsigned long long animRig = 0;

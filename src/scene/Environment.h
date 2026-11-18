@@ -104,12 +104,17 @@ struct Environment {
 
 // (Storm: heavy, wind-blown rain under a dark sky, with lightning and thunder.)
 // (Supercell: a Storm whose cloud is one huge rotating thunderstorm; tornadoes form under it.)
-enum class Weather { Clear = 0, Rain = 1, Snow = 2, Storm = 3, Supercell = 4 };
-inline constexpr int kWeatherCount = 5;
-inline const char* const kWeatherNames[kWeatherCount] = {"Clear", "Rain", "Snow", "Storm", "Supercell"};
+// (Fog: nothing falls, but a thick, damp mist lies on the ground and hides the distance.)
+// (Blizzard: heavy snow driven sideways by a hard wind, a white-out you can hardly see through.)
+// (Sandstorm: a wall of blowing dust and sand that turns the sky and the light orange-brown.)
+enum class Weather { Clear = 0, Rain = 1, Snow = 2, Storm = 3, Supercell = 4, Fog = 5, Blizzard = 6, Sandstorm = 7 };
+inline constexpr int kWeatherCount = 8;
+inline const char* const kWeatherNames[kWeatherCount] = {"Clear", "Rain", "Snow", "Storm", "Supercell", "Fog", "Blizzard", "Sandstorm"};
 inline bool isStorm(int weather) { return weather == (int)Weather::Storm || weather == (int)Weather::Supercell; }
 // Is water falling from the sky? (Rain and storms: things get wet, fires go out.)
 inline bool isRaining(int weather) { return weather == (int)Weather::Rain || isStorm(weather); }
+// Is snow falling? (Snow and blizzards: it settles on tops.)
+inline bool isSnowing(int weather) { return weather == (int)Weather::Snow || weather == (int)Weather::Blizzard; }
 
 // Cloud shapes, as they are in the real sky (Lighting.CloudType):
 //  Cumulus       fair-weather heaps: flat bottoms, cauliflower tops, blue gaps between
@@ -126,43 +131,119 @@ inline int cloudShape(int cloudType, int weather, float cloudCover) {
     if (cloudType > 0 && cloudType < kCloudTypeCount) return cloudType;
     if (weather == (int)Weather::Supercell) return (int)CloudType::Supercell;
     if (weather == (int)Weather::Storm) return (int)CloudType::Cumulonimbus;
-    if (weather == (int)Weather::Rain || weather == (int)Weather::Snow) return (int)CloudType::Stratus;
+    if (weather == (int)Weather::Rain || isSnowing(weather) || weather == (int)Weather::Fog) return (int)CloudType::Stratus;
     return cloudCover > 0.85f ? (int)CloudType::Stratus : (int)CloudType::Cumulus;
 }
 
-// How the sky, sun and fog look with the weather on top (grey clouds, less sun,
+// How the sky, sun and fog look with weather `kind` on top (grey clouds, less sun,
 // thicker fog). The saved Lighting stays as the game maker set it.
-inline Environment withWeather(const Environment& e) {
-    if (e.weather <= 0 || e.weather >= kWeatherCount) return e;
+inline Environment withWeatherKind(const Environment& e, int kind) {
+    if (kind <= 0 || kind >= kWeatherCount) return e;
     Environment w = e;
-    const bool storm = isStorm(e.weather);
-    // (A storm is never a light one: its clouds are as heavy as the hardest rain.)
-    const float a = storm ? 1.0f : glm::clamp(e.weatherAmount, 0.0f, 1.0f);
-    const bool snow = e.weather == (int)Weather::Snow;
-    const glm::vec3 grey = snow ? glm::vec3(0.78f, 0.80f, 0.84f) : glm::vec3(0.50f, 0.53f, 0.58f);
+    const bool storm = isStorm(kind);
+    // (A storm is never a light one: its clouds are as heavy as the hardest rain. Nor is a blizzard.)
+    const float a = storm || kind == (int)Weather::Blizzard ? 1.0f : glm::clamp(e.weatherAmount, 0.0f, 1.0f);
+    // Keep night dark: the weather's colours only as bright as the sky already was.
+    auto brightFor = [&](const glm::vec3& c) { return glm::clamp(glm::length(e.skyHorizon) / glm::length(c), 0.0f, 1.0f); };
+    if (kind == (int)Weather::Sandstorm) {
+        // Dust: the whole sky and the air turn orange-brown, the sun a dim copper disc.
+        const glm::vec3 dust(0.78f, 0.56f, 0.34f);
+        const float bright = brightFor(dust);
+        const float k = 0.45f + 0.5f * a;
+        w.skyZenith  = glm::mix(e.skyZenith,  dust * 0.8f * bright, k);
+        w.skyHorizon = glm::mix(e.skyHorizon, dust * bright, k);
+        w.skyGround  = glm::mix(e.skyGround,  dust * 0.5f * bright, k);
+        w.clouds     = true;
+        w.cloudCover = glm::max(e.cloudCover, 0.5f + 0.4f * a);
+        w.cloudColor = glm::mix(e.cloudColor, dust * 0.9f * bright, 0.6f + 0.3f * a);
+        w.cloudSpeed = glm::max(e.cloudSpeed, 1.0f) * (1.5f + 2.0f * a);
+        w.sunColor   = glm::mix(e.sunColor, glm::vec3(1.0f, 0.62f, 0.32f), 0.6f * a + 0.2f);
+        w.sunIntensity = e.sunIntensity * (1.0f - 0.55f * a);
+        w.shadowStrength = e.shadowStrength * (1.0f - 0.6f * a);
+        w.ambientColor = glm::mix(e.ambientColor, dust, 0.5f * a);
+        w.fogEnabled = true;
+        w.fogDensity = (e.fogEnabled ? e.fogDensity : 0.0f) + 0.012f + 0.05f * a;
+        w.fogColor   = glm::mix(e.fogColor, dust * bright, 0.6f + 0.4f * a);
+        w.fogSunGlow = e.fogSunGlow * 0.6f + 0.6f * a;   // (the sun's patch of the haze glows)
+        w.fogWisps   = glm::max(e.fogWisps, 0.85f);      // (blowing in streamers)
+        if (e.fogFalloff <= 0.0f) { w.fogFalloff = 0.012f * a; w.fogHeight = 0.0f; }
+        w.saturation = e.saturation * (1.0f - 0.15f * a);
+        w.tint       = e.tint * glm::mix(glm::vec3(1.0f), glm::vec3(1.06f, 0.97f, 0.86f), a);
+        return w;
+    }
+    const bool snow = isSnowing(kind);
+    const bool fog = kind == (int)Weather::Fog;
+    const glm::vec3 grey = snow ? glm::vec3(0.78f, 0.80f, 0.84f) : fog ? glm::vec3(0.70f, 0.72f, 0.74f) : glm::vec3(0.50f, 0.53f, 0.58f);
     const float k = 0.25f + 0.5f * a;   // how much of the sky turns grey
-    // Keep night dark: grey only as bright as the sky already was.
-    const float bright = glm::clamp(glm::length(e.skyHorizon) / glm::length(grey), 0.0f, 1.0f);
+    const float bright = brightFor(grey);
     w.skyZenith  = glm::mix(e.skyZenith,  grey * 0.85f * bright, k);
     w.skyHorizon = glm::mix(e.skyHorizon, grey * bright, k);
     w.clouds     = true;
     w.cloudCover = glm::max(e.cloudCover, 0.6f + 0.4f * a);
     w.cloudColor = glm::mix(e.cloudColor, grey * bright, 0.4f + 0.4f * a);
-    w.sunIntensity = e.sunIntensity * (1.0f - (snow ? 0.35f : 0.55f) * a);
-    w.shadowStrength = e.shadowStrength * (1.0f - 0.5f * a);
+    w.sunIntensity = e.sunIntensity * (1.0f - (snow ? 0.35f : fog ? 0.45f : 0.55f) * a);
+    w.shadowStrength = e.shadowStrength * (1.0f - (fog ? 0.7f : 0.5f) * a);
     w.fogEnabled = true;
-    w.fogDensity = (e.fogEnabled ? e.fogDensity : 0.0f) + (snow ? 0.022f : 0.012f) * a;
+    w.fogDensity = (e.fogEnabled ? e.fogDensity : 0.0f) + (fog ? 0.012f + 0.028f * a : snow ? 0.022f : 0.012f) * a;
     w.fogColor   = glm::mix(e.fogColor, grey * bright, 0.5f * a + 0.2f);
     w.fogSunGlow = e.fogSunGlow * (1.0f - 0.7f * a);
-    // Rain and snow leave a low mist lying on the ground (unless the game made its own).
-    if (e.fogFalloff <= 0.0f) { w.fogFalloff = 0.03f * a; w.fogHeight = 0.0f; }
-    w.saturation = e.saturation * (1.0f - (snow ? 0.1f : 0.2f) * a);
+    // Rain and snow leave a low mist lying on the ground (unless the game made its own);
+    // fog IS that mist, thick and deep.
+    if (e.fogFalloff <= 0.0f) { w.fogFalloff = (fog ? 0.045f : 0.03f) * a; w.fogHeight = fog ? 6.0f * a : 0.0f; }
+    if (fog) w.fogWisps = glm::max(e.fogWisps, 0.7f);
+    w.saturation = e.saturation * (1.0f - (snow ? 0.1f : fog ? 0.25f : 0.2f) * a);
     if (storm) {   // darker still: near-black clouds, hardly any sun
         w.skyZenith *= 0.55f; w.skyHorizon *= 0.6f; w.cloudColor *= 0.55f; w.fogColor *= 0.65f;
         w.sunIntensity *= 0.5f; w.ambientIntensity = e.ambientIntensity * 0.75f;
         w.cloudSpeed = glm::max(e.cloudSpeed, 1.0f) * 2.5f;
     }
+    if (kind == (int)Weather::Blizzard) {   // a white-out: the snow in the air hides everything past a few dozen studs
+        w.fogDensity += 0.03f;
+        w.fogColor = glm::mix(w.fogColor, glm::vec3(0.86f, 0.88f, 0.92f) * bright, 0.5f);
+        w.sunIntensity *= 0.6f;
+        w.cloudSpeed = glm::max(e.cloudSpeed, 1.0f) * 3.5f;
+        w.fogWisps = glm::max(e.fogWisps, 0.9f);
+    }
     return w;
+}
+inline Environment withWeather(const Environment& e) { return withWeatherKind(e, e.weather); }
+
+// The same, but part-way: weather `kind` only `amount` (0..1) of the way in. While one
+// weather turns into another, each is shown with how far it has come (Weather.h), so the
+// sky darkens and clears over a few seconds instead of in one frame.
+inline Environment blendWeather(const Environment& e, const float* amounts /* kWeatherCount */) {
+    Environment r = e;
+    float total = 0.0f;
+    const float baseFog = e.fogEnabled ? e.fogDensity : 0.0f;
+    r.fogDensity = baseFog;
+    for (int i = 1; i < kWeatherCount; ++i) {
+        const float m = glm::clamp(amounts[i], 0.0f, 1.0f);
+        if (m < 0.001f) continue;
+        total += m;
+        const Environment w = withWeatherKind(e, i);
+        r.skyZenith  += m * (w.skyZenith - e.skyZenith);
+        r.skyHorizon += m * (w.skyHorizon - e.skyHorizon);
+        r.skyGround  += m * (w.skyGround - e.skyGround);
+        r.cloudCover += m * (w.cloudCover - e.cloudCover);
+        r.cloudColor += m * (w.cloudColor - e.cloudColor);
+        r.cloudSpeed += m * (w.cloudSpeed - e.cloudSpeed);
+        r.sunColor   += m * (w.sunColor - e.sunColor);
+        r.sunIntensity += m * (w.sunIntensity - e.sunIntensity);
+        r.shadowStrength += m * (w.shadowStrength - e.shadowStrength);
+        r.ambientColor += m * (w.ambientColor - e.ambientColor);
+        r.ambientIntensity += m * (w.ambientIntensity - e.ambientIntensity);
+        r.fogDensity += m * (w.fogDensity - baseFog);
+        r.fogColor   += m * (w.fogColor - e.fogColor);
+        r.fogSunGlow += m * (w.fogSunGlow - e.fogSunGlow);
+        r.fogFalloff += m * (w.fogFalloff - e.fogFalloff);
+        r.fogHeight  += m * (w.fogHeight - e.fogHeight);
+        r.fogWisps   += m * (w.fogWisps - e.fogWisps);
+        r.saturation += m * (w.saturation - e.saturation);
+        r.tint       += m * (w.tint - e.tint);
+    }
+    if (total > 0.001f) { r.clouds = true; r.fogEnabled = true; }
+    else r.fogDensity = e.fogDensity;
+    return r;
 }
 
 // Ready-made atmospheres, like Roblox's lighting presets.

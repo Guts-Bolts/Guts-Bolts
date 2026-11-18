@@ -602,10 +602,20 @@ void Editor::renderToolbar() {
             static const int kSizes[] = {256, 512, 1024};
             const int size = kSizes[std::clamp(m_state.terrainGenSize, 0, 2)];
             if (bigButton("Generate", Icons::Id::Terrain, false, can,
-                          "Make new hills (replaces the terrain you have). Each click makes different ones.")) {
+                          "Make new land of the kind picked below (replaces the terrain you have). Each click makes a different one.")) {
                 static uint32_t seed = 1;
                 seed = seed * 1664525u + 1013904223u + (uint32_t)(ImGui::GetTime() * 1000.0);
-                terrain.generate(size / (int)Terrain::kDefaultCell, Terrain::kDefaultCell, seed, m_state.terrainHills);
+                const auto style = (TerrainStyle)std::clamp(m_state.terrainStyle, 0, kTerrainStyleCount - 1);
+                terrain.generateStyle(style, size / (int)Terrain::kDefaultCell, Terrain::kDefaultCell, seed, m_state.terrainHills);
+            }
+            if (bigButton("Erode", Icons::Id::TerrainSmooth, false, can && !terrain.empty(),
+                          "Let it rain for years: water runs down the slopes and carves gullies and valleys, and loose ground slides off cliffs. Click again for more")) {
+                static uint32_t rain = 1;
+                terrain.erode(0.35f, ++rain);
+            }
+            if (bigButton("Auto Paint", Icons::Id::TerrainPaint, false, can && !terrain.empty(),
+                          "Paint the ground by its shape: rock on cliffs, snow on high peaks, sand by the water, mud in hollows, grass elsewhere")) {
+                terrain.autoPaint();
             }
             if (bigButton("Clear", Icons::Id::TerrainClear, false, can && !terrain.empty(), "Remove all the terrain")) {
                 terrain.clear();
@@ -613,8 +623,12 @@ void Editor::renderToolbar() {
             }
             Stack st;
             ImGui::SetNextItemWidth(110);
-            ImGui::SliderFloat("##hills", &m_state.terrainHills, 0.0f, 1.0f, "Hills %.2f");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How bumpy Generate makes it (0 = gentle, 1 = mountains)");
+            ImGui::Combo("##tstyle", &m_state.terrainStyle, kTerrainStyleNames, kTerrainStyleCount);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("What kind of land Generate makes: rolling Hills, snowy Mountains, Islands in a sea (put water at height 0), desert Canyons, sand Dunes or flat Plains");
+            ImGui::SetNextItemWidth(110);
+            ImGui::SliderFloat("##hills", &m_state.terrainHills, 0.0f, 1.0f, "Size %.2f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How big Generate makes the hills, mountains or dunes (0 = gentle, 1 = huge)");
             ImGui::SetNextItemWidth(110);
             static const char* kSizeNames[] = {"256 studs", "512 studs", "1024 studs"};
             ImGui::Combo("##tsize", &m_state.terrainGenSize, kSizeNames, 3);
@@ -626,8 +640,9 @@ void Editor::renderToolbar() {
                                  {"Lower", Icons::Id::TerrainLower, "Drag to push the ground down"},
                                  {"Smooth", Icons::Id::TerrainSmooth, "Drag to round off bumps and sharp edges"},
                                  {"Flatten", Icons::Id::TerrainFlatten, "Drag to level the ground to where you started"},
-                                 {"Paint", Icons::Id::TerrainPaint, "Drag to change the ground (grass, sand, rock...)"}};
-            for (int i = 0; i < 5; ++i)
+                                 {"Paint", Icons::Id::TerrainPaint, "Drag to change the ground (grass, sand, rock...)"},
+                                 {"Erode", Icons::Id::TerrainLower, "Drag to rain on the ground there: water carves little gullies down the slopes"}};
+            for (int i = 0; i < Terrain::kBrushCount; ++i)
                 if (bigButton(brushes[i].label, brushes[i].icon, m_state.terrainBrush == i, can, brushes[i].tip)) {
                     m_state.terrainBrush = m_state.terrainBrush == i ? -1 : i;
                     m_state.connectTool = -1;

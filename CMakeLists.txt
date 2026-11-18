@@ -516,6 +516,8 @@ add_library(gb_engine STATIC
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
     src/scene/Weather.cpp
+    src/scene/PlaySnapshot.cpp
+    src/scene/TerrainShape.cpp
     src/scene/Storms.cpp
     src/scene/Disasters.cpp
     src/scene/Vehicles.cpp
@@ -1681,5 +1683,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(DisastersTests tests/DisastersTests.cpp)
     target_link_libraries(DisastersTests PRIVATE gb_engine)
     add_test(NAME DisastersTests COMMAND DisastersTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # A real Studio playtest (everything back on Stop), weather rolling in and the new
+    # kinds, terrain styles, erosion and auto paint.
+    add_executable(PlaytestWeatherTerrainTests tests/PlaytestWeatherTerrainTests.cpp)
+    target_link_libraries(PlaytestWeatherTerrainTests PRIVATE gb_engine)
+    add_test(NAME PlaytestWeatherTerrainTests COMMAND PlaytestWeatherTerrainTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()

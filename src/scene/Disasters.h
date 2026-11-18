@@ -118,6 +118,10 @@ Disaster* find(Scene& scene, uint32_t id);
 const Disaster* find(const Scene& scene, uint32_t id);
 void stop(Scene& scene, uint32_t id, bool now = false);   // fades out (or is gone now)
 void stopAll(Scene& scene);
+// Forget everything (a playtest starting or stopping): no disasters, no victims, the
+// Studio spawners ready to go off again. The bolt count keeps going up, so renderers
+// still notice the next bolt.
+void reset(Scene& scene);
 // Studio spawner parts: a part with a "Disaster" attribute (Tornado, Lightning,
 // Tsunami, Earthquake) and the tuning in other attributes. Gives back the id (0 = not one).
 uint32_t spawnFromPart(Scene& scene, uint64_t partId);

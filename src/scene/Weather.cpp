@@ -69,7 +69,10 @@ void WeatherSim::respawn(Drop& d, const glm::vec3& eye, bool anywhere) {
     d.pos.z = eye.z + (random() * 2.0f - 1.0f) * kHalfBox;
     d.pos.y = anywhere ? eye.y - 10.0f + random() * 36.0f : eye.y + 18.0f + random() * 8.0f;
     d.seed = random();
-    d.speed = m_kind == (int)Weather::Snow ? 2.5f + 2.0f * random() : 42.0f + 14.0f * random();
+    d.speed = m_kind == (int)Weather::Snow      ? 2.5f + 2.0f * random()
+            : m_kind == (int)Weather::Blizzard  ? 4.0f + 3.0f * random()
+            : m_kind == (int)Weather::Sandstorm ? 0.6f + 1.2f * random()   // (dust hangs in the air)
+            : 42.0f + 14.0f * random();
 }
 
 // How bright the lightning is right now: the brightest of its flickers, each a sudden
@@ -160,7 +163,18 @@ void WeatherSim::strikeHere(const glm::vec3& ground, const glm::vec3& eye, float
     nextStrike = std::max(nextStrike, 2.0f);
 }
 
-void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
+Environment WeatherSim::shown(const Environment& lighting) const { return blendWeather(lighting, m_mix); }
+
+void WeatherSim::reset() {
+    m_wet = m_snow = 0.0f;
+    for (float& m : m_mix) m = 0.0f;
+    m_drops.clear();
+    m_streaks.clear();
+    m_splashes.clear();
+    m_kind = 0;
+}
+
+void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt, bool live) {
     const Environment& env = scene.environment();
     const int kind = env.weather > 0 && env.weather < kWeatherCount ? env.weather : 0;
     const float amount = std::clamp(env.weatherAmount, 0.0f, 1.0f);
@@ -169,13 +183,18 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
 
     // Wet and snowy build up over a while, then dry off and melt more slowly.
     const bool storm = isStorm(kind);
-    const float wantWet = storm ? 1.0f : kind == (int)Weather::Rain ? 0.35f + 0.65f * amount : 0.0f;
-    const float wantSnow = kind == (int)Weather::Snow ? 0.4f + 0.6f * amount : 0.0f;
+    const bool snowing = isSnowing(kind);
+    const float wantWet = storm ? 1.0f : kind == (int)Weather::Rain ? 0.35f + 0.65f * amount
+                        : kind == (int)Weather::Fog ? 0.12f + 0.1f * amount : 0.0f;   // (fog leaves things damp)
+    const float wantSnow = kind == (int)Weather::Blizzard ? 1.0f : snowing ? 0.4f + 0.6f * amount : 0.0f;
     auto toward = [&](float& v, float want, float up, float down) {
+        if (!live) { v = want; return; }
         v = v < want ? std::min(want, v + dt / up) : std::max(want, v - dt / down);
     };
     toward(m_wet, wantWet, 15.0f, 45.0f);
-    toward(m_snow, wantSnow, 30.0f, 40.0f);
+    toward(m_snow, wantSnow, kind == (int)Weather::Blizzard ? 15.0f : 30.0f, 40.0f);
+    // The old weather fades out while the new one fades in.
+    for (int i = 0; i < kWeatherCount; ++i) toward(m_mix[i], i == kind ? 1.0f : 0.0f, kFadeSeconds, kFadeSeconds);
 
     // Lightning, and its thunder on the way.
     m_boltAge += dt;
@@ -203,14 +222,23 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
         m_roofTimer = 0.4f;
     }
 
-    const bool snow = kind == (int)Weather::Snow;
+    const bool snow = snowing;
+    const bool blizzard = kind == (int)Weather::Blizzard;
+    const bool dust = kind == (int)Weather::Sandstorm;
+    if (kind == (int)Weather::Fog) { m_drops.clear(); return; }   // (fog: nothing falls)
     // (A storm always pours: at least three quarters of the drops, whatever the intensity.)
-    const float pour = storm ? std::max(amount, 0.75f) : amount;
-    const size_t want = (size_t)(kMaxDrops * (snow ? 0.6f : 1.0f) * (0.08f + 0.92f * pour));
+    const float pour = storm || blizzard ? std::max(amount, 0.75f) : amount;
+    const float share = snow ? (blizzard ? 0.85f : 0.6f) : dust ? 0.7f : 1.0f;
+    const size_t want = (size_t)(kMaxDrops * share * (0.08f + 0.92f * pour) * std::clamp(m_mix[kind], 0.05f, 1.0f));
     while (m_drops.size() < want) { Drop d; respawn(d, eye, true); m_drops.push_back(d); }
     if (m_drops.size() > want) m_drops.resize(want);
 
     glm::vec2 wind = snow ? glm::vec2(0.6f, 0.3f) : glm::vec2(2.5f, 1.0f) * (0.5f + amount) * (storm ? 3.0f : 1.0f);   // (a storm blows the rain sideways)
+    if (blizzard || dust) {   // flakes fly nearly sideways, sand races along: on the gale's wind (Storms.h)
+        const glm::vec3 gale = Storms::weatherWind(scene, eye);
+        wind = glm::vec2(gale.x, gale.z) * (blizzard ? 0.45f : 0.75f);
+        if (glm::length(wind) < 1.0f) wind = blizzard ? glm::vec2(13.0f, 5.0f) : glm::vec2(30.0f, 11.0f);   // (before the wind is up)
+    }
     if (Storms::active(scene)) {   // near a tornado or in a downburst the rain goes where that wind goes
         const glm::vec3 gust = Storms::tornadoWind(scene.storms(), eye) + Storms::downburstWind(scene.storms(), eye);
         glm::vec2 g = glm::vec2(gust.x, gust.z) * 0.45f;
@@ -221,9 +249,15 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
     m_streaks.reserve(m_drops.size());
     for (Drop& d : m_drops) {
         glm::vec3 vel(wind.x, -d.speed, wind.y);
-        if (snow) {   // flakes flutter about as they drift down
-            vel.x += std::sin(m_time * (1.1f + d.seed) + d.seed * 40.0f) * 0.9f;
-            vel.z += std::cos(m_time * (0.9f + d.seed) + d.seed * 17.0f) * 0.9f;
+        if (snow) {   // flakes flutter about as they drift down (in a blizzard, swirl in the gusts)
+            const float flutter = blizzard ? 3.5f : 0.9f;
+            vel.x += std::sin(m_time * (1.1f + d.seed) + d.seed * 40.0f) * flutter;
+            vel.z += std::cos(m_time * (0.9f + d.seed) + d.seed * 17.0f) * flutter;
+            if (blizzard) vel.y += std::sin(m_time * 2.3f + d.seed * 9.0f) * 1.5f;
+        }
+        if (dust) {   // grains bounce along in gusts, rising and falling
+            vel *= 0.85f + 0.3f * std::sin(m_time * 1.7f + d.seed * 23.0f);
+            vel.y = std::sin(m_time * (2.0f + d.seed) + d.seed * 31.0f) * 2.0f - d.speed;
         }
         d.pos += vel * dt;
         // Keep them around the camera as it moves (a drop that falls out one side comes back in the other).
@@ -248,11 +282,23 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
             s.bottom = d.pos;
             s.width = 0.16f + 0.5f * d.seed;
             s.alpha = 2.6f;   // (rain is drawn faint: this makes the ice solid white)
+            s.tint = glm::vec3(0.95f, 0.97f, 1.0f);
+        } else if (dust) {
+            // Sand: a short brown blur along the wind (a grain is tiny; the blur is it moving).
+            s.top = d.pos - vel * (1.0f / 30.0f);
+            s.bottom = d.pos;
+            s.width = 0.04f + 0.08f * d.seed;
+            s.alpha = (0.22f + 0.25f * d.seed) * (0.6f + 0.4f * pour);
+            s.tint = glm::mix(glm::vec3(0.80f, 0.60f, 0.38f), glm::vec3(0.92f, 0.78f, 0.56f), d.seed);
         } else if (snow) {
             s.width = 0.07f + 0.06f * d.seed;
             s.top = d.pos + glm::vec3(0.0f, s.width * 0.5f, 0.0f);
             s.bottom = d.pos - glm::vec3(0.0f, s.width * 0.5f, 0.0f);
             s.alpha = 0.85f;
+            if (blizzard) {   // (fast flakes smear into short streaks)
+                s.top = d.pos - vel * (1.0f / 60.0f);
+                s.bottom = d.pos;
+            }
         } else {
             // A streak as long as the drop moves while a camera's shutter is open (about a
             // fortieth of a second): rain in a photo is blurred lines, not dots. Soft-edged,
@@ -262,6 +308,7 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
             const float big = d.seed * d.seed;
             s.width = 0.03f + 0.045f * big;
             s.alpha = (0.14f + 0.2f * big) * (0.7f + 0.3f * pour);
+            s.tint = glm::vec3(0.78f, 0.84f, 0.92f);
         }
         m_streaks.push_back(s);
     }

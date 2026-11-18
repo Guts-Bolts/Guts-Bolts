@@ -567,6 +567,13 @@ void stop(Scene& scene, uint32_t id, bool now) {
     }
 }
 
+void reset(Scene& scene) {
+    State& st = scene.disasters();
+    const uint32_t serial = st.boltSerial;
+    st = State{};
+    st.boltSerial = serial;
+}
+
 void stopAll(Scene& scene) {
     for (Disaster& d : scene.disasters().list) { d.stopping = true; d.lifeLeft = 0.0f; }
     scene.disasters().publish = 0.0f;
