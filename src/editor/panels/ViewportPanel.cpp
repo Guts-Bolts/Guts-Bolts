@@ -11,6 +11,7 @@
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
 #include "../../scene/Physics.h"
+#include "../../scene/TerrainContact.h"
 #include "../../scripting/Shapecasts.h"
 #include "../../scene/EditMesh.h"
 #include "../../game/GameSession.h"
@@ -111,6 +112,11 @@ std::vector<uint64_t> hitsOf(Scene& scene, const std::vector<SceneNode*>& moving
             if (Physics::obbOverlap(boxes[i], oo, nrm, depth) && depth > 0.002f) { hits.push_back(o->id); return; }
         }
     });
+    // The terrain is solid ground too: a part pushed into a hill stops on top of it.
+    const SceneNode* ground = scene.terrainNode();
+    if (!scene.terrain().empty() && ground && ground->canCollide)
+        for (const OBB& b : boxes)
+            if (TerrainContact::sinkDepth(scene.terrain(), b) > 0.002f) { hits.push_back(Scene::kTerrainId); break; }
     return hits;
 }
 
