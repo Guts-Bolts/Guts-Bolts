@@ -606,20 +606,22 @@ void main() {
         // Close-up detail for each ground: pebbles, grass blades, sand ripples, cracks.
         vec2 cid;
         vec3 peb = voronoi(p * 2.4, cid);                         // little stones (dirt, mud)
-        vec3 crk = voronoi(p * vec2(0.45, 0.9) + vec2(vWorldPos.y * 0.3, 0.0), cid);   // rock: cracked slabs
+        // (On cliffs the pattern stands up the face instead of being stretched down it.)
+        vec2 rp = N.y < 0.7 ? vec2(dot(vWorldPos.xz, normalize(vec2(-N.z, N.x) + 1e-4)), vWorldPos.y) : p;
+        vec3 crk = voronoi(rp * vec2(0.45, 0.9), cid);           // rock: cracked slabs
         float fBlade = fadeAt(px, 0.06), fPeb = fadeAt(px, 0.25), fRip = fadeAt(px, 0.9), fCrk = fadeAt(px, 0.6);
         float blades = vnoise(p * 30.0) * 0.6 + vnoise(p * 61.0) * 0.4;
         float clumps = vnoise(p * 2.7);
-        float pebble = (1.0 - smoothstep(0.18, 0.34, peb.x)) * step(0.45, peb.z);
+        float pebble = (1.0 - smoothstep(0.1, 0.3, peb.x)) * step(0.6, peb.z) * (0.4 + 0.6 * vnoise(p * 0.7));
         float ripple = sin(dot(p, vec2(1.9, 0.7)) + fbm(p * 0.25) * 6.0);
         float crack = lineAA(crk.y, 0.035, px * 0.6);
         vec3 col[6];
         col[0] = mix(mix(vec3(0.24, 0.42, 0.13), vec3(0.38, 0.56, 0.20), n1), vec3(0.52, 0.55, 0.26), smoothstep(0.55, 0.8, macro) * 0.7);   // grass (drier patches)
         col[0] *= mix(1.0, 0.62 + 0.62 * blades, fBlade * 0.8) * (0.85 + 0.25 * clumps);
         col[1] = mix(vec3(0.38, 0.27, 0.17), vec3(0.50, 0.38, 0.25), n1);                     // dirt with pebbles
-        col[1] = mix(col[1], vec3(0.55, 0.52, 0.48) * (0.8 + 0.4 * peb.z), pebble * fPeb * 0.8);
+        col[1] = mix(col[1], mix(col[1], vec3(0.50, 0.47, 0.43), 0.6) * (0.75 + 0.4 * peb.z), pebble * fPeb * 0.7);
         col[2] = mix(vec3(0.80, 0.71, 0.49), vec3(0.91, 0.84, 0.63), n1) * (0.94 + 0.06 * ripple * fRip);   // sand ripples
-        col[3] = mix(vec3(0.34, 0.33, 0.32), vec3(0.54, 0.52, 0.48), strata * 0.6 + n2 * 0.4);  // rock: layers, cracks
+        col[3] = mix(vec3(0.36, 0.35, 0.33), vec3(0.52, 0.50, 0.46), mix(n1, strata, 0.35 * fRip) * 0.6 + n2 * 0.4);  // rock: layers (close up), cracks
         col[3] *= mix(1.0, 0.55, crack * fCrk) * (0.85 + 0.3 * crk.z * fCrk);
         col[4] = mix(vec3(0.84, 0.88, 0.94), vec3(0.98, 0.98, 1.0), n1);                       // snow
         col[5] = mix(vec3(0.20, 0.15, 0.09), vec3(0.30, 0.22, 0.14), n1);                      // mud
@@ -635,11 +637,11 @@ void main() {
         hh[4] = 0.60 + 0.15 * n1;
         hh[5] = 0.20 + 0.2 * pebble;
         float best = 0.0;
-        for (int i = 0; i < 6; ++i) best = max(best, w[i] + hh[i] * 0.6);
+        for (int i = 0; i < 6; ++i) best = max(best, w[i] + hh[i] * 0.4);
         vec3 c = vec3(0.0);
         float r = 0.0, total = 0.0, hgt = 0.0;
         for (int i = 0; i < 6; ++i) {
-            float k = max(w[i] + hh[i] * 0.6 - best + 0.22, 0.0) * step(0.001, w[i]);
+            float k = max(w[i] + hh[i] * 0.4 - best + 0.45, 0.0) * w[i];
             c += lin(col[i]) * k;
             r += rr[i] * k;
             hgt += hh[i] * k;

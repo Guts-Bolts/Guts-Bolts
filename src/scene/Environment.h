@@ -184,7 +184,7 @@ inline Environment withWeatherKind(const Environment& e, int kind) {
     w.sunIntensity = e.sunIntensity * (1.0f - (snow ? 0.35f : fog ? 0.45f : 0.55f) * a);
     w.shadowStrength = e.shadowStrength * (1.0f - (fog ? 0.7f : 0.5f) * a);
     w.fogEnabled = true;
-    w.fogDensity = (e.fogEnabled ? e.fogDensity : 0.0f) + (fog ? 0.015f + 0.06f * a : snow ? 0.022f : 0.012f) * a;
+    w.fogDensity = (e.fogEnabled ? e.fogDensity : 0.0f) + (fog ? 0.012f + 0.028f * a : snow ? 0.022f : 0.012f) * a;
     w.fogColor   = glm::mix(e.fogColor, grey * bright, 0.5f * a + 0.2f);
     w.fogSunGlow = e.fogSunGlow * (1.0f - 0.7f * a);
     // Rain and snow leave a low mist lying on the ground (unless the game made its own);

@@ -105,7 +105,7 @@ void Terrain::generateStyle(TerrainStyle style, int cells, float cellSize, uint3
                     // Mesas: the land steps up in flat layers, with steep cliffs between.
                     const float base = fbm(p.x / 320.0f, p.z / 320.0f, seed);
                     const float t = base * 5.0f;
-                    const float stepped = std::floor(t) + smooth01(0.4f, 0.6f, t - std::floor(t));
+                    const float stepped = std::floor(t) + smooth01(0.2f, 0.8f, t - std::floor(t));
                     // Winding canyons: where a second noise crosses its middle.
                     const float river = std::fabs(fbm(p.x / 380.0f, p.z / 380.0f, seed + 9u, 4) * 2.0f - 1.0f);
                     const float bank = smooth01(0.02f, 0.11f, river);
@@ -154,7 +154,7 @@ void Terrain::generateStyle(TerrainStyle style, int cells, float cellSize, uint3
                 if (m == (uint8_t)TerrainMaterial::Rock || m == (uint8_t)TerrainMaterial::Snow) continue;
                 const glm::vec3 p = pointPos(i, k);
                 if (style == TerrainStyle::Dunes) m = (uint8_t)TerrainMaterial::Sand;
-                else m = (uint8_t)(noise(p.x / 24.0f, p.z / 24.0f, seed + 8u) > 0.55f ? TerrainMaterial::Dirt : TerrainMaterial::Sand);
+                else m = (uint8_t)(fbm(p.x / 70.0f, p.z / 70.0f, seed + 8u, 3) > 0.6f ? TerrainMaterial::Dirt : TerrainMaterial::Sand);
             }
         touched();
     }
@@ -326,9 +326,9 @@ void Terrain::autoPaint(uint32_t seed) {
             if (up < 0.70f + j * 0.08f)                                   m = TerrainMaterial::Rock;
             else if (h > snowLine + j * 10.0f && up > 0.74f)              m = TerrainMaterial::Snow;
             else if (sea && h < 1.6f + j * 1.5f)                          m = TerrainMaterial::Sand;   // beaches and the sea floor
-            else if (hollow > 0.3f && up > 0.9f)              m = TerrainMaterial::Mud;    // wet hollows
+            else if (hollow > 2.5f && up > 0.95f && j < 0.0f)  m = TerrainMaterial::Mud;    // wet hollows
             else if (up < 0.86f + j * 0.04f)                              m = TerrainMaterial::Dirt;
-            else m = noise(p.x / 16.0f, p.z / 16.0f, seed + 1u) > 0.8f ? TerrainMaterial::Dirt : TerrainMaterial::Grass;
+            else m = noise(p.x / 45.0f, p.z / 45.0f, seed + 1u) > 0.82f ? TerrainMaterial::Dirt : TerrainMaterial::Grass;
             m_mat[(size_t)k * np + i] = (uint8_t)m;
         }
     touched();

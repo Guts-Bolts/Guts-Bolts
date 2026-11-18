@@ -185,7 +185,7 @@ int main(int argc, char** argv) {
         Environment fog = e; fog.weather = (int)Weather::Fog;
         Environment sand = e; sand.weather = (int)Weather::Sandstorm;
         Environment bliz = e; bliz.weather = (int)Weather::Blizzard;
-        check(withWeather(fog).fogDensity > withWeather(rain).fogDensity * 2.0f, "fog is much thicker than rain's mist");
+        check(withWeather(fog).fogDensity > withWeather(rain).fogDensity * 1.5f && withWeather(fog).fogFalloff > withWeather(rain).fogFalloff, "fog is much thicker than rain's mist");
         const Environment s = withWeather(sand);
         check(s.skyHorizon.r > s.skyHorizon.b * 1.4f && s.fogColor.r > s.fogColor.b * 1.4f, "a sandstorm turns the sky and haze orange-brown");
         Environment snow = e; snow.weather = (int)Weather::Snow;
