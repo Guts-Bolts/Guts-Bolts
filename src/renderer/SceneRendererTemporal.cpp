@@ -66,7 +66,7 @@ struct SceneRenderer::Temporal {
     int  hw = 0, hh = 0, cur = 0, quality = -1;
     bool histOk = false, on = false;
     glm::mat4 prevVP{1.0f}, vp{1.0f};
-    glm::vec3 prevPos{0.0f};
+    glm::vec3 prevPos{0.0f}, camPos{0.0f};
     glm::vec2 jitterPx{0.0f};
     int frame = 0;
 
@@ -139,7 +139,8 @@ bool SceneRenderer::beginTemporal(const Camera& camera, int outW, int outH, int 
     if (t.quality != gs.aaQuality) { t.quality = gs.aaQuality; t.histOk = false; }
     // A camera cut (a teleport, a new game): start again instead of smearing the old view in.
     if (glm::length(camera.position() - t.prevPos) > 8.0f) t.histOk = false;
-    t.vp = camera.projection() * camera.view();   // (without the jitter, for moving the old frames)
+    t.vp = camera.projection() * camera.view();
+    t.camPos = camera.position();   // (without the jitter, for moving the old frames)
     // Upscaling needs more different spots inside each pixel to fill in the detail.
     const int phases = (inW < outW * 0.9f || gs.aaQuality >= 3) ? 16 : 8;
     const int i = t.frame++ % phases;
@@ -170,6 +171,8 @@ unsigned SceneRenderer::resolveTemporal(const Camera&) {
     t.resolve.setVec2("uInSize", glm::vec2((float)m_hdr.w, (float)m_hdr.h));
     t.resolve.setVec2("uOutSize", glm::vec2((float)t.hw, (float)t.hh));
     t.resolve.setBool("uHistOk", t.histOk);
+    t.resolve.setVec3("uCamPos", t.camPos);
+    t.resolve.setVec3("uPrevCamPos", t.prevPos);
     const int q = std::clamp(gs.aaQuality, 1, 4);
     // (Cinematic keeps the most: still pictures come out clean, like many samples per pixel.)
     t.resolve.setFloat("uBlend", q == 1 ? 0.1f : q == 2 ? 0.08f : q == 3 ? 0.06f : 0.03f);

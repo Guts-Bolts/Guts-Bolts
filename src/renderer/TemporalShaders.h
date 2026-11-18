@@ -32,7 +32,11 @@ uniform vec2  uOutSize;        // screen size
 uniform bool  uHistOk;         // false on the first frame (or after a camera cut)
 uniform float uBlend;          // how much of the new frame goes in (0.1 = a tenth)
 uniform int   uQuality;        // 1 TAA, 2 TSR, 3 TSR (keeps more)
+uniform vec3  uCamPos;         // where the camera is now...
+uniform vec3  uPrevCamPos;     // ...and where it was last frame
 out vec4 FragColor;
+// (The result's alpha holds how far away each pixel was, for the next frame's check below.)
+const float kFar = 60000.0;
 
 vec3 toYCoCg(vec3 c) { return vec3(dot(c, vec3(0.25, 0.5, 0.25)), dot(c, vec3(0.5, 0.0, -0.5)), dot(c, vec3(-0.25, 0.5, -0.25))); }
 vec3 fromYCoCg(vec3 c) { return vec3(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
@@ -95,6 +99,29 @@ void main() {
     vec4 pc = uPrevViewProj * wp;
     vec2 prevUV = pc.xy / pc.w * 0.5 + 0.5;
     bool ok = uHistOk && pc.w > 0.0 && prevUV.x >= 0.0 && prevUV.y >= 0.0 && prevUV.x <= 1.0 && prevUV.y <= 1.0;
+    bool sky = nearest >= 0.99999;
+    float dist = sky ? kFar : min(length(wp.xyz - uCamPos), kFar);
+
+    // Was something else there last frame? The camera alone can't say where a moving
+    // character went, so where it was a moment ago the old picture still shows it (a faint
+    // afterimage), and where it is now the old picture shows what was behind it. Last frame
+    // also saved how far away each pixel was: if that doesn't match how far this spot was
+    // from last frame's camera, something moved in or out, and the old colour is thrown away.
+    // (A few pixels around are checked so still edges, which shift a little with the
+    // jitter, keep their smoothing.)
+    if (ok) {
+        float expect = sky ? kFar : min(length(wp.xyz - uPrevCamPos), kFar);
+        ivec2 hp = ivec2(prevUV * uOutSize);
+        ivec2 hsz = ivec2(uOutSize) - 1;
+        int st = max(1, int(uOutSize.x / uInSize.x + 0.5));
+        bool same = false;
+        for (int k = 0; k < 5; ++k) {
+            ivec2 o = k == 0 ? ivec2(0) : k == 1 ? ivec2(st, 0) : k == 2 ? ivec2(-st, 0) : k == 3 ? ivec2(0, st) : ivec2(0, -st);
+            float was = texelFetch(uHist, clamp(hp + o, ivec2(0), hsz), 0).a;
+            if (abs(was - expect) <= max(0.06 * min(was, expect), 0.15)) same = true;
+        }
+        ok = same;
+    }
 
     float a = 1.0;
     vec3 hist = cur;
@@ -118,7 +145,7 @@ void main() {
     }
     vec3 res = mix(hist, cur, a);
     if (any(isnan(res)) || any(isinf(res))) res = cur;
-    FragColor = vec4(unsquash(res), 1.0);
+    FragColor = vec4(unsquash(res), dist);
 }
 )";
 
