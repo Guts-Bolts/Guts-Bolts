@@ -1,5 +1,5 @@
 export default {
-  id: 'act-of-god', name: 'Act of God', time: 1794891861, tag: 'Engine',
+  id: 'act-of-god', name: 'Act of God', version: '0.8.1', time: 1794891861, tag: 'Engine',
   summary: 'Games can now set off lightning, tornadoes, tsunamis and earthquakes wherever they want, tuned however they want.',
   items: [
     'New Disasters service for scripts: Disasters:Lightning, :Tornado, :Tsunami and :Earthquake, each at a spot you pick',

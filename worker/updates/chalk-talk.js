@@ -1,5 +1,5 @@
 export default {
-  id: 'chalk-talk', name: 'Chalk Talk', time: 1794965815, tag: 'Website',
+  id: 'chalk-talk', name: 'Chalk Talk', version: '0.8.1', time: 1794965815, tag: 'Website',
   summary: 'ContentForge videos now explain things properly, breathe between sentences and draw moving diagrams.',
   items: [
     'The AI writer follows a real teaching shape: a surprising hook, what people wrongly think, the real cause and effect with numbers, and a twist at the end',

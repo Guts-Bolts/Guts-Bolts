@@ -1,5 +1,5 @@
 export default {
-  id: 'no-slip-zone', name: 'No-Slip Zone', time: 1794893715, tag: 'Engine',
+  id: 'no-slip-zone', name: 'No-Slip Zone', version: '0.8.1', time: 1794893715, tag: 'Engine',
   summary: 'Water slides stop teleporting you, dry ground stays dry, and pools stop going spiky.',
   items: [
     'Fixed getting teleported back over and over while riding a water slide in an online game. The server\'s anti-cheat thought the slide\'s speed was a speed hack',

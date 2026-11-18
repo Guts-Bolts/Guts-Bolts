@@ -1,5 +1,5 @@
 export default {
-  id: 'breaking-point', name: 'Breaking Point', time: 1794852743, tag: 'Studio',
+  id: 'breaking-point', name: 'Breaking Point', version: '0.8.1', time: 1794852743, tag: 'Studio',
   summary: 'Find out how much your game can take before a cheap phone gives up, and dress meshes in pictures made by scripts.',
   items: [
     'New Stress test window (Test menu): pick a cheap phone, a mid-range phone or an old laptop, and how many apps are open in the background',
