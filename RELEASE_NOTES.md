@@ -25,6 +25,8 @@ and arteries that spurt with every heartbeat.
 - Journeys show where players go in your game and where they leave.
 - Stress test: see if your game fits on a cheap phone.
 - SurfaceAppearance, and materials made by scripts.
+- With Collisions on, parts you drag stop on the terrain instead of
+  sinking into it.
 - A roomier Fyxa chat.
 
 ## New on the website
