@@ -1,5 +1,5 @@
 // The Viewport with a TERRAIN brush picked: drag on the ground to raise, lower,
-// smooth, flatten or paint it. A circle on the ground shows where the brush is.
+// smooth, flatten, paint or erode it. A circle on the ground shows where the brush is.
 #include "ViewportPanel.h"
 #include "../EditorState.h"
 #include "../../scene/Scene.h"
@@ -13,8 +13,8 @@
 void ViewportPanel::terrainView(const glm::mat4& view, const glm::mat4& proj, const glm::vec2& imgMin,
                                 const glm::vec2& imgSize, float dt) {
     Terrain& terrain = m_scene->terrain();
-    const auto brush = (Terrain::Brush)std::clamp(m_state->terrainBrush, 0, 4);
-    static const char* kNames[] = {"Raise", "Lower", "Smooth", "Flatten", "Paint"};
+    const auto brush = (Terrain::Brush)std::clamp(m_state->terrainBrush, 0, Terrain::kBrushCount - 1);
+    static const char* kNames[] = {"Raise", "Lower", "Smooth", "Flatten", "Paint", "Erode"};
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
     // What to do, at the top.
@@ -84,6 +84,7 @@ void ViewportPanel::terrainView(const glm::mat4& view, const glm::mat4& proj, co
         case Terrain::Brush::Smooth:
         case Terrain::Brush::Flatten: amount = std::min(1.0f, strength * 8.0f * dt); break;
         case Terrain::Brush::Paint:   amount = 1.0f; break;
+        case Terrain::Brush::Erode:   amount = std::min(1.0f, strength * 6.0f * dt); break;   // (rain a dab: Terrain::brush)
     }
     terrain.brush(brush, glm::vec3(at.x, m_sculptLevel, at.z), radius, amount, mat);
 }

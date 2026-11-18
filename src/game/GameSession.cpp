@@ -70,6 +70,8 @@ GameSession::GameSession(Scene* scene) : m_scene(scene), m_scripts(scene) {
 
 void GameSession::start() {
     m_physics.reset();
+    m_scene->storms() = Storms::State{};   // (a playtest starts with the sky the Lighting says, nothing left over)
+    Disasters::reset(*m_scene);
     m_scene->particles().clear();
     m_scene->blasts().clear();
     SoftTissue::clear();   // (dents, cloth and broken pieces only live while playing)
@@ -353,6 +355,7 @@ void GameSession::stop() {
     if (m_quakeSound) Audio::stop(m_quakeSound);
     m_tornadoSound = m_downburstSound = m_quakeSound = 0;
     m_scene->storms() = Storms::State{};   // (no tornado left standing when the game stops)
+    Disasters::reset(*m_scene);            // (nor a disaster; Studio spawners go off again next Play)
     m_tracks.clear();
     if (Player* p = m_scene->player()) p->endPlay();
     m_physics.reset();

@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <vector>
+#include "Environment.h"
 
 class Scene;
 
@@ -11,14 +12,29 @@ class Scene;
 // A Storm is heavy rain with lightning: every so often a bolt strikes somewhere around
 // the camera, the world lights up for a moment, and the thunder arrives a bit later
 // (later and quieter the further away the bolt was).
+// Fog has nothing falling, a Blizzard is snow blown nearly sideways, and a Sandstorm
+// is streaks of dust racing past.
+// When the weather changes, the old one fades out and the new one fades in over a few
+// seconds (sky, fog and how much falls), like real weather rolling in. Outside a running
+// game (Studio while building, or just after Stop) everything shows at once exactly as
+// the Lighting says: no snow left lying from a playtest.
 // Only for looks: each computer runs its own, nothing is sent or saved.
 class WeatherSim {
 public:
     // One falling drop or flake, as a short line from `top` to `bottom`.
-    struct Streak { glm::vec3 top, bottom; float width; float alpha; };
+    struct Streak { glm::vec3 top, bottom; float width; float alpha; glm::vec3 tint{1.0f}; };
 
-    // Move everything on by `dt` seconds around the camera at `eye`.
-    void update(Scene& scene, const glm::vec3& eye, float dt);
+    // Move everything on by `dt` seconds around the camera at `eye`. `live`: a game is
+    // running (things fade in and build up slowly); false = jump straight to how the
+    // Lighting has it.
+    void update(Scene& scene, const glm::vec3& eye, float dt, bool live = true);
+    // How far each kind of weather has faded in (0..1, indexed by Weather).
+    const float* mix() const { return m_mix; }
+    // The Lighting as it looks right now with the weather (part-way while it changes).
+    Environment shown(const Environment& lighting) const;
+    // Forget all built-up weather (wet, snow, fades): the next update starts from nothing.
+    void reset();
+    static constexpr float kFadeSeconds = 6.0f;   // one weather turning into another
     const std::vector<Streak>& streaks() const { return m_streaks; }
     int   kind() const { return m_kind; }        // what's falling now (Weather), 0 = nothing
     float wetness() const { return m_wet; }      // 0 dry .. 1 soaked (rain)
@@ -68,6 +84,7 @@ private:
     std::vector<Streak> m_streaks;
     int      m_kind = 0;
     float    m_wet = 0.0f, m_snow = 0.0f;
+    float    m_mix[kWeatherCount] = {};
     float    m_time = 0.0f;
     float    m_roofTimer = 0.0f;
     uint32_t m_rng = 0x9E3779B9u;

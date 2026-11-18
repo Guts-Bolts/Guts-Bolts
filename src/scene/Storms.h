@@ -3,6 +3,7 @@
 #include <cstdint>
 
 class Scene;
+struct Environment;
 
 // Severe weather: the supercell (a big rotating thunderstorm), tornadoes and downbursts.
 //
@@ -44,6 +45,8 @@ struct State {
     float     downburst = 0.0f;        // 0..1 right now
     glm::vec3 downburstPos{0.0f};
     bool      fresh = false;           // follow() ran since the renderer last looked
+    float     gale = 0.0f;             // a blizzard's or sandstorm's wind right now (studs / second, before gusts)
+    float     galeClock = 0.0f;        // (runs the gusts)
     // The host's plan (simulate()).
     bool      cellPlaced = false;
     glm::vec3 cellHeading{1.0f, 0.0f, 0.0f};
@@ -100,6 +103,10 @@ float hailAt(const Scene& scene, const glm::vec3& p);
 bool active(const Scene& scene);
 // The wind at a place: workspace.GlobalWind plus the tornado's and the downburst's.
 glm::vec3 windAt(const Scene& scene, const glm::vec3& p);
+// A blizzard's or sandstorm's own wind: steady from one side (workspace.GlobalWind's
+// way if there is one), coming in gusts. It shoves loose parts and leans on players.
+glm::vec3 weatherWind(const Scene& scene, const glm::vec3& p);
+float     galeFor(const Environment& e);   // how hard that weather blows (0 for the rest)
 // Just the storm's part of it.
 glm::vec3 tornadoWind(const State& st, const glm::vec3& p);
 glm::vec3 downburstWind(const State& st, const glm::vec3& p);
