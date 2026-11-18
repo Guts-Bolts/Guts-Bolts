@@ -1,5 +1,5 @@
 export default {
-  id: 'solid-ground', name: 'Solid Ground', time: 1795013961, tag: 'Studio',
+  id: 'solid-ground', name: 'Solid Ground', version: '0.8.1', time: 1795013961, tag: 'Studio',
   summary: 'With Collisions on, parts you drag in Studio stop on the terrain instead of sinking through it.',
   items: [
     'Fixed blocks going straight through hills and valleys when you drag them in Studio, even with Collisions turned on. Collisions only checked other parts, never the ground',
