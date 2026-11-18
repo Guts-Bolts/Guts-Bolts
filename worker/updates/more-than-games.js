@@ -1,5 +1,5 @@
 export default {
-  id: 'more-than-games', name: 'More Than Games', time: 1794852600, tag: 'Website',
+  id: 'more-than-games', name: 'More Than Games', version: '0.8.1', time: 1794852600, tag: 'Website',
   summary: 'The Products page got a makeover, and Sysfix and ContentForge each have their own page now.',
   items: [
     'The Products page wears the same red and white as the rest of the site, works in dark mode and fits on phones',

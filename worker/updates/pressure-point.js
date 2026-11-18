@@ -1,5 +1,5 @@
 export default {
-  id: 'pressure-point', name: 'Pressure Point', time: 1794926000, tag: 'Engine',
+  id: 'pressure-point', name: 'Pressure Point', version: '0.8.1', time: 1794926000, tag: 'Engine',
   summary: 'Get shot in an artery and the blood spurts out with every heartbeat while you stagger about and bleed to death. And dead bodies finally lie still.',
   items: [
     'A shot through the neck, the inside of a thigh or the inside of an upper arm opens an artery',

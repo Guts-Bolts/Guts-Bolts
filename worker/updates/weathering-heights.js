@@ -1,5 +1,5 @@
 export default {
-  id: 'weathering-heights', name: 'Weathering Heights', time: 1794972536, tag: 'Studio',
+  id: 'weathering-heights', name: 'Weathering Heights', version: '0.8.1', time: 1794972536, tag: 'Studio',
   summary: 'Studio playtests are real playtests now: Stop puts everything back. Plus new weather that rolls in, and much better terrain.',
   items: [
     'Stop in Studio now puts the whole world back exactly how it was before Play: parts, scripts\' changes, the Lighting and weather, and the terrain to the last bit',

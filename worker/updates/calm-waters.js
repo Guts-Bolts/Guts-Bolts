@@ -1,5 +1,5 @@
 export default {
-  id: 'calm-waters', name: 'Calm Waters', time: 1794852711, tag: 'Engine',
+  id: 'calm-waters', name: 'Calm Waters', version: '0.8.1', time: 1794852711, tag: 'Engine',
   summary: 'Big waves roll instead of spiking, and standing still means standing still.',
   items: [
     'Water with big waves (a high Waves or WaveScale) was a field of tall white and blue spikes. The small choppy waves were being stretched up as tall as the big ones',

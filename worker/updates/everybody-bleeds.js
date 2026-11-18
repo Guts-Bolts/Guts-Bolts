@@ -1,5 +1,5 @@
 export default {
-  id: 'everybody-bleeds', name: 'Everybody Bleeds the Same', time: 1794892400, tag: 'Engine',
+  id: 'everybody-bleeds', name: 'Everybody Bleeds the Same', version: '0.8.1', time: 1794892400, tag: 'Engine',
   summary: 'Blood shows up again on PC, and every player in a server sees the very same blood.',
   items: [
     'Fixed blood not showing at all on PC: pools, splats and stains were being drawn upside down, so the graphics card skipped them',
