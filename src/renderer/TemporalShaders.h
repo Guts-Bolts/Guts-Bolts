@@ -121,6 +121,9 @@ void main() {
             if (abs(was - expect) <= max(0.06 * min(was, expect), 0.15)) same = true;
         }
         ok = same;
+        // Newly seen pixels have no past frames to smooth them, so their edges would come
+        // out jagged: soften them a little with the pixels around instead.
+        if (!same) cur = mix(cur, fromYCoCg(m1 / 9.0), 0.4);
     }
 
     float a = 1.0;
