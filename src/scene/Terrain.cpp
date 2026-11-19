@@ -92,6 +92,20 @@ void Terrain::clear() {
     touched();
 }
 
+void Terrain::copyFrom(const Terrain& other) {
+    if (&other == this) return;
+    m_cells = other.m_cells;
+    m_cell  = other.m_cell;
+    m_h     = other.m_h;
+    m_mat   = other.m_mat;
+    m_version = std::max(m_version, other.m_version);   // (never back to a number the renderer already saw)
+    touched();
+}
+
+bool Terrain::sameAs(const Terrain& other) const {
+    return m_cells == other.m_cells && m_cell == other.m_cell && m_h == other.m_h && m_mat == other.m_mat;
+}
+
 void Terrain::generate(int cells, float cellSize, uint32_t seed, float hills) {
     create(cells, cellSize, 0.0f, TerrainMaterial::Grass);
     hills = std::clamp(hills, 0.0f, 1.0f);
@@ -271,6 +285,11 @@ void Terrain::setMaterial(int i, int k, TerrainMaterial m) {
 
 void Terrain::brush(Brush b, const glm::vec3& c, float radius, float strength, TerrainMaterial m) {
     if (empty() || radius <= 0.0f) return;
+    if (b == Brush::Erode) {   // (rain where the brush is: a few hundred drops a dab)
+        static uint32_t seed = 1;
+        erode(std::clamp(strength, 0.0f, 1.0f), ++seed, glm::vec2(c.x, c.z), radius);
+        return;
+    }
     const float hw = halfWidth();
     const int np = points();
     int i0 = std::max(0, (int)std::floor((c.x - radius + hw) / m_cell)), i1 = std::min(np - 1, (int)std::ceil((c.x + radius + hw) / m_cell));
@@ -303,6 +322,7 @@ void Terrain::brush(Brush b, const glm::vec3& c, float radius, float strength, T
                     break;
                 }
                 case Brush::Paint: m_mat[(size_t)k * np + i] = (uint8_t)m; break;
+                case Brush::Erode: break;
             }
             h = std::clamp(h, kMinHeight, kMaxHeight);
         }

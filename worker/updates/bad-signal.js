@@ -1,5 +1,5 @@
 export default {
-  id: 'bad-signal', name: 'Bad Signal', time: 1794928377, tag: 'Studio',
+  id: 'bad-signal', name: 'Bad Signal', version: '0.8.1', time: 1794928377, tag: 'Studio',
   summary: 'Test your multiplayer game on a laggy phone connection, see the paths players take through your game, and put a short promo line on your game\'s listing.',
   items: [
     'New Network simulator window (Test menu): the players in "Test with N players" can play over Wired, Wi-Fi, 4G, 3G or a bad signal, or your own lag, wobble, lost packets and speed limit',

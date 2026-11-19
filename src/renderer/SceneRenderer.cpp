@@ -642,10 +642,12 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         static const char* testBolts = std::getenv("GB_TEST_LIGHTNING");
         static const float testGap = testBolts ? std::max(0.05f, (float)std::atof(testBolts)) : 0.0f;
         if (testBolts && m_weather.nextStrike > testGap) m_weather.nextStrike = testGap;
-        // Not in a running game (Studio while building): show the storm as the Lighting has it.
-        if (!scene.storms().fresh) Storms::snap(scene);
+        // Not in a running game (Studio while building, or just after Stop): show the storm
+        // as the Lighting has it, and the weather exactly as set (nothing left over from a playtest).
+        const bool live = scene.storms().fresh;
+        if (!live) Storms::snap(scene);
         scene.storms().fresh = false;
-        m_weather.update(scene, camera.position(), dt);
+        m_weather.update(scene, camera.position(), dt, live);
         // Lightning a game called down (Disasters.h): the newest bolt we haven't drawn yet.
         for (const Disasters::State::Bolt& b : scene.disasters().bolts)
             if (b.serial > m_lastBolt) { m_weather.strikeHere(b.pos, camera.position(), b.strength); m_lastBolt = b.serial; }
@@ -654,7 +656,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         Scene& scene; Environment saved;
         ~KeepLighting() { scene.environment() = saved; }
     } keep{scene, scene.environment()};
-    scene.environment() = withWeather(keep.saved);
+    scene.environment() = m_weather.shown(keep.saved);
     // Lightning (a Storm): while the bolt is lit, IT is the light. The "sun" moves to the
     // bolt, blue-white and strong, so everything is lit from that side and throws hard
     // shadows away from it, the clouds around it glow, and the rest of the sky lifts a
@@ -2575,9 +2577,8 @@ void SceneRenderer::drawWeather(Scene& scene, const Camera& camera) {
     const std::vector<WeatherSim::Streak>& streaks = m_weather.streaks();
     if (streaks.empty()) return;
     ribbonBuffers();
-    const bool snow = m_weather.kind() == (int)Weather::Snow;
+    const bool snow = isSnowing(m_weather.kind());
     const glm::vec3 eye = camera.position();
-    const glm::vec3 tint = snow ? glm::vec3(1.0f) : glm::vec3(0.78f, 0.84f, 0.92f);
     std::vector<RibbonVertex> verts;
     verts.reserve(streaks.size() * 6);
     for (const WeatherSim::Streak& s : streaks) {
@@ -2593,7 +2594,7 @@ void SceneRenderer::drawWeather(Scene& scene, const Camera& camera) {
         const float a = s.alpha * glm::clamp((d - 1.5f) / 3.0f, 0.0f, 1.0f) *
                         glm::clamp((WeatherSim::kHalfBox - d) / 6.0f, 0.0f, 1.0f);
         if (a <= 0.003f) continue;
-        const glm::vec4 top(tint, snow ? a : a * 0.3f), bottom(tint, a);   // rain: fainter at the tail
+        const glm::vec4 top(s.tint, snow ? a : a * 0.3f), bottom(s.tint, a);   // rain and dust: fainter at the tail
         const RibbonVertex v0{s.top - side, {0, 0}, top}, v1{s.top + side, {1, 0}, top},
                            v2{s.bottom + side, {1, 1}, bottom}, v3{s.bottom - side, {0, 1}, bottom};
         verts.insert(verts.end(), {v0, v1, v2, v0, v2, v3});

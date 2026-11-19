@@ -900,15 +900,49 @@ int t_FillBall(lua_State* L) {
     return 0;
 }
 int t_Clear(lua_State* L) { terrainOf(L).clear(); return 0; }
-// Terrain:Generate(seed, hills, size): rolling hills. hills 0..1, size in studs across.
+// Terrain:Generate(seed, hills, size, style): new land. hills 0..1, size in studs across,
+// style "Hills" (the default), "Mountains", "Islands", "Canyons", "Dunes" or "Plains".
 int t_Generate(lua_State* L) {
     Terrain& t = terrainOf(L);
     const uint32_t seed = (uint32_t)luaL_optinteger(L, 2, 1);
     const float hills = (float)luaL_optnumber(L, 3, 0.5);
     const float size = (float)luaL_optnumber(L, 4, 512.0);
-    t.generate((int)(size / Terrain::kDefaultCell), Terrain::kDefaultCell, seed, hills);
+    TerrainStyle style = TerrainStyle::Hills;
+    if (!lua_isnoneornil(L, 5)) {
+        std::string name = luaL_checkstring(L, 5);
+        if (const size_t dot = name.rfind('.'); dot != std::string::npos) name = name.substr(dot + 1);
+        bool found = false;
+        for (int i = 0; i < kTerrainStyleCount; ++i) {
+            const std::string want = kTerrainStyleNames[i];
+            if (name.size() == want.size() &&
+                std::equal(name.begin(), name.end(), want.begin(), [](char a, char b) { return std::tolower((unsigned char)a) == std::tolower((unsigned char)b); })) {
+                style = (TerrainStyle)i;
+                found = true;
+            }
+        }
+        if (!found) return luaL_error(L, "'%s' isn't a kind of land (Hills, Mountains, Islands, Canyons, Dunes or Plains)", name.c_str());
+    }
+    t.generateStyle(style, (int)(size / Terrain::kDefaultCell), Terrain::kDefaultCell, seed, hills);
     return 0;
 }
+// Terrain:Erode(amount, position, radius): years of rain carving gullies (amount 0..1).
+// With a position and radius, only there.
+int t_Erode(lua_State* L) {
+    Terrain& t = terrainOf(L);
+    const float amount = std::clamp((float)luaL_optnumber(L, 2, 0.35), 0.0f, 1.0f);
+    glm::vec2 at(0.0f);
+    float r = 0.0f;
+    if (!lua_isnoneornil(L, 3)) {
+        const glm::vec3 p = LuaApi::checkVector3(L, 3);
+        at = glm::vec2(p.x, p.z);
+        r = std::max(0.5f, (float)luaL_optnumber(L, 4, 16.0));
+    }
+    static uint32_t seed = 1;
+    t.erode(amount, ++seed, at, r);
+    return 0;
+}
+// Terrain:AutoPaint(): paint the ground by its shape (rock cliffs, snowy peaks, beaches...).
+int t_AutoPaint(lua_State* L) { terrainOf(L).autoPaint(); return 0; }
 // Terrain:GetHeight(x, z) or (position): the ground height there, or nil off the edge.
 int t_GetHeight(lua_State* L) {
     Terrain& t = terrainOf(L);
@@ -929,7 +963,7 @@ int t_GetMaterial(lua_State* L) {
     return 1;
 }
 // Terrain:Sculpt(brush, position, radius, strength, material): one dab of a Studio
-// brush. brush = "Raise", "Lower", "Smooth", "Flatten" or "Paint".
+// brush. brush = "Raise", "Lower", "Smooth", "Flatten", "Paint" or "Erode".
 int t_Sculpt(lua_State* L) {
     Terrain& t = terrainOf(L);
     const std::string b = luaL_checkstring(L, 2);
@@ -944,12 +978,14 @@ int t_Sculpt(lua_State* L) {
     else if (b == "Smooth") brush = Terrain::Brush::Smooth;
     else if (b == "Flatten") brush = Terrain::Brush::Flatten;
     else if (b == "Paint") brush = Terrain::Brush::Paint;
-    else return luaL_error(L, "Unknown brush '%s' (try Raise, Lower, Smooth, Flatten or Paint)", b.c_str());
+    else if (b == "Erode") brush = Terrain::Brush::Erode;
+    else return luaL_error(L, "Unknown brush '%s' (try Raise, Lower, Smooth, Flatten, Paint or Erode)", b.c_str());
     t.brush(brush, p, r, strength, m);
     return 0;
 }
 const luaL_Reg kTerrainMethods[] = {
     {"FillBlock", t_FillBlock}, {"FillBall", t_FillBall}, {"Clear", t_Clear}, {"Generate", t_Generate},
+    {"Erode", t_Erode}, {"AutoPaint", t_AutoPaint},
     {"GetHeight", t_GetHeight}, {"GetMaterial", t_GetMaterial}, {"Sculpt", t_Sculpt},
     {nullptr, nullptr}};
 
@@ -4456,7 +4492,7 @@ int light_newindex(lua_State* L) {
                 return 0;
             }
         }
-        return luaL_error(L, "'%s' isn't a kind of weather (use \"Clear\", \"Rain\", \"Snow\", \"Storm\" or \"Supercell\")", name.c_str());
+        return luaL_error(L, "'%s' isn't a kind of weather (use \"Clear\", \"Rain\", \"Snow\", \"Storm\", \"Supercell\", \"Fog\", \"Blizzard\" or \"Sandstorm\")", name.c_str());
     }
     if (is(k, "CloudType")) {
         const char* w = luaL_tolstring(L, 3, nullptr);

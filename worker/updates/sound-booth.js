@@ -1,5 +1,5 @@
 export default {
-  id: 'sound-booth', name: 'Sound Booth', time: 1794956825, tag: 'Website',
+  id: 'sound-booth', name: 'Sound Booth', version: '0.8.1', time: 1794956825, tag: 'Website',
   summary: 'ContentForge videos now come with music, whooshes, a voice you pick and a cover picture.',
   items: [
     'Five music loops made by ContentForge itself: Curious, Upbeat, Chill, Tense and Epic. Nobody else owns them, so they never get copyright claims',

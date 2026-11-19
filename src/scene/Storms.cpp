@@ -322,6 +322,30 @@ void follow(Scene& scene, float dt) {
     st.quake += (e.quake - st.quake) * k;
     if (e.quake <= 0.0f && st.quake < 0.01f) st.quake = 0.0f;
     st.quakeClock += dt;
+    // A blizzard or sandstorm's wind rises and dies down over a few seconds.
+    st.gale += (galeFor(e) - st.gale) * (1.0f - std::exp(-dt / 3.0f));
+    if (st.gale < 0.05f && galeFor(e) <= 0.0f) st.gale = 0.0f;
+    st.galeClock += dt;
+}
+
+float galeFor(const Environment& e) {
+    const float a = std::clamp(e.weatherAmount, 0.0f, 1.0f);
+    if (e.weather == (int)Weather::Blizzard) return 32.0f * (0.7f + 0.5f * a);
+    if (e.weather == (int)Weather::Sandstorm) return 40.0f * (0.6f + 0.6f * a);
+    return 0.0f;
+}
+
+glm::vec3 weatherWind(const Scene& scene, const glm::vec3& p) {
+    const State& st = scene.storms();
+    if (st.gale <= 0.0f) return glm::vec3(0.0f);
+    const glm::vec3 g = scene.world().globalWind;
+    glm::vec3 dir(g.x, 0.0f, g.z);
+    dir = glm::length(dir) > 0.5f ? glm::normalize(dir) : glm::vec3(0.93f, 0.0f, 0.36f);
+    // Gusts: slow swells that roll across the map, with quicker flurries on top.
+    const float t = st.galeClock;
+    const float gust = 1.0f + 0.3f * std::sin(t * 0.7f - glm::dot(glm::vec2(p.x, p.z), glm::vec2(dir.x, dir.z)) * 0.02f)
+                            + 0.12f * std::sin(t * 2.9f + p.x * 0.05f) * std::sin(t * 2.3f + p.z * 0.05f);
+    return dir * st.gale * gust;
 }
 
 void snap(Scene& scene) {
@@ -332,11 +356,12 @@ void snap(Scene& scene) {
     st.downburst = e.downburst;
     st.downburstPos = e.downburstPos;
     st.quake = 0.0f;   // (the ground doesn't shake while you build)
+    st.gale = galeFor(e);
 }
 
 bool active(const Scene& scene) {
     const State& st = scene.storms();
-    return st.tornado > 0.0f || st.downburst > 0.0f || st.quake > 0.0f || Disasters::any(scene);
+    return st.tornado > 0.0f || st.downburst > 0.0f || st.quake > 0.0f || st.gale > 0.0f || Disasters::any(scene);
 }
 
 glm::vec3 tornadoWind(const State& st, const glm::vec3& p) {
@@ -390,7 +415,7 @@ glm::vec3 downburstWind(const State& st, const glm::vec3& p) {
 
 glm::vec3 windAt(const Scene& scene, const glm::vec3& p) {
     const State& st = scene.storms();
-    return scene.world().globalWind + tornadoWind(st, p) + downburstWind(st, p) + Disasters::wind(scene, p);
+    return scene.world().globalWind + tornadoWind(st, p) + downburstWind(st, p) + weatherWind(scene, p) + Disasters::wind(scene, p);
 }
 
 float airBoost(const Scene& scene, const glm::vec3& p) {
@@ -411,7 +436,7 @@ float airBoost(const Scene& scene, const glm::vec3& p) {
 glm::vec3 characterPush(const Scene& scene, const glm::vec3& p, const glm::vec3& velocity) {
     const State& st = scene.storms();
     glm::vec3 push = groundJolt(scene, p) + Disasters::characterPush(scene, p, velocity);   // (the ground moving under your feet; disasters)
-    const glm::vec3 wind = tornadoWind(st, p) + downburstWind(st, p);
+    const glm::vec3 wind = tornadoWind(st, p) + downburstWind(st, p) + weatherWind(scene, p);
     if (glm::length(wind) < 12.0f) return push;   // (a breeze doesn't move a person)
     // Like the air on parts: the push grows with the square of how much faster the
     // wind is than you. About 60 studs/s shoves you along; over 125 lifts you.

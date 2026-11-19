@@ -1,4 +1,5 @@
 #pragma once
+#include "../scene/PlaySnapshot.h"
 #include "AiTools.h"
 #include <functional>
 #include <memory>
@@ -563,7 +564,7 @@ private:
     int  m_objCounter  = 0;
     int  m_frame       = 0;
 
-    std::string              m_playSnapshot;   // world before Play
+    PlaySnapshot             m_playSnapshot;   // the world before Play, put back exactly on Stop
     // AI tools: named save points (checkpoint tool) and a navmesh baked from the
     // game as it is (bake_navmesh / find_path work outside playtests too).
     std::map<std::string, std::string> m_aiCheckpoints;

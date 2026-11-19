@@ -88,10 +88,24 @@ public:
                                  bool sliding);
 
     // While a session is set, the viewport is in Play mode.
-    // (Stop: the editing camera again, whatever the game's scripts did to it.)
+    // (Stop: the editing camera again, whatever the game's scripts did to it, back where
+    // it was before Play, like Roblox Studio.)
     void setSession(GameSession* session) {
+        if (session && !m_session) {
+            m_editView = {m_camera.yaw, m_camera.pitch, m_camera.distance, m_camera.pivot,
+                          m_camera.fov, m_camera.orthographic, m_camera.orthoSize, true};
+        }
         m_session = session;
-        if (!session) { m_camera.clip = -1.0f; m_camera.clearScripted(); m_camera.fov = 60.0f; }
+        if (!session) {
+            m_camera.clip = -1.0f; m_camera.clearScripted(); m_camera.fov = 60.0f;
+            if (m_editView.saved) {
+                m_camera.yaw = m_editView.yaw; m_camera.pitch = m_editView.pitch;
+                m_camera.distance = m_editView.distance; m_camera.pivot = m_editView.pivot;
+                m_camera.fov = m_editView.fov; m_camera.orthographic = m_editView.ortho;
+                m_camera.orthoSize = m_editView.orthoSize;
+                m_editView.saved = false;
+            }
+        }
     }
     void focus() { m_wantFocus = true; }
     void setTeam(TeamCreate* t) { m_team = t; }
@@ -103,6 +117,9 @@ public:
     std::function<void()> contextMenu;
 
 private:
+    // Where the editing camera was when Play started (Stop puts it back).
+    struct EditView { float yaw = 0, pitch = 0, distance = 0; glm::vec3 pivot{0.0f}; float fov = 60; bool ortho = false; float orthoSize = 0; bool saved = false; };
+    EditView m_editView;
     // The navmesh view: its own look at the parts, rebaked when they change.
     void updateNavOverlay();
     // Dragging the move / scale / rotate handles: where it started (for the readout
@@ -153,6 +170,7 @@ private:
     bool objectModal(const glm::mat4& view, const glm::mat4& proj, const glm::vec2& imgMin, const glm::vec2& imgSize);
     struct ObjectModalItem { uint64_t id; Transform start; glm::mat4 world; };
     std::vector<ObjectModalItem> m_objItems;
+    std::vector<uint64_t> m_objHits;   // what the moved things already touched (Collisions)
     bool m_objOn = false;
     bool drawModeMenu(ImVec2 imgPos);   // true while the mouse is on it
     // Armatures: bones drawn over the view; returns the bone whose joint is under the mouse.

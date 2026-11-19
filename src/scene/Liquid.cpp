@@ -652,12 +652,18 @@ void Liquid::step(float dt, Scene& scene) {
             // surface tension (drops pull on each other, so they bead up and hang in strands).
             m_v[i] = m_dp[i] + f.viscosity * acc + pull * (f.tension * kTension * dt);
             // Friction and "don't go into walls" (a lone drop sticks to things; a stream slides).
-            collide(m_p[i], m_v[i], m_neighCount[i] < 3 ? dt * 10.0f : dt, m_x[i]);
-            m_x[i] = m_p[i];
+            // (Moved into m_x, not m_p: the other cores are still reading m_p for this
+            // drop's neighbours. Changing it here made every run come out a bit different.)
+            glm::vec3 p = m_p[i];
+            collide(p, m_v[i], m_neighCount[i] < 3 ? dt * 10.0f : dt, m_x[i]);
+            m_x[i] = p;
             // A stray drop sitting on its own dries up in a few seconds.
             if (m_neighCount[i] < 3 && glm::dot(m_v[i], m_v[i]) < 1.0f) m_age[i] += dt * 30.0f;
             m_near[i] = (float)m_neighCount[i];
         }
+    });
+    parallel(n, [&](size_t a, size_t b) {
+        for (size_t i = a; i < b; ++i) m_p[i] = m_x[i];
     });
     lap(3);
 }

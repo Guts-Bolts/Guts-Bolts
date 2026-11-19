@@ -1,3 +1,50 @@
+# Guts&Bolts 0.8.1: Stairway to Heaven (November 18, 2026)
+
+You can finally walk up stairs. Which is handy, because there is now a
+lot more on the way up there: tornadoes, tsunamis, lightning, blizzards,
+and arteries that spurt with every heartbeat.
+
+## New in games
+- Walk up stairs, curbs and small ledges without jumping, like on
+  Roblox. Scripts get Humanoid HipHeight and MaxSlopeAngle.
+- Natural disasters: games can set off lightning, tornadoes, tsunamis
+  and earthquakes anywhere, plus a Disaster Survival template.
+- Arteries: a shot to the neck, thigh or upper arm spurts blood with each
+  heartbeat while you stagger and bleed out. Dead bodies now lie still.
+- Blood shows on PC again, and the server decides it, so every player
+  sees the same blood in the same place.
+- Weather rolls in over a few seconds, with new Fog, Blizzard and
+  Sandstorm, and wind that shoves loose parts and players.
+
+## New in Studio
+- Stop puts everything back exactly how it was before Play, terrain,
+  weather and camera too.
+- Terrain can make Mountains, Islands, Canyons, Dunes and Plains, carve
+  valleys with Erode, and paint itself with Auto Paint.
+- Network simulator: test players on Wi-Fi, 4G, 3G or a bad signal.
+- Journeys show where players go in your game and where they leave.
+- Stress test: see if your game fits on a cheap phone.
+- SurfaceAppearance, and materials made by scripts.
+- With Collisions on, parts you drag stop on the terrain instead of
+  sinking into it.
+- A roomier Fyxa chat.
+
+## New on the website
+- Promotional text: a short line on your game's card for an event.
+- A new Products page, with pages for Sysfix and ContentForge.
+- Live auctions are back on the front page and in the Catalog.
+- A clearer privacy policy: we never sell your data.
+
+## Fixes
+- Water slides stop teleporting you, dry ground stays dry, and pools and
+  big waves stop going spiky.
+- Moving characters no longer leave a faint afterimage behind them.
+- Water slides stop randomly throwing you off: water flows the same way
+  every time.
+- Equipped emotes show up as themselves in games.
+- No more "undefined" text on website pages.
+- Better sound decoding, and dedicated servers start up reliably.
+
 # Guts&Bolts 0.8.0: Everything Everywhere All at Once (November 13, 2026)
 
 Guts&Bolts isn't just games any more. There's a new Home, Art, Paste and

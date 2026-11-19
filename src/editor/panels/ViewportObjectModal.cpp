@@ -99,6 +99,7 @@ bool ViewportPanel::objectModal(const glm::mat4& view, const glm::mat4& proj, co
             sum += glm::vec3(n->worldMatrix()[3]);
         }
         if (m_objItems.empty()) { finish(false); return false; }
+        m_objHits = st.collisions && st.objectModal == ObjectModal::Grab ? collisionsOf(*m_scene, movers) : std::vector<uint64_t>();
         m_modalPivot = sum / (float)m_objItems.size();
         m_modalMouse0 = io.MousePos;
         m_modalAxis = -1;
@@ -187,6 +188,13 @@ bool ViewportPanel::objectModal(const glm::mat4& view, const glm::mat4& proj, co
                 n->transform = it.start;
                 placeAt(*n, glm::translate(glm::mat4(1.0f), delta) * it.world);
             }
+        if (st.collisions) {   // Collisions on: stop against parts and the terrain, like the Move arrows
+            std::vector<SceneNode*> movers;
+            std::vector<Transform> starts;
+            for (const ObjectModalItem& it : m_objItems)
+                if (SceneNode* n = m_scene->findById(it.id)) { movers.push_back(n); starts.push_back(it.start); }
+            stopAtCollisions(*m_scene, movers, starts, m_objHits, true);
+        }
         std::snprintf(header, sizeof(header), "Move   %.2f studs  (%.2f, %.2f, %.2f)%s%s", glm::length(delta), delta.x, delta.y, delta.z,
                       axisText, hasTyped ? "  [typed]" : "");
     } else if (st.objectModal == ObjectModal::Rotate) {
