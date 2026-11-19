@@ -445,9 +445,10 @@ void AppWindow::endFrame(const std::string& screenshotPath) {
     if (!screenshotPath.empty()) saveScreenshot(screenshotPath);
     SDL_GL_SwapWindow(m_sdl);
 
+    // FPS limit (when VSync is off), or battery saver's 30 FPS (with VSync too).
     const GraphicsSettings& gs = GraphicsSettings::get();
-    if (!gs.vsync && gs.fpsCap > 0 && !m_fixedDt && !m_headsetPaced) {
-        double step = 1.0 / gs.fpsCap;
+    if (gs.frameCap() > 0 && !m_fixedDt && !m_headsetPaced) {
+        double step = 1.0 / gs.frameCap();
         m_nextFrame += step;
         double t = now();
         if (m_nextFrame > t) SDL_Delay((Uint32)((m_nextFrame - t) * 1000.0));

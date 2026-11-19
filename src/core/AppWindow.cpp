@@ -227,10 +227,10 @@ void AppWindow::endFrame(const std::string& screenshotPath) {
     if (!screenshotPath.empty()) saveScreenshot(screenshotPath);
     glfwSwapBuffers(m_window);
 
-    // FPS limit (only when VSync is off).
+    // FPS limit (when VSync is off), or battery saver's 30 FPS (with VSync too).
     const GraphicsSettings& gs = GraphicsSettings::get();
-    if (!gs.vsync && gs.fpsCap > 0 && !m_fixedDt && !m_headsetPaced) {
-        double step = 1.0 / gs.fpsCap;
+    if (gs.frameCap() > 0 && !m_fixedDt && !m_headsetPaced) {
+        double step = 1.0 / gs.frameCap();
         m_nextFrame += step;
         double now = glfwGetTime();
         if (m_nextFrame > now) {
