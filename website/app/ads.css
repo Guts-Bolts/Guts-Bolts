@@ -21,3 +21,25 @@
   :root:not([data-theme="light"]) .gb-cookies { background: #1b212b; color: #e8ecf2; }
   :root:not([data-theme="light"]) .gb-cookies a, :root:not([data-theme="light"]) .gb-ad-club a { color: #ff7a6e; }
 }
+
+/* The "Privacy choices" panel (ads.js openPrivacyChoices). */
+.gb-choices-back { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.gb-choices { background: #fff; color: #222; border: 2px solid #c81e1e; border-radius: 4px; box-shadow: 0 6px 28px rgba(0,0,0,.35);
+  max-width: 520px; width: 100%; max-height: calc(100vh - 32px); overflow: auto; padding: 14px 18px; font-size: 13px; line-height: 1.5; }
+.gb-choices h2 { margin: 0 0 6px; font-size: 18px; color: #c81e1e; }
+.gb-choices p { margin: 0 0 10px; }
+.gb-choice { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; margin-bottom: 6px; border: 1px solid #d6d6d6; border-radius: 3px; cursor: pointer; }
+.gb-choice:has(input:checked) { border-color: #c81e1e; background: rgba(200,30,30,.05); }
+.gb-choice input { margin-top: 3px; }
+.gb-choice b, .gb-choice small { display: block; }
+.gb-choice small { color: #666; }
+.gb-choices-note { font-size: 12px; color: #2d6a2d; }
+.gb-choices-links a { color: #c81e1e; font-weight: bold; }
+.gb-choices .gb-cookies-buttons { justify-content: flex-end; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .gb-choices { background: #1b212b; color: #e8ecf2; }
+  :root:not([data-theme="light"]) .gb-choice { border-color: #334052; }
+  :root:not([data-theme="light"]) .gb-choice small { color: #9aa5b5; }
+  :root:not([data-theme="light"]) .gb-choices h2, :root:not([data-theme="light"]) .gb-choices-links a { color: #ff7a6e; }
+  :root:not([data-theme="light"]) .gb-choices-note { color: #7fd17f; }
+}

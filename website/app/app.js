@@ -3921,7 +3921,8 @@ pages.forgot = async () => {
 
 // Support: ask staff for help (even when you can't log in). Tickets belong to this browser:
 // staff's answers show up here, and so does a password reset code if staff send one.
-const TICKET_TOPICS = [['password', 'I forgot my password'], ['account', 'Something else about my account'], ['underage', 'An account belongs to someone under 18 (parents start here)'], ['other', 'Something else']];
+const TICKET_TOPICS = [['password', 'I forgot my password'], ['account', 'Something else about my account'], ['underage', 'An account belongs to someone under 18 (parents start here)'],
+  ['privacy', 'My data: see it, fix it, delete it, get a copy, or opt out'], ['copyright', 'Copyright: someone uploaded my work'], ['other', 'Something else']];
 pages.support = async () => {
   const topic = new URLSearchParams(location.hash.split('?')[1] || '').get('topic') || (signedIn() ? 'account' : 'password');
   const r = await pageCall('support.mine', {});
@@ -4310,8 +4311,9 @@ pages.terms = async () => {
         breaks the rules.</li>
       <li>You can delete what you upload. Copies other people already bought or used in their games may stay.</li>
       <li>Think something on Guts&amp;Bolts is your work, uploaded without asking? Tell staff on the
-        <a href="#/support">Support</a> page with what it is and why it's yours, and we'll look at it and take it down
-        if it's copied. People who keep uploading other people's work get banned.</li>
+        <a href="#/support?topic=copyright">Support</a> page with what it is and why it's yours, and we'll look at it and take it down
+        if it's copied. People who keep uploading other people's work get banned. The full steps (and how to send a
+        counter-notice if your upload was taken down by mistake) are on our <a href="../copyright">Copyright page</a>.</li>
     </ul>
 
     <h2>7. Rules</h2>

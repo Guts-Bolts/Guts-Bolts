@@ -331,7 +331,7 @@ const kDeletedName = 'Deleted user';
 // Support tickets (ServerSupport.cpp has the same): anyone, even someone who can't log in,
 // can ask staff for help. A few open at once per device, and a few a day.
 const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 1000, kResetHours = 24;
-const TICKET_TOPICS = ['password', 'account', 'underage', 'other'];   // (underage: a parent or someone else says an account belongs to someone under 18)
+const TICKET_TOPICS = ['password', 'account', 'underage', 'privacy', 'copyright', 'other'];   // (underage: a parent or someone else says an account belongs to someone under 18; privacy: see/fix/delete/copy my data or opt out; copyright: a takedown notice, website/copyright.html)
 const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass: 'pass' })[a.kind] || a.kind;
 const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste', 'course'];   // art: "piece" or "piece:comment" (art.js)
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.

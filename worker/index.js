@@ -24,6 +24,7 @@ import { withSecurityHeaders } from './security.js';
 import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { handleAds, withAdsMeta } from './ads.js';
+import { handleLegal } from './legal.js';
 import { handleStripe } from './stripe.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
 import { checkSupabaseHealth, listSupabaseActivity, supabasePublicConfig } from './supabase.js';
@@ -261,6 +262,8 @@ async function route(request, env, ctx) {
     if (url.pathname.startsWith('/download/')) return handleDownload(request, env, url);
     const ads = handleAds(request, env, url);   // /ads.txt and /ads-config (ads.js)
     if (ads) return ads;
+    const legal = handleLegal(request, url);   // robots.txt, sitemap.xml, security.txt, gpc.json, /terms (legal.js)
+    if (legal) return legal;
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
     // Stripe's own servers call this (signature-checked in stripe.js), so it skips the bot check.
     if (url.pathname === '/api/stripe/webhook') return handleStripe(request, env, url);

@@ -7,31 +7,15 @@
 <meta name="description" content="What Guts&amp;Bolts keeps about you, how Fyxa works with your data, how Google uses data for ads, and how to get your data removed.">
 <link rel="icon" href="img/icon.png">
 <link rel="stylesheet" href="fonts/font.css">
-<style>
-  :root { --red: #c81e1e; --text: #222; --muted: #666; --panel: #fff; --bg: #eee; --line: #d6d6d6; }
-  @media (prefers-color-scheme: dark) { :root { --text: #e8ecf2; --muted: #9aa5b5; --panel: #1b212b; --bg: #0e131b; --line: #334052; } }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: var(--gb-font); font-size: 14px; line-height: 1.6; color: var(--text); background: var(--bg); }
-  header { background: var(--red); border-bottom: 3px solid #861616; }
-  header .wrap { max-width: 860px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 14px; }
-  header img { height: 42px; width: auto; display: block; }
-  header a.back { margin-left: auto; color: #fff; font-weight: bold; text-decoration: none; }
-  main { max-width: 860px; margin: 14px auto; background: var(--panel); border: 1px solid var(--line); padding: 8px 22px 18px; }
-  h1 { color: var(--red); margin-bottom: 4px; }
-  h2 { font-size: 18px; margin: 22px 0 6px; border-bottom: 1px solid var(--line); padding-bottom: 3px; }
-  a { color: var(--red); }
-  @media (prefers-color-scheme: dark) { a { color: #ff7a6e; } }
-  .muted { color: var(--muted); font-size: 12px; }
-  button { font: inherit; padding: 6px 14px; cursor: pointer; border: 1px solid #861616; background: var(--red); color: #fff; border-radius: 3px; }
-  footer { text-align: center; font-size: 11px; color: var(--muted); padding: 0 16px 30px; }
-  @media (max-width: 500px) { main { margin: 0; border-left: 0; border-right: 0; padding: 4px 16px 16px; } }
-</style>
+<link rel="stylesheet" href="legal.css">
+<link rel="stylesheet" href="app/ads.css">
 </head>
 <body>
 <header><div class="wrap"><a href="app/"><img src="img/logo.png" alt="Guts &amp; Bolts" width="720" height="242"></a><a class="back" href="app/">Back to the site</a></div></header>
+<nav class="legal" aria-label="Legal pages"><a href="/privacy" aria-current="page">Privacy Policy</a><a href="/cookies">Cookie Policy</a><a href="/app/#/terms">Terms of Service</a><a href="/copyright">Copyright</a><a href="/contact">Contact</a><a href="#" data-privacy-choices>Privacy choices</a></nav>
 <main>
 <h1>Privacy Policy</h1>
-<p class="muted">Last updated November 15, 2026. This covers the website (gutsandbolts.net), Studio, the Player and our game servers.</p>
+<p class="muted">Last updated November 19, 2026. This covers the website (gutsandbolts.net), Studio, the Player and our game servers.</p>
 
 <p>Guts&amp;Bolts is a free hobby game platform for adults (18+). This page says, in plain words, what we keep about
   you, why, who else handles it, and how to get it removed.</p>
@@ -104,11 +88,20 @@
   <li>You can turn off personalized ads from Google at <a href="https://adssettings.google.com" rel="noopener">adssettings.google.com</a>,
     and learn about opting out of other ad companies at <a href="https://www.aboutads.info/choices/" rel="noopener">aboutads.info</a>.</li>
   <li><b>In the EU, EEA, UK and Switzerland</b> we ask before any ad cookies are used. If you pick "Only necessary",
-    you won't see ads at all.</li>
+    you won't see ads at all. This question may come from us or from Google's own consent message (a certified
+    consent tool under the IAB Europe Transparency &amp; Consent Framework), depending on how ads are set up.</li>
+  <li><b>In the US and everywhere else</b> you can say no to personalized ads with the <b>Privacy choices</b> link at
+    the bottom of every page ("Do not sell or share my personal information"). You'll still see ads, but Google is told
+    to show only non-personalized ones. If your browser sends <b>Global Privacy Control</b> (GPC), we treat that as the
+    same "no", automatically.</li>
+  <li>If you use an ad blocker, Google may show a short message asking you to allow ads or keep blocking them. You can
+    always keep blocking: the site works the same, and nothing is locked behind ads.</li>
 </ul>
+<p>Every cookie and saved setting, with what it's for and how long it lasts, is listed on our
+  <a href="/cookies">Cookie Policy</a>.</p>
 <p>Our own site only stores what it needs to work: your login key (encrypted, in your browser), your language, a few
   display choices, and your cookie answer. Those don't track you anywhere else.</p>
-<p><button type="button" id="cookie-reset">Change my cookie answer</button> <span id="cookie-reset-done" class="muted" hidden>Done. You'll be asked again on the next page with ads.</span></p>
+<p><a href="#" class="btn green" data-privacy-choices>Privacy choices</a> <button type="button" id="cookie-reset">Change my cookie answer</button> <span id="cookie-reset-done" class="muted" hidden>Done. You'll be asked again on the next page with ads.</span></p>
 
 <h2>5. Who else handles your data</h2>
 <p>We do not sell your data to these services or to anyone else. We use service providers to operate specific parts
@@ -134,10 +127,40 @@
 <h2>7. Your rights</h2>
 <p>Depending on where you live (for example under the GDPR, the UK GDPR or California law), you can ask to see the
   data we have about you, fix it, delete it, or take a copy. You can also object to how we use it, or take back your
-  consent for ad cookies (button above). Ask on the <a href="app/#/support">Support page</a>, and we'll answer as soon
-  as we can. If you're unhappy with our answer, you can complain to your local data protection authority.</p>
+  consent for ad cookies (button above). To ask, open a ticket on the <a href="app/#/support?topic=privacy">Support page</a>
+  and pick "My data". You don't need to be logged in, but we'll need to check the account is yours before we show or
+  change anything (usually by asking you to send the ticket while logged in). We answer within 30 days (45 days where
+  US state law allows), and tell you if we need longer and why. It's free. If you're unhappy with our answer, you
+  can ask us to look again (reply on the same ticket), and you can complain to your local data protection
+  authority.</p>
+<p>You can also do a lot yourself, right away: change who sees you in Settings &gt; Privacy, delete posts and uploads,
+  turn off Fyxa learning, or delete the whole account in Settings &gt; Delete account.</p>
 
-<h2>8. Adults only, and children's privacy</h2>
+<h2>8. US state privacy rights</h2>
+<p>This part is for people living in US states with privacy laws, like California (CCPA/CPRA), Virginia, Colorado,
+  Connecticut, Utah, Texas, Oregon and others.</p>
+<ul>
+  <li><b>What we collect</b> (in the last 12 months): identifiers (username, user number, IP address, an email if you
+    add one), internet activity on Guts&amp;Bolts (pages, games played, posts), what you upload and send, and
+    purchase records if you buy something through Stripe. We don't collect sensitive personal information like
+    government IDs, precise location, health or biometric data, and we don't use any to guess things about you.</li>
+  <li><b>Where it comes from:</b> you, your device, and the people you talk to on Guts&amp;Bolts.</li>
+  <li><b>Why:</b> the purposes in section 2. <b>Who gets it:</b> the service providers in section 5.</li>
+  <li><b>Selling and sharing:</b> we don't sell personal information for money. But some US laws count letting an ad
+    company like Google use cookies for <b>personalized ("targeted" or "cross-context behavioral") ads</b> as
+    "sharing" or a "sale". In that sense only, ad cookies on our ad pages may count. <b>You can opt out</b> with the
+    <a href="#" data-privacy-choices>Privacy choices</a> link ("Do not sell or share my personal information"), or by
+    turning on Global Privacy Control in your browser. We don't knowingly sell or share information of anyone under
+    16 (Guts&amp;Bolts is 18+ only).</li>
+  <li><b>Your rights:</b> to know what we have and get a copy, to correct it, to delete it, to opt out of sale,
+    sharing and targeted ads, and to appeal if we say no (reply on your ticket; if you're still unhappy, you can
+    contact your state's attorney general). We won't treat you differently or charge you more for using any of these
+    rights.</li>
+  <li><b>Someone acting for you</b> (an authorized agent) can ask too, with your signed permission. We may still ask
+    you to confirm the request from your account.</li>
+</ul>
+
+<h2>9. Adults only, and children's privacy</h2>
 <p>Guts&amp;Bolts is for people <b>18 and older</b>. It is not made for children and isn't aimed at them.</p>
 <ul>
   <li><b>We don't knowingly collect personal information from anyone under 18</b>, and especially not from children
@@ -154,13 +177,19 @@
     every game here is for adults only.</li>
 </ul>
 
-<h2>9. Changes</h2>
+<h2>10. Changes</h2>
 <p>If this policy changes, we'll update the date at the top. Big changes will also show up on the
   <a href="app/#/updates">Updates</a> page.</p>
 
-<p>See also our <a href="app/#/terms">Terms of Service</a>.</p>
+<h2>11. Contact</h2>
+<p>For anything about your privacy or this policy, open a ticket on the <a href="app/#/support?topic=privacy">Support
+  page</a> (pick "My data"). Other ways to reach us are on the <a href="/contact">Contact page</a>.</p>
+
+<p>See also our <a href="app/#/terms">Terms of Service</a>, <a href="/cookies">Cookie Policy</a> and
+  <a href="/copyright">Copyright Policy</a>.</p>
 </main>
-<footer>Guts&amp;Bolts is an independent, free hobby game platform for adults (18+). Not affiliated with, endorsed by, or connected to Roblox Corporation.</footer>
-<script type="module" src="/privacy.js"></script>
+<footer><a href="/privacy">Privacy</a> | <a href="/cookies">Cookies</a> | <a href="/app/#/terms">Terms</a> | <a href="/copyright">Copyright</a> | <a href="/contact">Contact</a> | <a href="#" data-privacy-choices>Privacy choices</a><br>
+Guts&amp;Bolts is an independent, free hobby game platform for adults (18+). Not affiliated with, endorsed by, or connected to Roblox Corporation.</footer>
+<script type="module" src="/legal.js"></script>
 </body>
 </html>
