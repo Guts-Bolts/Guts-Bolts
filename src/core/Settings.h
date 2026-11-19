@@ -18,6 +18,27 @@ struct GraphicsSettings {
     // Display
     bool  vsync       = true;   // match the monitor's refresh rate (no tearing)
     int   fpsCap      = 0;      // 0 = unlimited (only used when VSync is off)
+    // Battery saver: 30 FPS and the cheaper versions of the costliest effects (3D clouds,
+    // fog that catches light, mirror reflections, bounce light, big shadow maps, every
+    // pixel), so a phone or laptop stays cooler and its battery lasts longer. Auto turns it
+    // on by itself when the battery is low (20% or less) and not charging, and off again
+    // once it's charging; computers without a battery never turn it on.
+    enum BatterySaver { SaverAuto, SaverOn, SaverOff };
+    int   batterySaver = SaverAuto;
+    static constexpr int kSaverChoices = 3;
+    static const char* const* batterySaverNames();   // "Auto (when the battery is low)", "On", "Off"
+    static const char* batterySaverHelp();
+    // The battery, as the device reports it (Battery.h), every half a minute or so:
+    // percent -1 = no battery / unknown. True when battery saver turned on or off.
+    bool  setBattery(int percent, bool charging);
+    bool  setBatterySaver(int mode);                 // the menu; true when it turned on or off
+    bool  saverActive() const { return m_saverActive; }
+    int   batteryPercent() const { return m_batteryPct; }
+    // The highest level each group may use while battery saver is on.
+    static int saverCap(int group);
+    // The frame-rate limit really used: the FPS limit (when VSync is off), or at most 30
+    // while battery saver is on. 0 = no limit.
+    int   frameCap() const;
     bool  showFps     = true;
     // The "this device can't run some features" notice (DeviceFeatures.h) was shown once.
     bool  sawDeviceNotice = false;
@@ -178,6 +199,10 @@ private:
     float m_autoHold = 0.0f;                        // seconds before it may step up again
     int   m_autoBad = -1;                           // a level that was too slow (not retried for a while)
     float m_autoBadTime = 0.0f;
+    bool  m_saverActive = false;                    // battery saver is on right now
+    int   m_batteryPct = -1;
+    bool  m_charging = false;
+    bool  updateSaver();                            // works out m_saverActive again; true if it changed
 public:
 
     static GraphicsSettings& get();
