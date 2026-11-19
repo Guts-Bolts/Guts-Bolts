@@ -72,7 +72,8 @@
     "binding": "ASSETS",
     // (The pages themselves too, so the old workers.dev address can send visitors to gutsandbolts.net.)
     "run_worker_first": ["/api", "/api/*", "/ws", "/ws/remote", "/ws/infrastructure", "/thumb/*", "/icon/*", "/avatar/*", "/download/*", "/", "/index.html", "/app", "/app/", "/app/index.html",
-      "/ads.txt", "/ads-config", "/privacy", "/privacy.html", "/checkout", "/checkout.html",
+      "/ads.txt", "/ads-config", "/privacy", "/privacy.html", "/cookies", "/cookies.html", "/copyright", "/copyright.html",
+      "/contact", "/contact.html", "/terms", "/terms/", "/robots.txt", "/sitemap.xml", "/security.txt", "/.well-known/security.txt", "/.well-known/gpc.json", "/checkout", "/checkout.html",
       "/products", "/products/*", "/mcp", "/mcp/*", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*", "/.well-known/oauth-authorization-server"]
   },
   "durable_objects": {
