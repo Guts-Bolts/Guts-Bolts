@@ -78,9 +78,10 @@ export function openMediaPicker({ providers = [], onSelect, onClose } = {}) {
     busy = true; status.textContent = append ? 'Loading more…' : 'Loading…'; more.hidden = true;
     try {
       let items;
-      if (mode === 'stickers' || mode === 'trending' || mode === 'search') {
-        const kind = mode === 'stickers' ? 'stickers' : 'gifs';
-        items = await klipyFetch(kind, mode === 'search' ? 'search' : 'trending', query, page);
+      if (mode === 'stickers' || mode === 'sticker-search' || mode === 'trending' || mode === 'search') {
+        const kind = mode === 'stickers' || mode === 'sticker-search' ? 'stickers' : 'gifs';
+        const apiMode = mode === 'search' || mode === 'sticker-search' ? 'search' : 'trending';
+        items = await klipyFetch(kind, apiMode, query, page);
       }
       if (!items.length && providerOptions.length && mode === 'search') {
         const providerItems = await Promise.all(providerOptions.map(p => p.search(query).catch(() => [])));
@@ -105,7 +106,7 @@ export function openMediaPicker({ providers = [], onSelect, onClose } = {}) {
     if (e.target.closest('[data-more]')) { page++; load(true); }
   });
   overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-  form.addEventListener('submit', e => { e.preventDefault(); query = form.elements.q.value.trim(); if (!query) return; mode = 'search'; page = 1; overlay.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === 'search')); load(); });
+  form.addEventListener('submit', e => { e.preventDefault(); query = form.elements.q.value.trim(); if (!query) return; mode = mode === 'stickers' || mode === 'sticker-search' ? 'sticker-search' : 'search'; page = 1; overlay.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === (mode === 'sticker-search' ? 'stickers' : 'search'))); load(); });
   if (!KLIPY_KEY) status.textContent = 'KLIPY app key is not configured. Paste a media URL below to attach it.';
   // Keep manual HTTPS attachment available until the KLIPY key is configured.
   const manual = document.createElement('details'); manual.className = 'gb-media-manual';
