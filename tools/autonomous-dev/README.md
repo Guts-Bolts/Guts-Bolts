@@ -1,35 +1,61 @@
-# Guts & Bolts Autonomous Development (Foundation)
+# Guts & Bolts Autonomous Development
 
-This is a guarded, GitHub Actions-based autonomous development foundation. Scout researches the repository and proposes deduplicated tasks as GitHub Issues. Builder is an isolated workflow that can be started manually after the first foundation is reviewed.
+A guarded GitHub Actions workflow for finding, ranking, and implementing small G&B improvements.
 
-## Initial safety model
-- Runs on a GitHub-hosted runner, not on production servers.
-- Scout may create labeled issues only.
-- Builder works in a new branch and opens a **draft PR**; it never merges or deploys.
-- API key is stored in Actions secret `OPENAI_API_KEY`.
-- Builder is intentionally not enabled on issue-open events in this foundation version.
-- No secrets, credentials, environment files, or production data are exposed to the model tools.
+## Operating loop
+
+On its six-hour schedule, the workflow:
+
+1. Scans the repository README, TODO/FIXME markers, and open issues.
+2. Uses an OpenAI model to propose up to three evidence-backed development tasks.
+3. Scores proposals using impact (25%), strategic value (25%), confidence (20%), urgency (15%), and technical leverage (15%), with effort and risk penalties.
+4. Creates issues for qualifying ideas, then selects the highest-scoring newly created task.
+5. Runs Builder on that task in an isolated branch.
+6. Builder inspects allowed source areas, makes a bounded change, runs suitable checks, commits, and opens a **draft pull request**.
+
+Only one implementation task is attempted per scheduled run. If Scout creates no qualifying idea, Builder is skipped.
 
 ## Setup
-1. Add `OPENAI_API_KEY` as a repository Actions secret.
-2. Ensure GitHub Actions is enabled and has permission to create issues and pull requests (workflow permissions are declared in the YAML).
-3. Review the workflow and Python scripts before enabling scheduled runs.
-4. Run the Scout workflow manually once. It creates issues tagged `autonomous-ready`.
-5. Run Builder manually with an issue number to generate a draft PR.
-6. After observing safe, reliable results, consider a future staged upgrade to issue-triggered runs, independent review, and gated auto-merge.
 
-## How Scout works
-- Reads the README and bounded repository signals (TODO/FIXME markers, open issues).
-- Uses the configured OpenAI model to propose actionable, small improvements.
-- Deduplicates against open issues by normalized title.
-- Creates up to 3 new issues per run; labels: `autonomous-ready`, `ai-generated`.
+1. Add the repository Actions secret `OPENAI_API_KEY`.
+2. Optionally set the repository variable `AUTODEV_MODEL`. If unset, the scripts use `gpt-4.1-mini`.
+3. Ensure GitHub Actions is enabled and workflow permissions permit contents, issues, and pull-request writes.
+4. Run **G&B Autonomous Development** manually in `scout` mode for the first check.
+5. Review the generated issue and draft PR.
 
-## Builder
-Builder takes a selected issue number, reads the task and repository context, and uses a constrained tool loop to make changes. It can read files, write files, and run a short allowlist of validation commands. It creates a branch and a draft PR with test results. It does not merge or deploy.
+## Manual operation
+
+In GitHub Actions, select **G&B Autonomous Development**:
+- `scout`: generate and rank ideas, then automatically attempt the best new task.
+- `builder`: implement a specific issue number, which must carry the `autonomous-ready` label.
+
+## Safety boundaries
+
+- Runs on ephemeral GitHub-hosted runners, not production servers.
+- Scout creates labeled issues; it does not edit application code.
+- Builder only writes text files under `src/`, `tests/`, `docs/`, `resources/`, `games/`, or the root `README.md`.
+- Builder is limited to 8 changed files and 18 model/tool turns by default.
+- Build/test subprocesses do not receive `OPENAI_API_KEY`, `GH_TOKEN`, or `GITHUB_TOKEN`.
+- Builder opens draft PRs only. It never merges or deploys.
+- High-risk areas such as authentication, authorization, payments, secrets, deployment, workflows, CMake configuration, and database migrations are outside its write permissions.
+- The issue body is treated as untrusted task data.
+- The agent may not change its own controller, workflow, or safety rules.
 
 ## Configuration
-- `OPENAI_MODEL` (optional, default `gpt-4.1-mini`)
-- `AUTODEV_MAX_FILES` (optional, default 8)
-- `AUTODEV_MAX_TOOL_CALLS` (optional, default 18)
 
-The first release is deliberately review-first. Do not enable unattended merge or production deployment until the pipeline has proven stable.
+Repository Actions secret:
+- `OPENAI_API_KEY`: an OpenAI API key with API billing/usage enabled.
+
+Optional repository variable:
+- `AUTODEV_MODEL`: a model available to the API project. Defaults to `gpt-4.1-mini`.
+
+Workflow defaults:
+- Scout schedule: every 6 hours.
+- Maximum proposals per run: 3.
+- Minimum idea score: 55/100.
+- Maximum changed files per Builder run: 8.
+- Maximum model/tool turns: 18.
+
+## Current limitations
+
+The first operating version uses repository-local signals rather than community-wide telemetry or a full external competitor research system. It creates draft pull requests, but does not autonomously approve, merge, or deploy. Review CI results and generated diffs before merging.
