@@ -116,3 +116,7 @@
 .gb-media-results { display:grid; gap:10px; margin:12px 0; }
 .gb-media-results img { max-width:100%; max-height:300px; object-fit:contain; border-radius:8px; }
 .gb-media-picker footer { justify-content:flex-end; }
+
+.cd-media-embed { display:block; max-width:min(100%,420px); max-height:320px; margin-top:6px; border-radius:9px; object-fit:contain; background:#101216; }
+.cd-attachment-preview { display:flex; align-items:center; gap:8px; padding:0 0 4px; }
+.cd-attachment-preview img { max-width:110px; max-height:90px; object-fit:contain; border-radius:6px; }
