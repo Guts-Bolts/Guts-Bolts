@@ -1212,3 +1212,6 @@ h1 .club-icon{vertical-align:-4px}
 .cd-compose-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
 .cd-bubble .rich-code { text-align: left; }
 .cd-bubble .rich-code pre { max-width: min(70vw, 680px); }
+
+/* Forum media attachments */
+.forum-media { display: block; max-width: min(100%, 520px); max-height: 420px; width: auto; height: auto; object-fit: contain; margin: 8px 0; border: 1px solid var(--line); background: var(--panel2); }
