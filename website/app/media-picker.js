@@ -132,7 +132,7 @@ export function composeChatMessage(text, attachment = null, maxLength = 1000) {
   const bodyText = typeof text === 'string' ? text : '';
   const url = attachment ? safeMediaUrl(attachment.url) : '';
   if (attachment && !url) return null;
-  const token = url ? (bodyText ? '\\n' : '') + '[media:' + url + ']' : '';
+  const token = url ? (bodyText ? '\n' : '') + '[media:' + url + ']' : '';
   const body = bodyText + token;
   return body.length <= maxLength ? body : null;
 }
