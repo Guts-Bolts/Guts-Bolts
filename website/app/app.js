@@ -127,6 +127,8 @@ view.addEventListener('click', (event) => {
     textarea.setRangeText(token, start, end, 'end'); textarea.focus();
   } });
 });
+view.addEventListener('click', async (event) => {
+  const copy = event.target.closest('[data-copy-code]');
   if (copy) {
     try { await navigator.clipboard.writeText(copy.dataset.copyCode || ''); copy.textContent = 'Copied'; }
     catch { copy.textContent = 'Copy unavailable'; }
