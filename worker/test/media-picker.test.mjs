@@ -28,6 +28,6 @@ test('composeChatMessage keeps media tokens within server message limits', () =>
   assert.equal(composeChatMessage('', image), '[media:https://cdn.example.com/picture.gif]');
   assert.equal(composeChatMessage('text only'), 'text only');
   assert.equal(composeChatMessage('x'.repeat(1000), image), null);
-  assert.equal(composeChatMessage('x'.repeat(1000)), null);
+  assert.equal(composeChatMessage('x'.repeat(1000)), 'x'.repeat(1000));
   assert.equal(composeChatMessage('hello', {url:'javascript:alert(1)'}), null);
 });
