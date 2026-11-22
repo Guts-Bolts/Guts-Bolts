@@ -86,10 +86,19 @@ function richText(value) {
   const source = String(value ?? '');
   const fence = /```([a-zA-Z0-9_+-]{0,24})[ \t]*\n([\s\S]*?)```/g;
   let out = '', last = 0, match;
-  const plain = (text) => String(text).replace(/\[media:(https?:[^\]\s]+)\]/gi, (token, candidate) => {
-    const url = safeMediaUrl(candidate);
-    return url ? '<img class="forum-media" src="' + esc(url) + '" alt="Attached image or GIF" loading="lazy" referrerpolicy="no-referrer">' : esc(token);
-  }).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+  const plain = (text) => {
+    const source = String(text);
+    const media = /\\[media:(https?:[^\\]\\s]+)\\]/gi;
+    let out = '', last = 0, match;
+    const escaped = (value) => esc(value).replace(/\\r\\n?/g, '\\n').replace(/\\n/g, '<br>');
+    while ((match = media.exec(source))) {
+      out += escaped(source.slice(last, match.index));
+      const url = safeMediaUrl(match[1]);
+      out += url ? '<img class="forum-media" src="' + esc(url) + '" alt="Attached image or GIF" loading="lazy" referrerpolicy="no-referrer">' : esc(match[0]);
+      last = media.lastIndex;
+    }
+    return out + escaped(source.slice(last));
+  };
   while ((match = fence.exec(source))) {
     out += plain(source.slice(last, match.index));
     const language = match[1].toLowerCase();
