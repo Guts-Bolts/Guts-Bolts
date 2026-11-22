@@ -102,3 +102,21 @@
 .cd-ringicon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #30a46c; color: #fff; animation: cd-pulse 1.2s infinite; }
 @keyframes cd-pulse { 50% { transform: scale(1.12); } }
 @media (max-width: 900px) { .cd-ring { left: 16px; right: 16px; bottom: 16px; } }
+
+/* Shared chat/forum media picker foundation */
+.gb-media-overlay { position:fixed; inset:0; z-index:1200; display:grid; place-items:center; padding:18px; background:rgba(0,0,0,.68); }
+.gb-media-picker { width:min(520px,100%); max-height:90vh; overflow:auto; padding:16px; border:1px solid #3a3e46; border-radius:12px; background:#191b1f; color:#f2f4f7; font:14px/1.45 var(--gb-font,system-ui); box-shadow:0 12px 40px rgba(0,0,0,.5); }
+.gb-media-picker header,.gb-media-picker footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.gb-media-picker header strong { font-size:16px; }
+.gb-media-picker button { cursor:pointer; }
+.gb-media-picker header button { border:0; background:transparent; color:inherit; font-size:24px; }
+.gb-media-picker form { display:flex; align-items:end; gap:8px; flex-wrap:wrap; }
+.gb-media-picker label { flex:1; min-width:220px; display:grid; gap:5px; }
+.gb-media-picker input { min-width:0; width:100%; padding:9px; border:1px solid #444a54; border-radius:7px; background:#252830; color:inherit; }
+.gb-media-results { display:grid; gap:10px; margin:12px 0; }
+.gb-media-results img { max-width:100%; max-height:300px; object-fit:contain; border-radius:8px; }
+.gb-media-picker footer { justify-content:flex-end; }
+
+.cd-media-embed { display:block; max-width:min(100%,420px); max-height:320px; margin-top:6px; border-radius:9px; object-fit:contain; background:#101216; }
+.cd-attachment-preview { display:flex; align-items:center; gap:8px; padding:0 0 4px; }
+.cd-attachment-preview img { max-width:110px; max-height:90px; object-fit:contain; border-radius:6px; }
