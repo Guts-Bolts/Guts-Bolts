@@ -114,7 +114,19 @@ function insertCodeFence(textarea, language = 'lua') {
   if (!selected) textarea.setSelectionRange(caret, caret);
   textarea.focus();
 }
-view.addEventListener('click', (event) => {\n  const mediaButton = event.target.closest('[data-forum-media]');\n  if (!mediaButton) return;\n  const textarea = mediaButton.closest('form')?.querySelector('textarea[name="text"]');\n  if (!textarea) return;\n  openMediaPicker({ onSelect: ({ url }) => {\n    const start = textarea.selectionStart ?? textarea.value.length;\n    const end = textarea.selectionEnd ?? start;\n    const token = (start > 0 && textarea.value.slice(0, start).trim() ? '\\n' : '') + '[media:' + url + ']';\n    if (textarea.value.length + token.length > Number(textarea.maxLength || 3000)) { toast('That attachment would exceed the message limit.'); return; }\n    textarea.setRangeText(token, start, end, 'end'); textarea.focus();\n  } });\n});\n\nview.addEventListener('click', async (event) => {\n  const copy = event.target.closest('[data-copy-code]');
+view.addEventListener('click', (event) => {
+  const mediaButton = event.target.closest('[data-forum-media]');
+  if (!mediaButton) return;
+  const textarea = mediaButton.closest('form')?.querySelector('textarea[name="text"]');
+  if (!textarea) return;
+  openMediaPicker({ onSelect: ({ url }) => {
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const token = (start > 0 && textarea.value.slice(0, start).trim() ? '\n' : '') + '[media:' + url + ']';
+    if (textarea.value.length + token.length > Number(textarea.maxLength || 3000)) { toast('That attachment would exceed the message limit.'); return; }
+    textarea.setRangeText(token, start, end, 'end'); textarea.focus();
+  } });
+});
   if (copy) {
     try { await navigator.clipboard.writeText(copy.dataset.copyCode || ''); copy.textContent = 'Copied'; }
     catch { copy.textContent = 'Copy unavailable'; }
