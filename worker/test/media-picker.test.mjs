@@ -15,7 +15,7 @@ test('rejects credentials and malformed or oversized values', () => {
   assert.equal(safeMediaUrl('https://example.com/' + 'a'.repeat(2050) + '.gif'), '');
 });
 test('normalizes supported provider items and rejects bad items', () => {
-  assert.deepEqual(normalizeMediaItem({src:'https://cdn.example.com/1.gif', title:'loop'}), {url:'https://cdn.example.com/1.gif', title:'loop'});
+  assert.deepEqual(normalizeMediaItem({src:'https://cdn.example.com/1.gif', title:'loop'}), {url:'https://cdn.example.com/1.gif', title:'loop', slug:''});
   assert.equal(normalizeMediaItem({url:'https://cdn.example.com/1.svg'}), null);
   assert.equal(normalizeMediaItem(null), null);
 });
