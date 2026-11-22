@@ -4,12 +4,15 @@ import json
 import os
 import re
 import subprocess
+import time
+import urllib.error
 import urllib.request
 
 API = "https://api.openai.com/v1/chat/completions"
 MODEL = os.getenv("OPENAI_MODEL") or "gpt-4.1-mini"
 TOKEN = os.environ["OPENAI_API_KEY"]
 MINIMUM_SCORE = 55
+MAX_RATE_LIMIT_RETRIES = 3
 
 
 def gh(*args):
@@ -17,18 +20,51 @@ def gh(*args):
 
 
 def ask_model(messages):
+    payload = json.dumps({
+        "model": MODEL,
+        "messages": messages,
+        "temperature": 0.3,
+        "response_format": {"type": "json_object"},
+    }).encode()
     request = urllib.request.Request(
         API,
-        data=json.dumps({
-            "model": MODEL,
-            "messages": messages,
-            "temperature": 0.3,
-            "response_format": {"type": "json_object"},
-        }).encode(),
+        data=payload,
         headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return json.loads(response.read())["choices"][0]["message"]["content"]
+
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                return json.loads(response.read())["choices"][0]["message"]["content"]
+        except urllib.error.HTTPError as error:
+            raw_error = error.read().decode("utf-8", errors="replace")
+            try:
+                details = json.loads(raw_error).get("error", {})
+                error_code = details.get("code") or details.get("type") or "unknown"
+                error_message = details.get("message") or raw_error
+            except (json.JSONDecodeError, AttributeError):
+                error_code = "unknown"
+                error_message = raw_error or str(error)
+
+            # Retry only explicit transient rate limits. Billing/quota errors won't
+            # resolve with retries, so fail immediately and report the API details.
+            if error.code == 429 and error_code == "rate_limit_exceeded" and attempt < MAX_RATE_LIMIT_RETRIES:
+                retry_after = error.headers.get("Retry-After")
+                try:
+                    delay = min(60, max(1, int(retry_after)))
+                except (TypeError, ValueError):
+                    delay = min(30, 10 * (attempt + 1))
+                print(f"OpenAI transient rate limit (retry {attempt + 1}/{MAX_RATE_LIMIT_RETRIES}); waiting {delay}s.")
+                time.sleep(delay)
+                continue
+
+            print(f"OpenAI API request failed (HTTP {error.code}, code={error_code}).")
+            if error.code == 429:
+                print("Check API project usage, billing/credits, and rate limits.")
+            print(f"API error details: {error_message[:2000]}")
+            raise RuntimeError(f"OpenAI API request failed with HTTP {error.code} ({error_code}).") from error
+
+    raise RuntimeError("OpenAI API request failed after bounded rate-limit retries.")
 
 
 def safe_run(command):
