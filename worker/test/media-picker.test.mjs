@@ -31,3 +31,11 @@ test('composeChatMessage keeps media tokens within server message limits', () =>
   assert.equal(composeChatMessage('x'.repeat(1000)), 'x'.repeat(1000));
   assert.equal(composeChatMessage('hello', {url:'javascript:alert(1)'}), null);
 });
+
+test('normalizes KLIPY API nested file URLs and rejects ads', () => {
+  assert.deepEqual(normalizeMediaItem({type:'gif', title:'reaction', slug:'reaction-gif', file:{hd:{gif:{url:'https://static.klipy.com/test/reaction.gif'}}}}), {
+    url:'https://static.klipy.com/test/reaction.gif', title:'reaction', slug:'reaction-gif'
+  });
+  assert.equal(normalizeMediaItem({type:'ad', url:'https://cdn.example.com/ad.gif'}), null);
+  assert.equal(normalizeMediaItem({title:'bad', file:{hd:{mp4:{url:'https://cdn.example.com/video.mp4'}}}}), null);
+});
