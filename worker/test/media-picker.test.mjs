@@ -19,3 +19,15 @@ test('normalizes supported provider items and rejects bad items', () => {
   assert.equal(normalizeMediaItem({url:'https://cdn.example.com/1.svg'}), null);
   assert.equal(normalizeMediaItem(null), null);
 });
+
+import { composeChatMessage } from '../../website/app/media-picker.js';
+
+test('composeChatMessage keeps media tokens within server message limits', () => {
+  const image = {url:'https://cdn.example.com/picture.gif'};
+  assert.equal(composeChatMessage('hello', image), 'hello\n[media:https://cdn.example.com/picture.gif]');
+  assert.equal(composeChatMessage('', image), '[media:https://cdn.example.com/picture.gif]');
+  assert.equal(composeChatMessage('text only'), 'text only');
+  assert.equal(composeChatMessage('x'.repeat(1000), image), null);
+  assert.equal(composeChatMessage('x'.repeat(1000)), null);
+  assert.equal(composeChatMessage('hello', {url:'javascript:alert(1)'}), null);
+});
