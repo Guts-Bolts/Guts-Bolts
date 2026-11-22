@@ -275,7 +275,8 @@ class Panel {
       return;
     }
     if ('removeMedia' in d) { this.attachment = null; this.drawChat(); return; }
-    if ('media' in d) { openMediaPicker({ onSelect: item => { const url = safeMediaUrl(item.url); if (url) { this.attachment = { url }; this.drawChat(); } } }); return; }\n    if ('codeInsert' in d) { insertChatCode(this.root.querySelector('.cd-compose textarea[name="body"]'), d.codeInsert || 'lua'); return; }
+    if ('media' in d) { openMediaPicker({ onSelect: item => { const url = safeMediaUrl(item.url); if (url) { this.attachment = { url }; this.drawChat(); } } }); return; }
+    if ('codeInsert' in d) { insertChatCode(this.root.querySelector('.cd-compose textarea[name="body"]'), d.codeInsert || 'lua'); return; }
     if ('collapse' in d) { setDockOpen(false); return; }
     if ('dnd' in d) { const r = await api.call('presence.set', { dnd: !inbox.dnd }); if (r.ok) { inbox.dnd = !inbox.dnd; api.toast(inbox.dnd ? 'Do Not Disturb is on: calls won\'t ring.' : 'You\'re available again.'); refresh(); } else api.toast(r.error); return; }
     if ('new' in d) { await refreshFriends(); this.view = 'new'; this.draw(); return; }
