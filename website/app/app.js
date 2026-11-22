@@ -88,9 +88,9 @@ function richText(value) {
   let out = '', last = 0, match;
   const plain = (text) => {
     const source = String(text);
-    const media = /\\[media:(https?:[^\\]\\s]+)\\]/gi;
+    const media = /\[media:(https?:[^\]\s]+)\]/gi;
     let out = '', last = 0, match;
-    const escaped = (value) => esc(value).replace(/\\r\\n?/g, '\\n').replace(/\\n/g, '<br>');
+    const escaped = (value) => esc(value).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
     while ((match = media.exec(source))) {
       out += escaped(source.slice(last, match.index));
       const url = safeMediaUrl(match[1]);
