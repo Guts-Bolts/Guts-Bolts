@@ -9,7 +9,7 @@ import sys
 import urllib.request
 
 API = "https://api.openai.com/v1/chat/completions"
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+MODEL = os.getenv("OPENAI_MODEL") or "gpt-4.1-mini"
 TOKEN = os.environ["OPENAI_API_KEY"]
 MAX_CALLS = int(os.getenv("AUTODEV_MAX_TOOL_CALLS", "18"))
 MAX_FILES = int(os.getenv("AUTODEV_MAX_FILES", "8"))
