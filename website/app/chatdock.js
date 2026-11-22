@@ -3,7 +3,7 @@
 // linked to Lyreto. The server side is worker/chats.js (inbox, calls, gateway) and the
 // party.* requests in worker/server.js (the conversations themselves).
 //
-import { safeMediaUrl, openMediaPicker } from './media-picker.js';
+import { safeMediaUrl, openMediaPicker, composeChatMessage } from './media-picker.js';
 
 // Calls use WebRTC: each browser sends its microphone straight to the others (or through
 // Cloudflare's relay when the server has one, so nobody sees anybody's internet address).
@@ -317,7 +317,8 @@ class Panel {
     if ('send' in f.dataset) {
       const text = f.body.value.trim();
       if (!text && !this.attachment) return;
-      const body = text + (this.attachment ? (text ? '\n' : '') + '[media:' + this.attachment.url + ']' : '');
+      const body = composeChatMessage(text, this.attachment);
+      if (body === null) { api.toast('Your text is too long to send with this attachment. Shorten it and try again.'); return; }
       f.body.value = '';
       const attachment = this.attachment; this.attachment = null;
       const r = await api.call('party.send', { id: this.chatId, body });

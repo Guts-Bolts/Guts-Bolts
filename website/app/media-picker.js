@@ -50,3 +50,14 @@ export function openMediaPicker({ providers = [], onSelect, onClose } = {}) {
   form.elements.url.focus();
   return { close };
 }
+
+// Compose chat text and media token without allowing the server's 1,000-character
+// message filter to truncate the attachment off the end of the message.
+export function composeChatMessage(text, attachment = null, maxLength = 1000) {
+  const bodyText = typeof text === 'string' ? text : '';
+  const url = attachment ? safeMediaUrl(attachment.url) : '';
+  if (attachment && !url) return null;
+  const token = url ? (bodyText ? '\n' : '') + '[media:' + url + ']' : '';
+  const body = bodyText + token;
+  return body.length <= maxLength ? body : null;
+}
