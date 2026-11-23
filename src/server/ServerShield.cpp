@@ -60,6 +60,9 @@ constexpr Rule kCostly[] = {
     {"share.open", 120, 240, 600},
     {"share.done", 120, 360, 600},
     {"forum.reply", 30, 90, 600},
+    {"forum.react", 240, 720, 600},
+    {"forum.vote", 240, 720, 600},
+    {"party.react", 240, 720, 600},
     {"chat.translate", 400, 1200, 600},
     {"groups.create", 5, 15, 3600},
     {"bolts.redeem", 20, 60, 600},   // (so nobody can guess promo codes over and over)

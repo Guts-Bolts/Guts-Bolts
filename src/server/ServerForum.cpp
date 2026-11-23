@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <regex>
 
 using json = nlohmann::json;
 using namespace ServerUtil;
@@ -35,6 +36,43 @@ json boardJson(const Board& b) {
 }
 std::string sv(const json& j, const char* k) { return j.value(k, std::string()); }
 long long   lv(const json& j, const char* k) { return j.value(k, 0LL); }
+
+// The card view: a short preview of the first post, and its first picture (forumPreview /
+// forumImage in worker/server.js).
+std::string forumPreview(const std::string& text) {
+    std::string s = std::regex_replace(text, std::regex(R"(```[\s\S]*?```)"), " [code] ");
+    s = std::regex_replace(s, std::regex(R"(\[media:[^\]]*\])", std::regex::icase), " ");
+    std::string out;
+    for (char c : s) {
+        const bool space = c == ' ' || c == '\n' || c == '\r' || c == '\t';
+        if (space) { if (!out.empty() && out.back() != ' ') out += ' '; } else out += c;
+    }
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    if (out.size() > 220) {
+        size_t cut = 217;
+        while (cut > 0 && ((unsigned char)out[cut] & 0xC0) == 0x80) --cut;
+        out = out.substr(0, cut);
+        while (!out.empty() && out.back() == ' ') out.pop_back();
+        out += "\xE2\x80\xA6";
+    }
+    return out;
+}
+std::string forumImage(const std::string& text) {
+    std::smatch m;
+    static const std::regex token(R"(\[media:(https://[^\s\]]+)\])", std::regex::icase);
+    return std::regex_search(text, m, token) ? m[1].str() : std::string();
+}
+long long forumScore(const json& th) {
+    long long n = 0;
+    if (th.contains("votes") && th["votes"].is_object())
+        for (auto& [id, v] : th["votes"].items()) if (v.is_number()) n += v.get<double>() > 0 ? 1 : v.get<double>() < 0 ? -1 : 0;
+    return n;
+}
+double forumHot(const json& th) {
+    const double s = (double)forumScore(th) + (double)std::min<long long>((long long)th["posts"].size() - 1, 50) / 5.0;
+    const double sign = s > 0 ? 1 : s < 0 ? -1 : 0;
+    return sign * std::log10(std::max(std::fabs(s), 1.0)) + (double)lv(th, "at") / 45000.0;
+}
 } // namespace
 
 json GbServer::forumOp(const std::string& name, User& me, const json& args) {
@@ -64,6 +102,23 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
                     {"last", lv(th, "last")}, {"lastBy", who(sv(th, "lastBy"))}, {"replies", (long long)th["posts"].size() - 1},
                     {"views", lv(th, "views")}, {"pinned", th.value("pinned", false)}, {"locked", th.value("locked", false)}};
     };
+    // The card fields on top (worker/server.js summary has them all in one).
+    auto card = [&](const json& th) {
+        json j = summary(th);
+        const Board* b = boardOf(sv(th, "board"));
+        const json& first = th["posts"].empty() ? json::object() : th["posts"][0];
+        j["board"] = sv(th, "board");
+        j["boardName"] = b ? b->name : "?";
+        j["score"] = forumScore(th);
+        long long mine = 0;
+        if (me.userId != 0 && th.contains("votes") && th["votes"].is_object() && th["votes"].contains(me.id) && th["votes"][me.id].is_number())
+            mine = (long long)th["votes"][me.id].get<double>();
+        j["myVote"] = mine;
+        j["preview"] = forumPreview(sv(first, "text"));
+        j["image"] = forumImage(sv(first, "text"));
+        j["reactions"] = reactionList(first, me.id);
+        return j;
+    };
     // One page of a thread (page -1 = the last page).
     auto threadPage = [&](const json& th, long long page) {
         const json& posts = th["posts"];
@@ -78,15 +133,17 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
             if (hidden(by)) continue;
             out.push_back({{"id", sv(x, "id")}, {"text", sv(x, "text")}, {"at", lv(x, "at")}, {"edited", lv(x, "edited")},
                            {"by", who(by)}, {"first", sv(x, "id") == firstId},
-                           {"canDelete", me.userId != 0 && (by == me.id || staff)}});
+                           {"canDelete", me.userId != 0 && (by == me.id || staff)}, {"reactions", reactionList(x, me.id)}});
         }
-        json t = summary(th);
+        json t = card(th);
         t["board"] = sv(th, "board");
         t["boardName"] = b ? b->name : "?";
         json r = okay();
         r["thread"] = t; r["posts"] = out; r["page"] = p; r["pages"] = pages;
         r["canReply"] = me.userId != 0 && (!th.value("locked", false) || staff);
         r["canModerate"] = staff;
+        r["canReact"] = me.userId != 0;
+        r["reactions"] = reactions();
         return r;
     };
 
@@ -162,18 +219,36 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
         return r;
     }
     if (name == "forum.list") {
-        const Board* b = boardOf(str("board"));
+        // board "all" = every board; sort: active (the old order), hot, new or top (worker/server.js).
+        const bool all = str("board") == "all";
+        static const Board kAll{"all", "All boards", "Every board in one feed.", false};
+        const Board* b = all ? &kAll : boardOf(str("board"));
         if (!b) return fail("That board doesn't exist.");
+        std::string sort = str("sort");
+        if (sort != "hot" && sort != "new" && sort != "top") sort = "active";
         std::vector<json*> list;
-        for (json* th : threadsIn(b->id)) if (!hidden(sv(*th, "by"))) list.push_back(th);
+        if (all) { for (auto& [id, th] : m_forum.items()) if (!hidden(sv(th, "by"))) list.push_back(&th); }
+        else for (json* th : threadsIn(b->id)) if (!hidden(sv(*th, "by"))) list.push_back(th);
+        auto key = [&](const json* th) -> double {
+            if (sort == "new") return (double)lv(*th, "at");
+            if (sort == "top") return (double)forumScore(*th);
+            if (sort == "hot") return forumHot(*th);
+            return (double)lv(*th, "last");
+        };
+        std::stable_sort(list.begin(), list.end(), [&](const json* x, const json* y) {
+            if (!all) { const bool px = x->value("pinned", false), py = y->value("pinned", false); if (px != py) return px; }
+            const double kx = key(x), ky = key(y);
+            if (kx != ky) return kx > ky;
+            return lv(*x, "last") > lv(*y, "last");
+        });
         const long long pages = std::max<long long>(1, ((long long)list.size() + (long long)kForumPage - 1) / (long long)kForumPage);
         const long long page = std::clamp(num("page"), 0LL, pages - 1);
         json threads = json::array();
         for (size_t i = (size_t)(page * (long long)kForumPage); i < list.size() && i < (size_t)((page + 1) * (long long)kForumPage); ++i)
-            threads.push_back(summary(*list[i]));
+            threads.push_back(card(*list[i]));
         json r = okay();
-        r["board"] = boardJson(*b); r["threads"] = threads; r["page"] = page; r["pages"] = pages;
-        r["canPost"] = me.userId != 0 && (!b->staffOnly || staff);
+        r["board"] = boardJson(*b); r["threads"] = threads; r["page"] = page; r["pages"] = pages; r["sort"] = sort;
+        r["canPost"] = !all && me.userId != 0 && (!b->staffOnly || staff);
         return r;
     }
     if (name == "forum.post") {
@@ -205,11 +280,40 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
     json& th = m_forum[tid];
     json& posts = th["posts"];
     if (name == "forum.thread") {
-        if (me.userId != 0 && me.id != sv(th, "by")) {
+        // (peek: a link card in a chat or post looking at it, which isn't a visit)
+        const bool peek = args.contains("peek") && args["peek"].is_boolean() && args["peek"].get<bool>();
+        if (me.userId != 0 && me.id != sv(th, "by") && !peek) {
             th["views"] = lv(th, "views") + 1;
             if (now - m_forumSaved > 30) saveForum();   // (views don't need saving every time)
         }
         return threadPage(th, num("page"));
+    }
+    if (name == "forum.vote") {   // vote: 1 (up), -1 (down) or 0 (take it back)
+        if (me.userId == 0) return fail("Sign up to vote on the forum.");
+        const long long v = num("vote");
+        if (v != 1 && v != -1 && v != 0) return fail("Vote up, down, or take your vote back.");
+        User* starter = findUser(sv(th, "by"));
+        if (starter && (blocks(me, *starter) || blocks(*starter, me))) return fail("You can't vote on this thread.");
+        if (!th.contains("votes") || !th["votes"].is_object()) th["votes"] = json::object();
+        if (v) th["votes"][me.id] = v; else th["votes"].erase(me.id);
+        saveForum();
+        json r = okay();
+        r["thread"] = card(th);
+        return r;
+    }
+    if (name == "forum.react") {   // emoji on one post, on or off
+        if (me.userId == 0) return fail("Sign up to react on the forum.");
+        auto p = std::find_if(posts.begin(), posts.end(), [&](const json& x) { return sv(x, "id") == str("post"); });
+        if (p == posts.end()) return fail("That post is already gone.");
+        User* author = findUser(sv(*p, "by"));
+        if (author && (blocks(me, *author) || blocks(*author, me))) return fail("You can't react to this post.");
+        const std::string bad = toggleReaction(*p, str("emoji"), me.id);
+        if (!bad.empty()) return fail(bad);
+        saveForum();
+        json r = okay();
+        r["post"] = sv(*p, "id");
+        r["reactions"] = reactionList(*p, me.id);
+        return r;
     }
     if (name == "forum.reply") {
         if (me.userId == 0) return fail("Sign up to post on the forum.");

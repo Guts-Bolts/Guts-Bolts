@@ -402,6 +402,41 @@ const FORUM_BOARDS = [
 ];
 const kForumTitle = 80, kForumText = 3000, kForumPage = 20, kMaxForumPosts = 500, kMaxBoardThreads = 1000;
 const kThreadCooldown = 60, kReplyCooldown = 15;
+// Emoji reactions on forum posts and chat messages (ServerForum.cpp / ServerSocial.cpp have the
+// same list). Only these, so nobody can stuff words or links into a "reaction".
+export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👀'];
+const kMaxReactors = 500;   // people per emoji on one post or message
+// {emoji: [account ids]} -> [{emoji, count, mine}] in REACTIONS order (empty ones left out).
+export function reactionList(reacts, meId) {
+  const out = [];
+  for (const e of REACTIONS) {
+    const who = reacts && Array.isArray(reacts[e]) ? reacts[e] : [];
+    if (who.length) out.push({ emoji: e, count: who.length, mine: !!meId && who.includes(meId) });
+  }
+  return out;
+}
+// Turns `emoji` on or off for `meId` in holder.reacts. Returns an error, or '' when it worked.
+export function toggleReaction(holder, emoji, meId) {
+  if (!REACTIONS.includes(emoji)) return 'Pick one of the reactions.';
+  const reacts = holder.reacts && typeof holder.reacts === 'object' ? holder.reacts : {};
+  const who = Array.isArray(reacts[emoji]) ? reacts[emoji] : [];
+  const i = who.indexOf(meId);
+  if (i >= 0) who.splice(i, 1);
+  else { if (who.length >= kMaxReactors) return 'That reaction is full.'; who.push(meId); }
+  if (who.length) reacts[emoji] = who; else delete reacts[emoji];
+  if (Object.keys(reacts).length) holder.reacts = reacts; else delete holder.reacts;
+  return '';
+}
+// The forum's card view: a short plain-words preview of the first post, and its first picture.
+const MEDIA_TOKEN = /\[media:(https:\/\/[^\s\]]+)\]/i;
+export function forumPreview(text) {
+  const plain = String(text || '').replace(/```[\s\S]*?```/g, ' [code] ').replace(/\[media:[^\]]*\]/gi, ' ').replace(/\s+/g, ' ').trim();
+  return plain.length > 220 ? plain.slice(0, 217).trimEnd() + '…' : plain;
+}
+export function forumImage(text) { const m = MEDIA_TOKEN.exec(String(text || '')); return m ? m[1] : ''; }
+const forumScore = (th) => Object.values(th.votes || {}).reduce((n, v) => n + (v > 0 ? 1 : v < 0 ? -1 : 0), 0);
+// "Hot": votes and replies count, newer threads win ties (like Reddit's).
+const forumHot = (th) => { const s = forumScore(th) + Math.min(th.posts.length - 1, 50) / 5; return Math.sign(s) * Math.log10(Math.max(Math.abs(s), 1)) + th.at / 45000; };
 // Player badges (ServerSocial.cpp has the same list): earned automatically, checked
 // whenever a profile is looked at. `need` says how to get one.
 const PLAYER_BADGES = [
@@ -469,6 +504,9 @@ const COSTLY = {
   'comments.post':       [30, 90, 600],
   'forum.post':          [10, 30, 600],
   'forum.reply':         [30, 90, 600],
+  'forum.react':         [240, 720, 600],
+  'forum.vote':          [240, 720, 600],
+  'party.react':         [240, 720, 600],
   'ai.preferences.update': [10, 30, 600],
   'ai.content.eligibility.update': [60, 180, 600],
   'ai.sessions.create': [20, 40, 600],
@@ -3960,6 +3998,14 @@ export class GbServerObject extends DurableObject {
         this.chatPosted(chat, message);   // live pings, and the Lyreto gateway (chats.js)
         return okay({ chat, me: this.meJson(me) });
       }
+      if (name === 'party.react') {   // emoji on one message, on or off (everyone in the chat sees it)
+        const m = (chat.messages || []).find((x) => x.id === str(args, 'message'));
+        if (!m || m.system) return fail('That message is gone.');
+        const bad = toggleReaction(m, str(args, 'emoji'), me.id);
+        if (bad) return fail(bad);
+        syncChat(chat); this.chatPing(chat);
+        return okay({ chat, me: this.meJson(me) });
+      }
       if (name === 'party.invite') {
         if (chat.owner !== me.id) return fail('Only the party owner can invite people.');
         const u = this.users.get(str(args, 'user'));
@@ -6057,7 +6103,11 @@ export class GbServerObject extends DurableObject {
     const threadsIn = (board) => [...this.forum.values()].filter((th) => th.board === board)
       .sort((x, y) => (y.pinned ? 1 : 0) - (x.pinned ? 1 : 0) || y.last - x.last);
     const summary = (th) => ({ id: th.id, title: th.title, by: who(th.by), at: th.at, last: th.last, lastBy: who(th.lastBy),
-      replies: th.posts.length - 1, views: th.views || 0, pinned: !!th.pinned, locked: !!th.locked });
+      replies: th.posts.length - 1, views: th.views || 0, pinned: !!th.pinned, locked: !!th.locked,
+      board: th.board, boardName: (boardOf(th.board) || { name: '?' }).name,
+      score: forumScore(th), myVote: me.userId !== 0 ? ((th.votes || {})[me.id] || 0) : 0,
+      preview: forumPreview(th.posts[0] && th.posts[0].text), image: forumImage(th.posts[0] && th.posts[0].text),
+      reactions: reactionList(th.posts[0] && th.posts[0].reacts, me.id) });
     // One page of a thread (page -1 = the last page).
     const threadPage = (th, page) => {
       const pages = Math.max(1, Math.ceil(th.posts.length / kForumPage));
@@ -6065,9 +6115,9 @@ export class GbServerObject extends DurableObject {
       const b = boardOf(th.board) || { name: '?' };
       const posts = th.posts.slice(p * kForumPage, (p + 1) * kForumPage).filter((x) => !hidden(x.by))
         .map((x) => ({ id: x.id, text: x.text, at: x.at, edited: x.edited || 0, by: who(x.by), first: x.id === th.posts[0].id,
-          canDelete: me.userId !== 0 && (x.by === me.id || staff) }));
+          canDelete: me.userId !== 0 && (x.by === me.id || staff), reactions: reactionList(x.reacts, me.id) }));
       return okay({ thread: Object.assign(summary(th), { board: th.board, boardName: b.name }), posts, page: p, pages,
-        canReply: me.userId !== 0 && (!th.locked || staff), canModerate: staff });
+        canReply: me.userId !== 0 && (!th.locked || staff), canModerate: staff, canReact: me.userId !== 0, reactions: REACTIONS });
     };
     if (name === 'forum.boards') {
       return okay({ boards: FORUM_BOARDS.map((b) => {
@@ -6105,13 +6155,19 @@ export class GbServerObject extends DurableObject {
       return okay({ results: matches.slice(page * pageSize, (page + 1) * pageSize), total: matches.length, page, pages });
     }
     if (name === 'forum.list') {
-      const b = boardOf(str(args, 'board'));
+      // board "all" = every board (the front page feed). sort: active (newest reply, the old
+      // order), hot, new (newest thread) or top (most votes). Pinned threads stay on top in a board.
+      const all = str(args, 'board') === 'all';
+      const b = all ? { id: 'all', name: 'All boards', about: 'Every board in one feed.', staffOnly: false } : boardOf(str(args, 'board'));
       if (!b) return fail('That board doesn\'t exist.');
-      const list = threadsIn(b.id).filter((th) => !hidden(th.by));
+      const sort = ['hot', 'new', 'top', 'active'].includes(str(args, 'sort')) ? str(args, 'sort') : 'active';
+      const key = { active: (th) => th.last, new: (th) => th.at, top: forumScore, hot: forumHot }[sort];
+      const list = (all ? [...this.forum.values()] : threadsIn(b.id)).filter((th) => !hidden(th.by))
+        .sort((x, y) => (all ? 0 : (y.pinned ? 1 : 0) - (x.pinned ? 1 : 0)) || key(y) - key(x) || y.last - x.last);
       const pages = Math.max(1, Math.ceil(list.length / kForumPage)), page = clamp(num(args, 'page'), 0, pages - 1);
-      return okay({ board: { id: b.id, name: b.name, about: b.about, staffOnly: !!b.staffOnly },
+      return okay({ board: { id: b.id, name: b.name, about: b.about, staffOnly: !!b.staffOnly }, sort,
         threads: list.slice(page * kForumPage, (page + 1) * kForumPage).map(summary), page, pages,
-        canPost: me.userId !== 0 && (!b.staffOnly || staff) });
+        canPost: !all && me.userId !== 0 && (!b.staffOnly || staff) });
     }
     if (name === 'forum.post') {
       if (me.userId === 0) return fail('Sign up to post on the forum.');
@@ -6137,8 +6193,31 @@ export class GbServerObject extends DurableObject {
     const th = this.forum.get(str(args, 'thread'));
     if (!th) return fail('That thread isn\'t there any more.');
     if (name === 'forum.thread') {
-      if (me.userId !== 0 && me.id !== th.by) { th.views = (th.views || 0) + 1; this.dirty.forum.add(th.id); }
+      // (peek: a link card in a chat or post looking at it, which isn't a visit)
+      if (me.userId !== 0 && me.id !== th.by && args.peek !== true) { th.views = (th.views || 0) + 1; this.dirty.forum.add(th.id); }
       return threadPage(th, num(args, 'page'));
+    }
+    if (name === 'forum.vote') {   // vote: 1 (up), -1 (down) or 0 (take it back). Answers the thread's card.
+      if (me.userId === 0) return fail('Sign up to vote on the forum.');
+      const v = num(args, 'vote');
+      if (![1, -1, 0].includes(v)) return fail('Vote up, down, or take your vote back.');
+      const starter = this.users.get(th.by);
+      if (starter && (this.blocks(me, starter) || this.blocks(starter, me))) return fail('You can\'t vote on this thread.');
+      th.votes = th.votes || {};
+      if (v) th.votes[me.id] = v; else delete th.votes[me.id];
+      this.dirty.forum.add(th.id);
+      return okay({ thread: summary(th) });
+    }
+    if (name === 'forum.react') {   // emoji on one post, on or off. Answers that post's reactions.
+      if (me.userId === 0) return fail('Sign up to react on the forum.');
+      const p = th.posts.find((x) => x.id === str(args, 'post'));
+      if (!p) return fail('That post is already gone.');
+      const author = this.users.get(p.by);
+      if (author && (this.blocks(me, author) || this.blocks(author, me))) return fail('You can\'t react to this post.');
+      const bad = toggleReaction(p, str(args, 'emoji'), me.id);
+      if (bad) return fail(bad);
+      this.dirty.forum.add(th.id);
+      return okay({ post: p.id, reactions: reactionList(p.reacts, me.id) });
     }
     if (name === 'forum.reply') {
       if (me.userId === 0) return fail('Sign up to post on the forum.');

@@ -2,7 +2,8 @@
 // create, friends, people, groups, Bolts, sign up / log in) in a browser.
 // Pages are picked by the address after '#', like #/games or #/user/12.
 import * as gb from './gb.js';
-import { openMediaPicker, safeMediaUrl } from './media-picker.js';
+import { openMediaPicker, safeMediaUrl, REACTIONS } from './media-picker.js';
+import { renderInline, embedCards, fillEmbeds } from './embeds.js';
 import { mountAvatar, avatarPicture, itemPicture, itemCamera } from './avatar3d.js';
 import { startTranslating, languagePicker } from '../lang/i18n.js';
 import { startLive, listen, stopListening, onLive } from './live.js';
@@ -87,19 +88,8 @@ function richText(value) {
   const source = String(value ?? '');
   const fence = /```([a-zA-Z0-9_+-]{0,24})[ \t]*\n([\s\S]*?)```/g;
   let out = '', last = 0, match;
-  const plain = (text) => {
-    const source = String(text);
-    const media = /\[media:(https?:[^\]\s]+)\]/gi;
-    let out = '', last = 0, match;
-    const escaped = (value) => esc(value).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
-    while ((match = media.exec(source))) {
-      out += escaped(source.slice(last, match.index));
-      const url = safeMediaUrl(match[1]);
-      out += url ? '<img class="forum-media" src="' + esc(url) + '" alt="Attached image or GIF" loading="lazy" referrerpolicy="no-referrer">' : esc(match[0]);
-      last = media.lastIndex;
-    }
-    return out + escaped(source.slice(last));
-  };
+  const cards = [];   // links to games, items, players and threads, shown as cards under the post
+  const plain = (text) => renderInline(text, { media: 'forum-media' }, cards);
   while ((match = fence.exec(source))) {
     out += plain(source.slice(last, match.index));
     const language = match[1].toLowerCase();
@@ -111,7 +101,7 @@ function richText(value) {
     last = fence.lastIndex;
   }
   out += plain(source.slice(last));
-  return raw(out);
+  return raw(out + embedCards(cards));
 }
 function insertCodeFence(textarea, language = 'lua') {
   if (!textarea) return;
@@ -129,12 +119,15 @@ view.addEventListener('click', (event) => {
   if (!mediaButton) return;
   const textarea = mediaButton.closest('form')?.querySelector('textarea[name="text"]');
   if (!textarea) return;
+  // The picked GIFs wait beside the text (as little pictures), and go on the end when you post.
   openMediaPicker({ onSelect: ({ url }) => {
-    const start = textarea.selectionStart ?? textarea.value.length;
-    const end = textarea.selectionEnd ?? start;
-    const token = (start > 0 && textarea.value.slice(0, start).trim() ? '\n' : '') + '[media:' + url + ']';
-    if (textarea.value.length + token.length > Number(textarea.maxLength || 3000)) { toast('That attachment would exceed the message limit.'); return; }
-    textarea.setRangeText(token, start, end, 'end'); textarea.focus();
+    const form = textarea.form, gifs = forumGifs(form);
+    if (gifs.length >= 4) { toast('That\'s 4 GIFs already, the most one post can have.'); return; }
+    if (forumWithGifs(textarea.value, [...gifs, url]).length > Number(textarea.maxLength || 3000)) { toast('That GIF won\'t fit: the post is too long.'); return; }
+    form.dataset.gifs = JSON.stringify([...gifs, url]);
+    forumComposePreview(form);
+    textarea.required = false;
+    textarea.focus();
   } });
 });
 view.addEventListener('click', async (event) => {
@@ -546,6 +539,7 @@ const NEEDS_ACCOUNT = {
   groupCreate: 'make a group', groupPost: 'post on group walls', groupShout: 'shout to a group',
   favorite: 'favourite games', itemFavorite: 'favourite items', outfitSave: 'save outfits', sendMessage: 'send messages', statusSet: 'post a status', blurbSet: 'edit your profile',
   report: 'report things to staff', block: 'block people', forumPost: 'post on the forum', forumReply: 'post on the forum',
+  forumVote: 'vote on forum posts', forumReact: 'react to forum posts', forumReactOpen: 'react to forum posts', forumCompose: 'post on the forum',
 };
 
 // A small "Report" link for anything people can report (the server takes user, game, item, message and group).
@@ -1042,13 +1036,18 @@ async function checkUpdates() {
   return r;
 }
 
-// --- The forum, like the old Roblox forum: boards, then threads, then posts. ---
-// #/forum (the boards), #/forum/help[/page] (a board's threads), #/forum/t/<thread>[/page] (one thread).
-const forumPager = (base, page, pages) => pages <= 1 ? '' : html`<p class="pager">
-  ${page > 0 ? html`<a class="btn small" href="${base}/${page}">&lt; Back</a>` : ''}
+// --- The forum: boards of posts, laid out like a modern Reddit (cards with votes, sort tabs,
+// a sidebar). #/forum (every board, or ?sort=new), #/forum/help[/page] (one board),
+// #/forum/t/<thread>[/page] (one post and its comments). forum.css has the look.
+const forumPager = (base, page, pages, query = '') => pages <= 1 ? '' : html`<nav class="fx-pager" aria-label="Pages">
+  ${page > 0 ? html`<a class="fx-pill" href="${base}/${page}${query}">&larr; Newer</a>` : html`<span></span>`}
   <span class="muted small">Page ${page + 1} of ${pages}</span>
-  ${page + 1 < pages ? html`<a class="btn small" href="${base}/${page + 2}">Next &gt;</a>` : ''}</p>`;
-const forumWho = (u) => html`<a href="#/user/${u.userId || u.id}"><b>${u.name}</b></a>${verified(u.verified)}${club(u)}${u.staff ? html` <span class="badge-pill staff">Staff</span>` : ''}${partner(u)}`;
+  ${page + 1 < pages ? html`<a class="fx-pill" href="${base}/${page + 2}${query}">Older &rarr;</a>` : html`<span></span>`}</nav>`;
+const forumWho = (u) => html`<a class="fx-name" href="#/user/${u.userId || u.id}">${u.name}</a>${verified(u.verified)}${club(u)}${u.staff ? html` <span class="badge-pill staff">Staff</span>` : ''}${partner(u)}`;
+// Each board's little picture, like a Reddit community icon.
+const FORUM_ICONS = { all: '🔥', news: '📣', help: '🛟', scripting: '📜', building: '🧱', games: '🎮', trading: '🔁', offtopic: '💬' };
+const forumIcon = (id, big = false) => html`<span class="fx-icon fx-icon-${id}${big ? ' big' : ''}" aria-hidden="true">${FORUM_ICONS[id] || '💬'}</span>`;
+const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
 // Use the same rendered 2D PNG as the avatar page's 2D mode, with SVG as a fast fallback.
 const forumAvatarUsers = new Map();
 const forumAvatar = (u, size) => {
@@ -1104,108 +1103,199 @@ function loadForumAvatars(root = view) {
 }
 
 function forumSearchForm(boards, selected = 'all', query = '') {
-  return html`<form class="forum-search form" data-form="forumSearch">
-    <label for="forumSearchQuery">Search discussions</label>
-    <div class="forum-search-row">
-      <input id="forumSearchQuery" type="search" name="q" value="${query}" maxlength="100" placeholder="Thread titles and post text…" required>
-      <select name="board" aria-label="Search board">
-        <option value="all" ${selected === 'all' ? 'selected' : ''}>All boards</option>
-        ${boards.map((b) => html`<option value="${b.id}" ${selected === b.id ? 'selected' : ''}>${b.name}</option>`)}
-      </select><button class="btn blue">Search</button>
-    </div>
+  return html`<form class="fx-search" data-form="forumSearch" role="search">
+    <span class="fx-search-icon" aria-hidden="true">⌕</span>
+    <input type="search" name="q" value="${query}" maxlength="100" placeholder="Search the forum" aria-label="Search the forum" required>
+    <select name="board" aria-label="Which board">
+      <option value="all" ${selected === 'all' ? 'selected' : ''}>All boards</option>
+      ${boards.map((b) => html`<option value="${b.id}" ${selected === b.id ? 'selected' : ''}>${b.name}</option>`)}
+    </select>
   </form>`;
+}
+// The vote buttons beside a post: up, the score, down. Your vote is coloured in.
+const forumVotes = (t) => html`<div class="fx-vote${t.myVote > 0 ? ' up' : t.myVote < 0 ? ' down' : ''}" data-vote-for="${t.id}">
+  <button type="button" class="fx-vote-up" data-act="forumVote" data-thread="${t.id}" data-dir="1" aria-label="Vote up" title="Vote up">▲</button>
+  <b class="fx-score">${t.score || 0}</b>
+  <button type="button" class="fx-vote-down" data-act="forumVote" data-thread="${t.id}" data-dir="-1" aria-label="Vote down" title="Vote down">▼</button></div>`;
+// The emoji people put on a post (yours coloured in), and the button that opens the emoji row.
+const forumReacts = (thread, p, canReact) => html`<div class="fx-reacts" data-reacts-for="${p.id}">
+  ${(p.reactions || []).map((x) => html`<button type="button" class="fx-react${x.mine ? ' mine' : ''}" data-act="forumReact" data-thread="${thread}" data-post="${p.id}" data-emoji="${x.emoji}"
+    title="${x.mine ? 'Take your reaction back' : 'React with ' + x.emoji}">${x.emoji}<span>${x.count}</span></button>`)}
+  ${canReact ? html`<span class="fx-react-add"><button type="button" class="fx-react-open" data-act="forumReactOpen" aria-label="Add a reaction" title="Add a reaction">☺<small>+</small></button>
+    <span class="fx-react-pick" hidden>${REACTIONS.map((e) => html`<button type="button" data-act="forumReact" data-thread="${thread}" data-post="${p.id}" data-emoji="${e}" aria-label="React with ${e}">${e}</button>`)}</span></span>` : ''}</div>`;
+// One post in a feed: votes on the left, then the board, who and when, the title, a preview
+// (or its first GIF), and comments / reactions / share along the bottom.
+const forumCard = (t, showBoard) => html`<article class="fx-card${t.pinned ? ' pinned' : ''}">
+  ${forumVotes(t)}
+  <div class="fx-card-main">
+    <div class="fx-meta">${showBoard ? html`<a class="fx-board-link" href="#/forum/${t.board}">${forumIcon(t.board)}<b>${t.boardName}</b></a><span class="fx-dot">•</span>` : ''}
+      <span class="fx-av">${forumAvatar(t.by, 28)}</span>${forumWho(t.by)}<span class="fx-dot">•</span><span title="${new Date(t.at * 1000).toLocaleString()}">${ago(t.at)}</span>
+      ${t.pinned ? html`<span class="fx-tag pin">📌 Pinned</span>` : ''}${t.locked ? html`<span class="fx-tag lock">🔒 Locked</span>` : ''}</div>
+    <a class="fx-title" href="#/forum/t/${t.id}">${t.title}</a>
+    ${t.image ? html`<a class="fx-card-media" href="#/forum/t/${t.id}"><img src="${t.image}" alt="" loading="lazy" referrerpolicy="no-referrer"></a>` : ''}
+    ${t.preview ? html`<a class="fx-preview" href="#/forum/t/${t.id}">${t.preview}</a>` : ''}
+    <div class="fx-actions">
+      <a class="fx-pill" href="#/forum/t/${t.id}/9999">💬 ${plural(t.replies, 'comment', 'comments')}</a>
+      ${(t.reactions || []).slice(0, 4).map((x) => html`<span class="fx-pill quiet" title="${x.count} × ${x.emoji}">${x.emoji} ${x.count}</span>`)}
+      <span class="fx-pill quiet" title="Views">👁 ${t.views}</span>
+      <button type="button" class="fx-pill" data-act="copyText" data-text="${location.origin + location.pathname}#/forum/t/${t.id}">↗ Share</button>
+    </div>
+  </div></article>`;
+const FORUM_SORTS = [['hot', '🔥 Hot'], ['new', '✨ New'], ['top', '🏆 Top'], ['active', '💬 Active']];
+const forumSortTabs = (base, sort) => html`<div class="fx-sorts" role="tablist">${FORUM_SORTS.map(([id, label]) =>
+  html`<a role="tab" class="fx-sort${sort === id ? ' on' : ''}" href="${base}?sort=${id}" aria-selected="${sort === id ? 'true' : 'false'}">${label}</a>`)}</div>`;
+// "Create a post": a short bar that opens into the whole form (title, text, GIF and code).
+function forumComposer(boards, boardId) {
+  if (!signedIn()) return html`<div class="fx-compose closed"><span class="fx-compose-fake"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to post.</span></div>`;
+  const choices = boards.filter((b) => !b.staffOnly || isStaffMe());
+  return html`<form class="fx-compose closed" data-form="forumPost">
+    <div class="fx-compose-bar"><span class="fx-av">${forumAvatar(me, 32)}</span>
+      <button type="button" class="fx-compose-fake" data-act="forumCompose">Create a post…</button>
+      <button type="button" class="fx-tool" data-act="forumCompose" data-gif="1" title="Post a GIF" aria-label="Post a GIF">GIF</button></div>
+    <div class="fx-compose-body">
+      ${boardId === 'all' ? html`<label class="fx-field"><span>Board</span><select name="board" required>${choices.map((b) => html`<option value="${b.id}">${FORUM_ICONS[b.id] || ''} ${b.name}</option>`)}</select></label>`
+        : html`<input type="hidden" name="board" value="${boardId}">`}
+      <input class="fx-input fx-input-title" type="text" name="title" maxlength="80" placeholder="Title" required>
+      <textarea class="fx-input" name="text" maxlength="3000" rows="5" placeholder="Text (you can add GIFs, code and links to games)" required></textarea>
+      <div class="fx-compose-preview"></div>
+      <div class="fx-compose-tools"><button type="button" class="fx-tool" data-forum-media title="Add a GIF or sticker">GIF</button>
+        <button type="button" class="fx-tool" data-code-insert="lua" title="Add a code block">&lt;/&gt; Code</button>
+        <span class="small muted">Be kind, and don't share personal info.</span>
+        <button class="btn fx-post-btn">Post</button></div>
+    </div></form>`;
+}
+const isStaffMe = () => !!(me && me.staff);
+// The GIFs picked for a post you're writing (kept on the form, not typed into the text).
+function forumGifs(form) { try { return JSON.parse(form.dataset.gifs || '[]').filter((u) => safeMediaUrl(u)); } catch { return []; } }
+const forumWithGifs = (text, gifs) => [text.trim(), ...gifs.map((u) => '[media:' + u + ']')].filter(Boolean).join('\n');
+// ...shown as little pictures you can take back out.
+function forumComposePreview(form) {
+  const box = form && form.querySelector('.fx-compose-preview');
+  if (!box) return;
+  box.innerHTML = forumGifs(form).map((u, i) => html`<span class="fx-compose-gif"><img src="${u}" alt="GIF" referrerpolicy="no-referrer"><button type="button" data-remove-gif="${i}" aria-label="Take this GIF out">×</button></span>`.s).join('');
+}
+view.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-remove-gif]');
+  if (!b) return;
+  const form = b.closest('form'), gifs = forumGifs(form);
+  gifs.splice(Number(b.dataset.removeGif), 1);
+  form.dataset.gifs = JSON.stringify(gifs);
+  form.querySelector('textarea[name=text]').required = !gifs.length;
+  forumComposePreview(form);
+});
+// The right-hand column: about the board (or the forum), the boards, and what's going on.
+function forumSidebar(boards, current, activity) {
+  const b = boards.find((x) => x.id === current);
+  return html`<aside class="fx-side">
+    <section class="fx-side-card"><div class="fx-side-banner fx-banner-${current}"></div>
+      <div class="fx-side-body"><h3>${b ? b.name : 'The Guts&Bolts forum'}</h3>
+      <p class="muted">${b ? b.about : 'Games, questions, scripts, builds and whatever else is on your mind.'}</p>
+      ${b ? html`<div class="fx-side-stats"><span><b>${b.threads}</b> posts</span><span><b>${b.posts}</b> comments</span></div>` : ''}
+      <p class="small muted">Be kind. The forum follows the same <a href="#/terms">rules</a> as chat.</p></div></section>
+    <section class="fx-side-card"><h4>Boards</h4><nav class="fx-boards">
+      <a class="${current === 'all' ? 'on' : ''}" href="#/forum">${forumIcon('all')}<span>All boards</span></a>
+      ${boards.map((x) => html`<a class="${current === x.id ? 'on' : ''}" href="#/forum/${x.id}">${forumIcon(x.id)}<span>${x.name}</span><small>${x.threads}</small></a>`)}</nav></section>
+    ${activity ? html`<div id="forumActivity">${renderForumActivity(activity)}</div>` : ''}
+  </aside>`;
+}
+// "Just now" in the sidebar: the newest posts and comments (live, see the activity refresh below).
+function renderForumActivity(events = []) {
+  return html`<section class="fx-side-card"><h4>Just now</h4>${events.length ? html`<div class="fx-activity">${events.slice(0, 6).map((event) => html`<a href="#/forum/t/${encodeURIComponent(event.thread_id)}/9999">
+      <b>${event.thread_title}</b><span class="muted">${event.actor_name} ${event.event_type === 'thread_created' ? 'posted' : 'commented'} · ${ago(Math.floor(Date.parse(event.created_at) / 1000))}</span></a>`)}</div>`
+      : html`<p class="small muted fx-none">New posts and comments show up here.</p>`}</section>`;
 }
 pages.forumsearch = async (query, board = 'all', page = '1') => {
   query = String(query || '').trim().slice(0, 100); board = board || 'all';
   const p = Math.max(0, (Number(page) || 1) - 1);
   const [br, r] = await Promise.all([pageCall('forum.boards', {}), pageCall('forum.search', { q: query, board, page: p })]);
-  if (!br.ok || !r.ok) { show(html`<h1>Forum search</h1><p class="error">${!br.ok ? br.error : r.error}</p><p><a href="#/forum">Back to forums</a></p>`); return; }
+  if (!br.ok || !r.ok) { show(html`<h1>Forum search</h1><p class="error">${!br.ok ? br.error : r.error}</p><p><a href="#/forum">Back to the forum</a></p>`); return; }
   const base = '#/forumsearch/' + encodeURIComponent(query) + '/' + encodeURIComponent(board);
-  show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; Search</p>
-    <div class="forum-retro-masthead"><div><span class="forum-retro-kicker">SEARCH THE ARCHIVES</span><h1>Forum Search</h1><p>Find old arguments, answers, and half-forgotten threads.</p></div></div>
+  show(html`<div class="fx-page"><div class="fx-main">
     ${forumSearchForm(br.boards, board, query)}
-    ${r.total ? html`<p class="small muted">Showing ${r.results.length} of ${r.total} matching discussions · Page ${r.page + 1} of ${r.pages}</p>
-      <div class="forum-search-results">${r.results.map((x) => html`<article class="forum-search-result">
-        <div class="forum-search-result-main"><span class="forum-retro-kicker">${x.boardName} · ${x.match === 'title' ? 'TITLE MATCH' : 'POST MATCH'}</span>
-          <h2><a href="#/forum/t/${x.id}/${x.postPage + 1}">${x.title}</a></h2><p>${x.snippet}</p>
-          <span class="small muted">Started by ${forumWho(x.by)} · ${x.replies} replies · last activity ${ago(x.last)}</span>
-        </div><a class="forum-search-open" href="#/forum/t/${x.id}/${x.postPage + 1}">Open thread &raquo;</a>
-      </article>`)}</div>
-      ${r.pages > 1 ? html`<p class="pager">${r.page > 0 ? html`<a class="btn small" href="${base}/${r.page}">&lt; Back</a>` : ''}<span class="muted small">Page ${r.page + 1} of ${r.pages}</span>${r.page + 1 < r.pages ? html`<a class="btn small" href="${base}/${r.page + 2}">Next &gt;</a>` : ''}</p>` : ''}`
-      : html`<div class="box forum-search-empty"><h2>No matching discussions</h2><p class="muted">Try a shorter phrase or search all boards.</p></div>`}`);
+    <h1 class="fx-h1">Results for “${query}”</h1>
+    ${r.total ? html`<p class="small muted">${plural(r.total, 'post matches', 'posts match')}</p>
+      <div class="fx-feed">${r.results.map((x) => html`<article class="fx-card fx-result"><div class="fx-card-main">
+        <div class="fx-meta"><a class="fx-board-link" href="#/forum/${x.board}">${forumIcon(x.board)}<b>${x.boardName}</b></a><span class="fx-dot">•</span>${forumWho(x.by)}<span class="fx-dot">•</span>${ago(x.last)}
+          <span class="fx-tag">${x.match === 'title' ? 'In the title' : 'In a comment'}</span></div>
+        <a class="fx-title" href="#/forum/t/${x.id}/${x.postPage + 1}">${x.title}</a><p class="fx-preview">${x.snippet}</p>
+        <div class="fx-actions"><a class="fx-pill" href="#/forum/t/${x.id}/${x.postPage + 1}">💬 ${plural(x.replies, 'comment', 'comments')}</a></div></div></article>`)}</div>
+      ${r.pages > 1 ? forumPager(base, r.page, r.pages) : ''}`
+      : html`<div class="fx-empty"><b>Nothing found</b><p class="muted">Try fewer or different words, or search all boards.</p></div>`}
+    </div>${forumSidebar(br.boards, board, null)}</div>`);
+  loadForumAvatars();
 };
-function renderForumActivity(events = []) {
-  return html`<section class="box forum-activity-box"><h2 class="boxhead">Recent Forum Activity</h2>
-    ${events.length ? html`<div class="list">${events.map((event) => html`<div class="small">
-      <a href="#/forum/t/${encodeURIComponent(event.thread_id)}/9999"><b>${event.thread_title}</b></a>
-      <span class="muted"> · ${event.event_type === 'thread_created' ? 'started' : 'replied in'} ${event.board_name} · by ${event.actor_name} · ${ago(Math.floor(Date.parse(event.created_at) / 1000))}</span>
-      ${event.post_excerpt ? html`<div class="muted">${event.post_excerpt}</div>` : ''}
-    </div>`)}</div>` : html`<p class="small muted">New threads and replies will appear here.</p>`}</section>`;
-}
 pages.forum = async (board, a, b) => {
   if (board === 't') { await forumThread(a, Math.max(0, (Number(b) || 1) - 1)); return; }
-  if (!board) {
-    const [r, activity] = await Promise.all([pageCall('forum.boards', {}), fetchPublicActivity('/api/activity/forum?limit=10')]);
-    if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p>`); return; }
-    show(html`<div class="forum-retro-masthead"><div><span class="forum-retro-kicker">GUTS &amp; BOLTS COMMUNITY · EST. 2004</span><h1>Forum</h1><p>Games, questions, arguments, and whatever else is on your mind.</p></div><span class="forum-retro-stamp">STILL<br>POSTING</span></div><p class="muted forum-intro">Old-school boards, real player avatars. Be kind: the forum follows the same <a href="#/terms">rules</a> as chat.</p>
-      ${forumSearchForm(r.boards)}
-      <div id="forumActivity">${renderForumActivity(activity.ok ? activity.events : [])}</div>
-      <div class="table-wrap"><table class="forum">
-        <thead><tr><th>Board</th><th class="num">Threads</th><th class="num">Posts</th><th>Last post</th></tr></thead>
-        <tbody>${r.boards.map((x) => html`<tr>
-          <td><a href="#/forum/${x.id}"><b>${x.name}</b></a><br><span class="small muted">${x.about}</span></td>
-          <td class="num">${x.threads}</td><td class="num">${x.posts}</td>
-          <td class="small">${x.last ? html`<a href="#/forum/t/${x.last.thread}/9999">${x.last.title}</a><br><span class="muted">${ago(x.last.at)} by ${x.last.by.name}</span>`
-            : html`<span class="muted">Nothing yet</span>`}</td></tr>`)}</tbody></table></div>`);
-    return;
-  }
+  board = board || 'all';
   const page = Math.max(0, (Number(a) || 1) - 1);
-  const r = await pageCall('forum.list', { board, page });
-  if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p><p><a href="#/forum">&lt; All boards</a></p>`); return; }
-  const base = '#/forum/' + r.board.id;
-  show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; ${r.board.name}</p><div class="forum-retro-masthead forum-retro-board-head"><div><span class="forum-retro-kicker">COMMUNITY BOARD</span><h1>${r.board.name}</h1><p>${r.board.about}</p></div><a class="btn small" href="#/forum">All boards</a></div>
-    ${forumSearchForm((await pageCall('forum.boards', {})).boards || [], r.board.id)}
-    ${r.threads.length ? html`<div class="table-wrap"><table class="forum">
-      <thead><tr><th>Thread</th><th class="num">Replies</th><th class="num">Views</th><th>Last post</th></tr></thead>
-      <tbody>${r.threads.map((t) => html`<tr class="${t.pinned ? 'pinned' : ''}">
-        <td>${t.pinned ? html`<span class="badge-pill" title="Pinned by staff">Pinned</span> ` : ''}${t.locked ? html`<span class="badge-pill" title="Nobody can reply">Locked</span> ` : ''}
-          <span class="forum-list-avatar">${forumAvatar(t.by, 40)}</span><span class="forum-list-thread"><a href="#/forum/t/${t.id}"><b>${t.title}</b></a><br><span class="small muted">by ${forumWho(t.by)}, ${ago(t.at)}</span></span></td>
-        <td class="num">${t.replies}</td><td class="num">${t.views}</td>
-        <td class="small"><a href="#/forum/t/${t.id}/9999">${ago(t.last)}</a><br><span class="muted">by ${t.lastBy.name}</span></td></tr>`)}</tbody></table></div>`
-      : html`<p class="muted">No threads here yet. Be the first!</p>`}
-    ${forumPager(base, r.page, r.pages)}
-    <h2>New thread</h2>
-    ${r.board.staffOnly && !r.canPost ? html`<p class="muted">Only Guts&amp;Bolts staff post here.</p>`
-      : signedIn() ? html`<form class="form" data-form="forumPost"><input type="hidden" name="board" value="${r.board.id}">
-        <label>Title</label><input type="text" name="title" maxlength="80" required>
-        <label>Message</label><textarea name="text" maxlength="3000" rows="7" required></textarea><p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <button type="button" class="btn small" data-forum-media>Add image/GIF</button> <span class="small muted">Wrap Lua or other code in a copyable block.</span></p>
-        <p><button class="btn green">Post thread</button> <span class="small muted">Be kind, and don't share personal info.</span></p></form>`
-      : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to post.</p>`}`);
+  const sort = hashParams().get('sort') || 'hot';
+  const [br, r, activity] = await Promise.all([pageCall('forum.boards', {}), pageCall('forum.list', { board, page, sort }),
+    board === 'all' ? fetchPublicActivity('/api/activity/forum?limit=10') : Promise.resolve(null)]);
+  if (!br.ok || !r.ok) { show(html`<h1>Forum</h1><p class="error">${(!br.ok ? br : r).error}</p><p><a href="#/forum">All boards</a></p>`); return; }
+  const base = '#/forum/' + (board === 'all' ? 'all' : r.board.id), query = '?sort=' + r.sort;
+  const head = board === 'all'
+    ? html`<header class="fx-hero"><div class="fx-hero-banner fx-banner-all"></div><div class="fx-hero-row">${forumIcon('all', true)}
+        <div><h1>Forum</h1><p class="muted">Every board in one feed: games, scripts, builds, trades and more.</p></div></div></header>`
+    : html`<header class="fx-hero"><div class="fx-hero-banner fx-banner-${r.board.id}"></div><div class="fx-hero-row">${forumIcon(r.board.id, true)}
+        <div><h1>${r.board.name}</h1><p class="muted">${r.board.about}</p></div><a class="fx-pill" href="#/forum">All boards</a></div></header>`;
+  const composer = r.board.staffOnly && !r.canPost ? html`<div class="fx-compose closed"><span class="fx-compose-fake">Only Guts&amp;Bolts staff post here.</span></div>`
+    : forumComposer(br.boards, board);
+  show(html`${head}<div class="fx-page"><div class="fx-main">
+    ${forumSearchForm(br.boards, board)}
+    <nav class="fx-board-chips" aria-label="Boards"><a class="${board === 'all' ? 'on' : ''}" href="#/forum">${forumIcon('all')}All</a>${br.boards.map((x) =>
+      html`<a class="${board === x.id ? 'on' : ''}" href="#/forum/${x.id}">${forumIcon(x.id)}${x.name}</a>`)}</nav>
+    ${composer}
+    ${forumSortTabs(base === '#/forum/all' ? '#/forum' : base, r.sort)}
+    ${r.threads.length ? html`<div class="fx-feed">${r.threads.map((t) => forumCard(t, board === 'all'))}</div>`
+      : html`<div class="fx-empty"><b>No posts yet</b><p class="muted">Be the first to post here!</p></div>`}
+    ${forumPager(base, r.page, r.pages, query)}
+  </div>${forumSidebar(br.boards, board, activity && activity.ok ? activity.events : (board === 'all' ? [] : null))}</div>`);
   loadForumAvatars();
 };
 async function forumThread(id, page) {
-  const r = await pageCall('forum.thread', { thread: id, page: page >= 9998 ? -1 : page });
-  if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p><p><a href="#/forum">&lt; All boards</a></p>`); return; }
+  const [r, br] = await Promise.all([pageCall('forum.thread', { thread: id, page: page >= 9998 ? -1 : page }), pageCall('forum.boards', {})]);
+  if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p><p><a href="#/forum">All boards</a></p>`); return; }
   const t = r.thread, base = '#/forum/t/' + t.id;
-  const post = (p) => html`<div class="forum-post" data-post="${p.id}">
-    <div class="forum-author"><a class="forum-player-avatar" href="#/user/${p.by.userId || p.by.id}" title="View ${p.by.name}’s profile">${forumAvatar(p.by, 72)}</a>${forumWho(p.by)}<span class="forum-player-number">PLAYER #${p.by.userId || p.by.id}</span></div>
-    <div class="grow"><p class="small muted">${ago(p.at)}</p>
-      <div class="forum-text">${richText(p.text)}</div>
-      <p class="small">${p.canDelete ? html`<a href="#" data-act="forumDelete" data-thread="${t.id}" data-post="${p.id}" data-first="${p.first ? 1 : ''}" data-page="${r.page}">${p.first ? 'Delete thread' : 'Delete'}</a> ` : ''}
-        ${signedIn() && p.by.id !== me.id ? reportLink('forum', t.id + ':' + p.id, p.by.name) : ''}</p></div></div>`;
-  show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; <a href="#/forum/${t.board}">${t.boardName}</a></p>
-    <div class="forum-retro-masthead forum-retro-thread-head"><div><span class="forum-retro-kicker">${t.pinned ? 'PINNED DISCUSSION' : 'COMMUNITY DISCUSSION'}${t.locked ? ' · LOCKED' : ''}</span><h1>${t.title}</h1><p>Posted in <a href="#/forum/${t.board}">${t.boardName}</a></p></div></div>
-    ${r.canModerate ? html`<p class="row"><button class="btn small" data-act="forumMod" data-thread="${t.id}" data-pinned="${t.pinned ? '' : 1}" data-locked="${t.locked ? 1 : ''}" data-page="${r.page}">${t.pinned ? 'Unpin' : 'Pin'}</button>
-      <button class="btn small" data-act="forumMod" data-thread="${t.id}" data-pinned="${t.pinned ? 1 : ''}" data-locked="${t.locked ? '' : 1}" data-page="${r.page}">${t.locked ? 'Unlock' : 'Lock'}</button></p>` : ''}
+  const first = r.posts.find((p) => p.first);
+  const tools = (p) => html`${p.canDelete ? html`<button type="button" class="fx-pill quiet" data-act="forumDelete" data-thread="${t.id}" data-post="${p.id}" data-first="${p.first ? 1 : ''}" data-page="${r.page}">🗑 ${p.first ? 'Delete post' : 'Delete'}</button>` : ''}
+    ${signedIn() && p.by.id !== me.id ? reportLink('forum', t.id + ':' + p.id, p.by.name) : ''}`;
+  const comment = (p) => html`<article class="fx-comment" id="post-${p.id}" data-post="${p.id}">
+    <a class="fx-comment-av" href="#/user/${p.by.userId || p.by.id}" title="${p.by.name}">${forumAvatar(p.by, 40)}</a>
+    <div class="fx-comment-main"><div class="fx-meta">${forumWho(p.by)}${p.by.id === t.by.id ? html`<span class="fx-tag op" title="Started this post">OP</span>` : ''}<span class="fx-dot">•</span><span title="${new Date(p.at * 1000).toLocaleString()}">${ago(p.at)}</span></div>
+      <div class="fx-body">${richText(p.text)}</div>
+      <div class="fx-actions">${forumReacts(t.id, p, r.canReact)}${tools(p)}</div></div></article>`;
+  const comments = r.posts.filter((p) => !p.first);
+  show(html`<div class="fx-page"><div class="fx-main">
+    <a class="fx-back" href="#/forum/${t.board}">&larr; ${forumIcon(t.board)} ${t.boardName}</a>
+    <article class="fx-card fx-full${t.pinned ? ' pinned' : ''}">
+      ${forumVotes(t)}
+      <div class="fx-card-main">
+        <div class="fx-meta"><a class="fx-board-link" href="#/forum/${t.board}">${forumIcon(t.board)}<b>${t.boardName}</b></a><span class="fx-dot">•</span>
+          <span class="fx-av">${forumAvatar(t.by, 28)}</span>${forumWho(t.by)}<span class="fx-dot">•</span><span title="${new Date(t.at * 1000).toLocaleString()}">${ago(t.at)}</span>
+          ${t.pinned ? html`<span class="fx-tag pin">📌 Pinned</span>` : ''}${t.locked ? html`<span class="fx-tag lock">🔒 Locked</span>` : ''}</div>
+        <h1 class="fx-title big">${t.title}</h1>
+        ${first ? html`<div class="fx-body">${richText(first.text)}</div>` : r.page > 0 ? html`<p class="small muted"><a href="${base}">Back to the start of this post</a></p>` : ''}
+        <div class="fx-actions">${first ? forumReacts(t.id, first, r.canReact) : ''}
+          <span class="fx-pill quiet">💬 ${plural(t.replies, 'comment', 'comments')}</span><span class="fx-pill quiet">👁 ${t.views}</span>
+          <button type="button" class="fx-pill" data-act="copyText" data-text="${location.origin + location.pathname}#/forum/t/${t.id}">↗ Share</button>
+          ${first ? tools(first) : ''}
+          ${r.canModerate ? html`<button class="fx-pill quiet" data-act="forumMod" data-thread="${t.id}" data-pinned="${t.pinned ? '' : 1}" data-locked="${t.locked ? 1 : ''}" data-page="${r.page}">📌 ${t.pinned ? 'Unpin' : 'Pin'}</button>
+            <button class="fx-pill quiet" data-act="forumMod" data-thread="${t.id}" data-pinned="${t.pinned ? 1 : ''}" data-locked="${t.locked ? '' : 1}" data-page="${r.page}">🔒 ${t.locked ? 'Unlock' : 'Lock'}</button>` : ''}</div>
+      </div></article>
+    ${r.canReply ? html`<form class="fx-reply" data-form="forumReply"><input type="hidden" name="thread" value="${t.id}">
+        <textarea class="fx-input" name="text" maxlength="3000" rows="3" placeholder="Add a comment" required></textarea>
+        <div class="fx-compose-preview"></div>
+        <div class="fx-compose-tools"><button type="button" class="fx-tool" data-forum-media title="Add a GIF or sticker">GIF</button>
+          <button type="button" class="fx-tool" data-code-insert="lua" title="Add a code block">&lt;/&gt; Code</button><span></span>
+          <button class="btn fx-post-btn">Comment</button></div></form>`
+      : t.locked ? html`<div class="fx-empty small">🔒 This post is locked, so nobody can comment.</div>`
+      : html`<div class="fx-empty small"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to comment.</div>`}
     ${forumPager(base, r.page, r.pages)}
-    <div class="forum-posts">${r.posts.map(post)}</div>
+    <section class="fx-comments">${comments.length ? comments.map(comment) : html`<p class="muted fx-none">No comments yet. Say something!</p>`}</section>
     ${forumPager(base, r.page, r.pages)}
-    ${r.canReply ? html`<h2>Reply</h2><form class="form" data-form="forumReply"><input type="hidden" name="thread" value="${t.id}">
-        <textarea name="text" maxlength="3000" rows="5" required></textarea>
-        <p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <button type="button" class="btn small" data-forum-media>Add image/GIF</button> <button class="btn blue">Post reply</button></p></form>`
-      : t.locked ? html`<p class="muted">This thread is locked, so nobody can reply.</p>`
-      : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to reply.</p>`}`);
+  </div>${br.ok ? forumSidebar(br.boards, t.board, null) : ''}</div>`);
   loadForumAvatars();
+  fillEmbeds(view, call);
 }
 
 pages.updates = async () => {
@@ -4724,6 +4814,37 @@ const actions = {
     if (r.gone) { location.hash = '#/forum/' + r.board; return; }
     render();
   },
+  // Vote a post up or down (pressing your own vote again takes it back). Only the vote box changes.
+  async forumVote(d, el) {
+    const box = el.closest('.fx-vote');
+    const now = box.classList.contains('up') ? 1 : box.classList.contains('down') ? -1 : 0;
+    const want = Number(d.dir) === now ? 0 : Number(d.dir);
+    const r = await call('forum.vote', { thread: d.thread, vote: want });
+    if (!r.ok) { toast(r.error); return; }
+    document.querySelectorAll('[data-vote-for="' + CSS.escape(d.thread) + '"]').forEach((v) => {
+      v.classList.toggle('up', r.thread.myVote > 0); v.classList.toggle('down', r.thread.myVote < 0);
+      v.querySelector('.fx-score').textContent = r.thread.score;
+    });
+  },
+  forumReactOpen(d, el) {
+    const pick = el.parentElement.querySelector('.fx-react-pick');
+    document.querySelectorAll('.fx-react-pick').forEach((x) => { if (x !== pick) x.hidden = true; });
+    pick.hidden = !pick.hidden;
+  },
+  // An emoji on a post, on or off. Only that post's emoji row is redrawn.
+  async forumReact(d, el) {
+    const r = await call('forum.react', { thread: d.thread, post: d.post, emoji: d.emoji });
+    if (!r.ok) { toast(r.error); return; }
+    const row = el.closest('.fx-reacts');
+    if (row) row.outerHTML = forumReacts(d.thread, { id: r.post, reactions: r.reactions }, true).s;
+  },
+  // Open the "Create a post" form (and the GIF picker, from its GIF button).
+  forumCompose(d, el) {
+    const form = el.closest('.fx-compose');
+    form.classList.remove('closed');
+    form.querySelector('input[name=title]').focus();
+    if (d.gif) form.querySelector('[data-forum-media]').click();
+  },
   async forumMod(d) {
     const r = await call('forum.mod', { thread: d.thread, pinned: !!d.pinned, locked: !!d.locked, page: Number(d.page) || 0 });
     if (!r.ok) toast(r.error);
@@ -5204,12 +5325,12 @@ const forms = {
     location.hash = '#/forumsearch/' + encodeURIComponent(q) + '/' + encodeURIComponent(f.board.value || 'all') + '/1';
   },
   async forumPost(f) {
-    const r = await call('forum.post', { board: f.board.value, title: f.title.value, text: f.text.value });
+    const r = await call('forum.post', { board: f.board.value, title: f.title.value, text: forumWithGifs(f.text.value, forumGifs(f)) });
     if (!r.ok) { toast(r.error); return; }
     location.hash = '#/forum/t/' + r.thread.id;
   },
   async forumReply(f) {
-    const r = await call('forum.reply', { thread: f.thread.value, text: f.text.value });
+    const r = await call('forum.reply', { thread: f.thread.value, text: forumWithGifs(f.text.value, forumGifs(f)) });
     if (!r.ok) { toast(r.error); return; }
     const want = '#/forum/t/' + r.thread.id + '/' + (r.page + 1);
     if (location.hash === want) render(); else location.hash = want;

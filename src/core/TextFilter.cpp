@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <regex>
+#include <utility>
 #include <vector>
 
 namespace TextFilter {
@@ -37,7 +38,7 @@ std::string wordPattern(const std::string& word) {
 }
 
 struct Rules {
-    std::regex slurs, link, email, phone, allowedLink;
+    std::regex slurs, link, email, phone, allowedLink, media;
     Rules() {
         std::string alt;
         for (const char* w : kWords) { if (!alt.empty()) alt += "|"; alt += wordPattern(rot13(w)); }
@@ -46,6 +47,9 @@ struct Rules {
         email = std::regex(R"([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})");
         phone = std::regex(R"(\+?\(?[0-9](?:[ .()-]*[0-9]){9,14})");
         allowedLink = std::regex(R"(^(?:https?://)?(?:www\.)?gutsandbolts\.net(?:[/?#].*)?$)");
+        // A GIF or sticker from the chat/forum picker ([media:https://static.klipy.com/...gif])
+        // only shows a picture, so it isn't a link (worker/textfilter.js MEDIA_TOKEN is the same).
+        media = std::regex(R"(\[media:https://(?:[a-z0-9-]+\.)*klipy\.com/[a-z0-9._~/%-]{1,400}\.(?:gif|png|jpe?g|webp)\])");
     }
 };
 const Rules& rules() { static Rules r; return r; }
@@ -72,6 +76,13 @@ static std::string cover(const std::string& text) {
     std::vector<bool> mask(text.size(), false);
     auto cover = [&](size_t from, size_t to) { for (size_t i = from; i < to && i < mask.size(); ++i) mask[i] = true; };
     const Rules& r = rules();
+    // Picker pictures are blanked out first (same length, so every position still lines up).
+    {
+        std::vector<std::pair<size_t, size_t>> spans;
+        for (std::sregex_iterator it(low.begin(), low.end(), r.media), end; it != end; ++it)
+            spans.emplace_back((size_t)it->position(0), (size_t)it->length(0));
+        for (const auto& [at, len] : spans) std::fill(low.begin() + (long)at, low.begin() + (long)(at + len), ' ');
+    }
     for (std::sregex_iterator it(low.begin(), low.end(), r.email), end; it != end; ++it)
         cover((size_t)it->position(0), (size_t)(it->position(0) + it->length(0)));
     for (std::sregex_iterator it(low.begin(), low.end(), r.link), end; it != end; ++it)
