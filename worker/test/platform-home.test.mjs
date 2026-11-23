@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PRODUCTS, productOf, productById, activeLink } from '../../website/app/products.js';
 
 const read = (p) => readFileSync(new URL('../../' + p, import.meta.url), 'utf8');
-const app = read('website/app/app.js') + read('website/app/art.js') + read('website/app/paste.js') + read('website/app/academy.js');   // (art.js, paste.js and academy.js add their own pages)
+const app = read('website/app/app.js') + read('website/app/art.js') + read('website/app/paste.js') + read('website/app/academy.js') + read('website/app/videos.js');   // (art.js, paste.js, academy.js and videos.js add their own pages)
 const page = read('website/app/index.html');
 
 test('every product has the bits the site needs', () => {
@@ -35,7 +35,8 @@ test('game-only pages are under Games; site-wide pages belong to no product', ()
   for (const name of ['home', 'user', 'settings', 'updates', 'notifications', 'bolts', 'avatar'])
     assert.equal(productOf(name), null, name);
   assert.equal(productOf('forum').id, 'communities');
-  assert.equal(productById('videos').status, 'soon');
+  assert.equal(productById('videos').status, 'open');   // (worker/test/videos.test.mjs)
+  assert.equal(productById('live').status, 'soon');
   assert.equal(productById('nope'), null);
 });
 

@@ -1,0 +1,44 @@
+/* G&B Videos (videos.js). Only uses app.css's colour tokens, so dark mode and themes keep working. */
+.video-tabs { margin: 8px 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.video-cats { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 6px 0 12px; font-size: 12px; }
+.video-cats a.on { font-weight: bold; color: var(--text); text-decoration: none; }
+.video-search { gap: 6px; }
+.video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.video-card { display: flex; flex-direction: column; color: var(--text); text-decoration: none; min-width: 0; }
+.video-card:hover { text-decoration: none; }
+.video-card:hover .video-thumb { border-color: var(--gb-red, #d4202a); }
+.video-thumb { position: relative; display: block; aspect-ratio: 16 / 9; background: #11161e; border: 2px solid var(--line); overflow: hidden; }
+.video-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.video-nopic { display: grid; place-items: center; width: 100%; height: 100%; min-height: 120px; color: #fff; font-size: 34px; opacity: .6; }
+.video-time { position: absolute; right: 5px; bottom: 5px; background: rgba(0, 0, 0, .82); color: #fff; font-size: 11px; font-weight: bold;
+  padding: 1px 5px; border-radius: 3px; }
+.video-card-text { display: flex; flex-direction: column; gap: 1px; padding: 6px 2px; min-width: 0; }
+.video-card-text b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+.video-flag { color: #b06a00; font-weight: bold; }
+.video-pages { margin-top: 12px; }
+.video-watch { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+.video-stage { background: #000; border: 2px solid var(--line); aspect-ratio: 16 / 9; display: grid; place-items: center; }
+.video-stage video { width: 100%; height: 100%; display: block; background: #000; }
+.video-title { margin: 10px 0 6px; font-size: 21px; overflow-wrap: anywhere; }
+.video-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.video-channel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: bold; }
+.video-actions { display: flex; gap: 6px; }
+.video-about { margin: 0 0 12px; }
+.video-text, .video-comment-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.video-tag { margin-left: 2px; }
+.video-comment { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.video-comment p { margin: 2px 0; }
+.video-next { margin: 0; }
+.video-next-list { display: flex; flex-direction: column; gap: 10px; }
+.video-next-list .video-card { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px; }
+.video-next-list .video-card-text { padding: 0; }
+.video-next-list .video-nopic { min-height: 0; font-size: 20px; }
+.video-preview { max-width: 100%; max-height: 280px; border: 1px solid var(--line); background: #000; }
+.video-progress { height: 12px; border: 2px solid var(--line); background: var(--panel2); margin: 6px 0; }
+.video-progress span { display: block; height: 100%; width: 0; background: var(--gb-red, #d4202a); transition: width .2s; }
+@media (max-width: 860px) {
+  .video-watch { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .video-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+}

@@ -19,6 +19,7 @@ import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // 
 import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
 import { pastePages } from './paste.js';   // G&B Paste's pages
+import { videoPages } from './videos.js';   // G&B Videos' pages
 import { academyPages } from './academy.js';   // G&B Academy's pages
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
@@ -938,6 +939,8 @@ pages.soon = async (id) => {
 Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
 Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// G&B Videos (#/videos, #/watch/<id>, #/videoupload): its pages live in videos.js.
+Object.assign(pages, videoPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // G&B Academy (#/academy, #/course/<id>, #/lesson/<course>/<lesson>, #/coursewrite): its pages live in academy.js.
 Object.assign(pages, academyPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, richText, me: () => me }));
 
@@ -3437,6 +3440,7 @@ function fyxaModerationBox(result) {
     else if (item.sourceType === 'profile') href = '#/user/' + item.sourceId;
     else if (item.sourceType === 'forum_thread' || item.sourceType === 'forum_reply') href = '#/forum/t/' + item.sourceId;
     else if (item.sourceType === 'group' || item.sourceType === 'group_post') href = '#/group/' + item.sourceId;
+    else if (item.sourceType === 'video' || item.sourceType === 'video_comment') href = '#/watch/' + item.sourceId;   // videos.js
     return href ? html`<a href="${href}">${item.sourceName || item.sourceId}</a>` : (item.sourceName || item.sourceId || 'not recorded');
   };
   return html`<div class="box">
@@ -3489,6 +3493,7 @@ function reportsBox(rep, closed) {
     if (x.kind === 'forum') return html`a forum post by ${person(x.about)} in <a href="#/forum/t/${x.thread}">${x.name}</a>`;
     if (x.kind === 'art') return html`${x.target.includes(':') ? 'a comment' : 'art'} by ${person(x.about)} on <a href="#/artpiece/${x.piece}">${x.name}</a>`;
     if (x.kind === 'course') return html`the course <a href="#/course/${x.target}">${x.name}</a> by ${person(x.about)}`;
+    if (x.kind === 'video') return html`${x.target.includes(':') ? 'a comment' : 'the video'} by ${person(x.about)} on <a href="#/watch/${x.video}">${x.name}</a>`;   // videos.js
     if (x.kind === 'paste') return html`the paste <a href="#/pasteview/${x.target}">${x.name}</a> by ${person(x.about)}`;
     const href = isCatalogItem(x.assetKind) ? '#/item/' + x.target : '#/library/' + x.target;
     return html`<a href="${href}">${x.name}</a> (${KINDS[x.assetKind] || 'item'}) by ${person(x.about)}`;
@@ -3856,6 +3861,7 @@ function noteLink(n) {
   if (n.kind === 'rating') return '#/configure/' + n.about;   // ratings.js
   if (n.kind === 'testers') return '#/game/' + n.about;   // testers.js
   if (n.kind === 'art') return '#/artpiece/' + n.about;   // art.js
+  if (n.kind === 'video') return '#/watch/' + n.about;   // videos.js
   if (n.kind === 'academy') return '#/course/' + n.about;   // academy.js
   if (n.kind === 'group') return '#/group/' + n.about;
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
@@ -3872,7 +3878,7 @@ pages.notifications = async () => {
   if (!signedIn()) { show(html`<h1>Notifications</h1>${needSignIn('see your notifications')}`); return; }
   const r = await pageCall('notes.list', {});
   if (!r.ok) { show(html`<h1>Notifications</h1><p class="error">${r.error}</p>`); return; }
-  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', party: '👥', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁', roadmap: '🗺️', wishlist: '🏷️' };
+  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', party: '👥', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁', roadmap: '🗺️', wishlist: '🏷️', video: '🎬' };
   show(html`<h1>Notifications</h1><p class="small muted">New notifications are archived securely, so your history can grow beyond the 50-entry account preview.</p>
     <div class="list notes">${r.notes.length ? r.notes.map((n) => {
       const link = noteLink(n);
