@@ -99,6 +99,10 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
         GraphicsSettings& gs = GraphicsSettings::get();
         const std::string gpu = GraphicsBenchmark::gpuName();
         const bool force = std::getenv("GB_BENCHMARK") != nullptr;
+        if (const char* report = std::getenv("GB_PERF_REPORT")) {   // tools/perf: measure every level, write it down, quit
+            GraphicsBenchmark::writeReport(*m_renderer, report);
+            std::exit(0);
+        }
         // (Not in automated tests or Studio's multiplayer test: several players start at
         // once there, and they should start the same way every time.)
         const bool testing = !m_opts.screenshot.empty() || !m_opts.testName.empty() || testMode();
@@ -438,6 +442,7 @@ void PlayerApp::frame() {
         FrameProfile::endFrame(dt * 1000.0);   // (the Live Profiler, when it's open)
         // Auto graphics quality: steps down when a game gets laggy (not in tests: they use a fixed clock).
         if (m_page == Page::Game && m_scene && m_opts.screenshot.empty()) GraphicsSettings::get().autoAdjust(dt);
+        perfTick(dt);   // battery saver and the "running slowly" hint (PlayerPerf.cpp)
         WebKeyboard::update();   // (the browser Player: the phone's keyboard)
         if (std::getenv("GB_TRACE_POS") && m_scene)   // test: the character's height every frame
             if (Player* p = m_scene->player()) std::printf("TRACE %d %.3f %.3f\n", m_frame, p->position().z, p->position().y);
@@ -2138,6 +2143,7 @@ void PlayerApp::drawGame(float dt) {
     }
 
     drawBreakReminder(dt);
+    drawPerfHint();
     if (m_paused) drawPauseMenu();
 }
 
@@ -2644,6 +2650,24 @@ void PlayerApp::drawPauseMenu() {
             if (gs.quality == GraphicsSettings::Auto && gs.autoFps() > 0.0f) {
                 ImGui::SetCursorPosX(labelW);
                 ImGui::TextDisabled("Right now: %s (%.0f FPS)", GraphicsSettings::autoLevelName(gs.autoLevel()), gs.autoFps());
+            }
+            ImGui::PopTextWrapPos();
+        }
+        row("Battery Saver");
+        {
+            // 30 FPS and simpler effects (GraphicsSettings::saverCap); Auto = when the battery is low.
+            int bs = gs.batterySaver;
+            if (ImGui::Combo("##saver", &bs, GraphicsSettings::batterySaverNames(), GraphicsSettings::kSaverChoices)) {
+                if (gs.setBatterySaver(bs)) m_perfHint.saverChanged(gs.saverActive(), gs.batteryPercent());
+                changed = true;
+            }
+            ImGui::SetCursorPosX(labelW);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("%s", GraphicsSettings::batterySaverHelp());
+            if (gs.saverActive()) {
+                ImGui::SetCursorPosX(labelW);
+                if (gs.batteryPercent() >= 0) ImGui::TextDisabled("On right now (battery %d%%).", gs.batteryPercent());
+                else ImGui::TextDisabled("On right now.");
             }
             ImGui::PopTextWrapPos();
         }

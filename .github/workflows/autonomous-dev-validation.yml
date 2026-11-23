@@ -1,0 +1,26 @@
+name: Validate Autonomous Development
+
+on:
+  pull_request:
+    paths:
+      - "tools/autonomous-dev/**"
+      - ".github/workflows/autonomous-dev*.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tools/autonomous-dev/**"
+      - ".github/workflows/autonomous-dev*.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  python-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile autonomous agent scripts
+        run: python -m py_compile tools/autonomous-dev/scout.py tools/autonomous-dev/builder.py

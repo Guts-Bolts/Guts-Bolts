@@ -18,6 +18,7 @@ namespace Catalog { struct Item; }
 #include "../game/ClipRecorder.h"
 #include <future>
 #include "../core/Vr.h"
+#include "../core/PerfHint.h"
 #include <imgui.h>
 #include <nlohmann/json.hpp>
 
@@ -430,6 +431,12 @@ private:
     float m_breakPlayed = 0.0f;      // seconds played since the last reminder (all games this time the app is open)
     bool  m_breakShowing = false;
     void  drawBreakReminder(float dt);
+    // Phones and battery (PlayerPerf.cpp): reads the battery every half a minute (battery
+    // saver's Auto), and the "running slowly" hint (core/PerfHint.h) at the top of the screen.
+    PerfHint m_perfHint;
+    float    m_batteryClock = 0.0f;
+    void  perfTick(float dt);        // every frame, any page
+    void  drawPerfHint();            // in a game, with the HUD
     // Photo mode (PlayerPhoto.cpp): F2 or the menu's button hides the HUD and lets the
     // camera fly on its own; Enter saves the 3D view as a picture.
     bool        m_photo = false;

@@ -72,6 +72,27 @@ int main(int argc, char** argv) {
     session.start();
     Player* p = scene.player();
     if (!p || !p->root()) { std::cerr << "no player in that game\n"; return 1; }
+
+    // Regression coverage for the classic R6 player rig and its six Motor6D-style
+    // character joints. These are driven by the engine's own physics/animation.
+    SceneNode* rig = p->root();
+    const char* r6Parts[] = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"};
+    bool hasR6Parts = true;
+    for (const char* name : r6Parts) {
+        SceneNode* bodyPart = rig->findChild(name, true);
+        hasR6Parts = hasR6Parts && bodyPart && bodyPart->isPart();
+    }
+    check(hasR6Parts, "the player rig contains all six classic R6 body parts");
+
+    const char* r6Joints[] = {"RootJoint", "Neck", "Right Shoulder", "Left Shoulder", "Right Hip", "Left Hip"};
+    bool hasR6Joints = true;
+    for (const char* name : r6Joints) {
+        SceneNode* joint = rig->findChild(name, true);
+        hasR6Joints = hasR6Joints && joint && joint->isConstraint() && joint->characterJoint &&
+                       joint->legacyJoint >= 2 && joint->ref0 != 0 && joint->ref1 != 0 &&
+                       scene.findById(joint->ref0) && scene.findById(joint->ref1);
+    }
+    check(hasR6Joints, "the R6 root, neck, shoulders and hips are connected by character Motor6D joints");
     // A quiet floor of our own, away from the game's obstacles.
     addPart(session, scene, "Floor", glm::vec3(500.0f, 99.0f, 500.0f), glm::vec3(120.0f, 2.0f, 120.0f), true);
     p->root()->transform.position = glm::vec3(500.0f, 100.2f, 500.0f);
