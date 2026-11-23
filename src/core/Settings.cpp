@@ -52,7 +52,62 @@ void GraphicsSettings::applyGroups() {
 
 int GraphicsSettings::groupCap(int g) const {
     if (g < 0 || g >= Scalability::kGroups) return 3;
-    return std::clamp(std::min(m_device.cap[g], myCaps[g]), 0, Scalability::kLevels - 1);
+    int cap = std::min(m_device.cap[g], myCaps[g]);
+    if (m_saverActive) cap = std::min(cap, saverCap(g));
+    return std::clamp(cap, 0, Scalability::kLevels - 1);
+}
+
+// Battery saver's caps. The costly extras go first (each of these is a big share of a
+// frame on a phone chip, see tools/perf/README.md): 3D clouds and light-catching fog
+// (Effects above Medium), mirror reflections (Reflections above Medium), screen-traced
+// bounce light (Lighting above Low), 2048+ shadow maps, and drawing every pixel (75% with
+// temporal smoothing still looks sharp). The game keeps its colours and look.
+int GraphicsSettings::saverCap(int g) {
+    using namespace Scalability;
+    //                                 Shadow GI Refl Post Tex View AA Res
+    static constexpr int caps[kGroups] = {1,   0,  1,   1,   2,  2,   1,  1};
+    return g >= 0 && g < kGroups ? caps[g] : 4;
+}
+
+int GraphicsSettings::frameCap() const {
+    const int mine = !vsync && fpsCap > 0 ? fpsCap : 0;
+    if (!m_saverActive) return mine;
+    return mine > 0 ? std::min(mine, 30) : 30;
+}
+
+const char* const* GraphicsSettings::batterySaverNames() {
+    static const char* const names[kSaverChoices] = {"Auto (when the battery is low)", "On", "Off"};
+    return names;
+}
+
+const char* GraphicsSettings::batterySaverHelp() {
+    return "30 FPS and simpler clouds, fog, reflections and shadows, so your device stays cooler and the battery lasts longer.";
+}
+
+bool GraphicsSettings::updateSaver() {
+    bool on = false;
+    if (batterySaver == SaverOn) on = true;
+    else if (batterySaver == SaverAuto && m_batteryPct >= 0 && !m_charging)
+        // On at 20% or less; once on, it stays on until 25% (so it doesn't flicker at 20).
+        on = m_batteryPct <= (m_saverActive ? 25 : 20);
+    if (on == m_saverActive) return false;
+    m_saverActive = on;
+    // Work the settings out again with (or without) the caps. Auto keeps its place on
+    // its ladder; Custom keeps your own mix (the caps still apply through groupLevel).
+    if (quality == Auto) applyAutoLevel(m_autoLevel);
+    else if (quality != Custom) applyPreset(quality);
+    return true;
+}
+
+bool GraphicsSettings::setBattery(int percent, bool charging) {
+    m_batteryPct = percent < 0 ? -1 : std::min(percent, 100);
+    m_charging = charging;
+    return updateSaver();
+}
+
+bool GraphicsSettings::setBatterySaver(int mode) {
+    batterySaver = std::clamp(mode, 0, kSaverChoices - 1);
+    return updateSaver();
 }
 
 int GraphicsSettings::groupLevel(int g) const {
@@ -119,9 +174,12 @@ void GraphicsSettings::load() {
     std::ifstream f(settingsFile());
 #ifdef GB_MOBILE
     if (!f) {
-        // First run on a phone: start with the performance preset to avoid
-        // overwhelming mobile GPUs and memory with high-resolution effects.
-        applyPreset(Low);
+        // First run on a phone: Auto quality, starting low (the first-start benchmark
+        // moves the start if this phone is quick), so it can still step down on a heavy
+        // game and back up on a light one instead of being stuck on one preset. Battery
+        // saver stays on Auto: 30 FPS and the simpler effects once the battery is low.
+        m_autoStart = 4;   // (Low on Auto's ladder)
+        applyPreset(Auto);
         showFps = false;
         checkUpdates = false;
         return;
@@ -133,7 +191,10 @@ void GraphicsSettings::load() {
     auto rd = [&](const char* k, auto& v) {
         if (j.contains(k)) try { v = j[k].get<std::decay_t<decltype(v)>>(); } catch (...) {}
     };
-    rd("vsync", vsync); rd("fpsCap", fpsCap); rd("showFps", showFps); rd("sawDeviceNotice", sawDeviceNotice);
+    rd("vsync", vsync); rd("fpsCap", fpsCap); rd("batterySaver", batterySaver);
+    batterySaver = std::clamp(batterySaver, 0, kSaverChoices - 1);
+    m_saverActive = batterySaver == SaverOn;   // (Auto waits for the battery's first reading)
+    rd("showFps", showFps); rd("sawDeviceNotice", sawDeviceNotice);
     rd("quality", quality); rd("shadows", shadows); rd("shadowRes", shadowRes); rd("shadowQuality", shadowQuality);
     rd("bloom", bloom); rd("postFx", postFx);
     // (Before scalability: an on/off for ambient occlusion and for FXAA.)
@@ -251,8 +312,9 @@ bool GraphicsSettings::autoAdjust(float dt) {
     m_autoFps = m_autoFrames / m_autoClock;
     m_autoClock = 0.0f;
     m_autoFrames = 0;
-    // What "smooth" means here: 60 FPS, or the FPS limit if that's lower.
-    const float target = !vsync && fpsCap > 0 ? std::min(60.0f, (float)fpsCap) : 60.0f;
+    // What "smooth" means here: 60 FPS, or the FPS limit if that's lower (30 on battery saver).
+    const int cap = frameCap();
+    const float target = cap > 0 ? std::min(60.0f, (float)cap) : 60.0f;
     if (m_autoFps < target * 0.8f && m_autoLevel < kAutoLevels - 1) {   // laggy: a step down
         m_autoBad = m_autoLevel;
         m_autoBadTime = 90.0f;
@@ -309,7 +371,7 @@ void GraphicsSettings::holdSaving(bool on) { s_holdSaving = on; }
 void GraphicsSettings::save() const {
     if (s_holdSaving) return;
     nlohmann::json j = {
-        {"vsync", vsync}, {"fpsCap", fpsCap}, {"showFps", showFps}, {"sawDeviceNotice", sawDeviceNotice},
+        {"vsync", vsync}, {"fpsCap", fpsCap}, {"batterySaver", batterySaver}, {"showFps", showFps}, {"sawDeviceNotice", sawDeviceNotice},
         {"quality", quality}, {"shadows", shadows}, {"shadowRes", shadowRes}, {"shadowQuality", shadowQuality},
         {"bloom", bloom}, {"postFx", postFx},
         {"giQuality", giQuality}, {"aaQuality", aaQuality}, {"postQuality", postQuality}, {"textureQuality", textureQuality},

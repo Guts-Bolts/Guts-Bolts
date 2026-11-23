@@ -3,6 +3,8 @@
 // linked to Lyreto. The server side is worker/chats.js (inbox, calls, gateway) and the
 // party.* requests in worker/server.js (the conversations themselves).
 //
+import { safeMediaUrl, openMediaPicker, composeChatMessage } from './media-picker.js';
+
 // Calls use WebRTC: each browser sends its microphone straight to the others (or through
 // Cloudflare's relay when the server has one, so nobody sees anybody's internet address).
 // The server only passes the "how to reach me" notes between them (call.signal / call.poll).
@@ -32,7 +34,17 @@ function richChatBody(value) {
   const source = String(value ?? '');
   const fence = /```([a-zA-Z0-9_+-]{0,24})[ \t]*\n([\s\S]*?)```/g;
   let out = '', last = 0, match;
-  const plain = (text) => esc(text).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+  const plain = (text) => {
+    const media = /\[media:(https:\/\/[^\s\]]+)\]/g;
+    let rendered = '', at = 0, m;
+    while ((m = media.exec(text))) {
+      rendered += esc(text.slice(at, m.index)).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+      const url = safeMediaUrl(m[1]);
+      rendered += url ? '<img class="cd-media-embed" src="' + esc(url) + '" alt="Attached media" loading="lazy" referrerpolicy="no-referrer">' : esc(m[0]);
+      at = media.lastIndex;
+    }
+    return rendered + esc(text.slice(at)).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+  };
   while ((match = fence.exec(source))) {
     out += plain(source.slice(last, match.index));
     const language = match[1].toLowerCase(), code = match[2].replace(/\n$/, '');
@@ -218,7 +230,7 @@ class Panel {
     const meId = api.me().id;
     const msgs = (c.messages || []).map((m) => m.system ? '<div class="cd-sys">' + richChatBody(m.body) + ' · ' + esc(when(m.at)) + '</div>'
       : '<div class="cd-msg' + (m.from === meId ? ' mine' : '') + '"><div class="cd-meta">' + (m.from === meId ? '' : '<b>' + esc(m.name || 'Player') + '</b>') +
-        (m.via === 'lyreto' ? '<span class="cd-via" title="Sent from Lyreto">Lyreto</span>' : '') + '<span>' + esc(when(m.at)) + '</span></div><div class="cd-bubble">' + esc(m.body) +
+        (m.via === 'lyreto' ? '<span class="cd-via" title="Sent from Lyreto">Lyreto</span>' : '') + '<span>' + esc(when(m.at)) + '</span></div><div class="cd-bubble">' + richChatBody(m.body) +
         (m.game ? ' <a class="btn small blue" href="#/game/' + encodeURIComponent(m.game) + '">View game</a>' : '') + '</div></div>').join('');
     const call = sum && sum.call, inThis = session && session.chat === c.id;
     let banner = '';
@@ -230,7 +242,7 @@ class Panel {
         '<button type="button" class="cd-icon" data-info title="Chat details" aria-label="Chat details">' + ICON.more + '</button>') + banner +
       (c.bridge ? '<div class="cd-bridge">Linked to Lyreto: messages here are shared with the channel "' + esc(c.bridge.name) + '".</div>' : '') +
       '<div class="cd-msgs">' + (msgs || '<p class="cd-none">No messages yet. Say hi!</p>') + '</div>' +
-      '<form class="cd-compose" data-send><textarea name="body" maxlength="1000" rows="1" placeholder="Message..." required></textarea><div class="cd-compose-actions"><button type="button" class="btn small" data-code-insert="lua">Code</button><button class="btn blue">Send</button></div></form>';
+      '<form class="cd-compose" data-send><textarea name="body" maxlength="1000" rows="1" placeholder="Message..."></textarea><div class="cd-attachment-preview">' + (this.attachment ? '<img src="' + esc(this.attachment.url) + '" alt="Attachment preview"><button type="button" class="btn small" data-remove-media>Remove</button>' : '') + '</div><div class="cd-compose-actions"><button type="button" class="btn small" data-media>Media</button><button type="button" class="btn small" data-code-insert="lua">Code</button><button class="btn blue">Send</button></div></form>';
     const b = this.root.querySelector('.cd-msgs');
     if (b) b.scrollTop = b.scrollHeight;
   }
@@ -262,6 +274,8 @@ class Panel {
       catch { api.toast('Clipboard access is unavailable in this browser.'); }
       return;
     }
+    if ('removeMedia' in d) { this.attachment = null; this.drawChat(); return; }
+    if ('media' in d) { openMediaPicker({ onSelect: item => { const url = safeMediaUrl(item.url); if (url) { this.attachment = { url }; this.drawChat(); } } }); return; }
     if ('codeInsert' in d) { insertChatCode(this.root.querySelector('.cd-compose textarea[name="body"]'), d.codeInsert || 'lua'); return; }
     if ('collapse' in d) { setDockOpen(false); return; }
     if ('dnd' in d) { const r = await api.call('presence.set', { dnd: !inbox.dnd }); if (r.ok) { inbox.dnd = !inbox.dnd; api.toast(inbox.dnd ? 'Do Not Disturb is on: calls won\'t ring.' : 'You\'re available again.'); refresh(); } else api.toast(r.error); return; }
@@ -301,11 +315,14 @@ class Panel {
     const f = e.target;
     e.preventDefault();
     if ('send' in f.dataset) {
-      const body = f.body.value.trim();
-      if (!body) return;
+      const text = f.body.value.trim();
+      if (!text && !this.attachment) return;
+      const body = composeChatMessage(text, this.attachment);
+      if (body === null) { api.toast('Your text is too long to send with this attachment. Shorten it and try again.'); return; }
       f.body.value = '';
+      const attachment = this.attachment; this.attachment = null;
       const r = await api.call('party.send', { id: this.chatId, body });
-      if (!r.ok) { api.toast(r.error); f.body.value = body; return; }
+      if (!r.ok) { api.toast(r.error); f.body.value = text; this.attachment = attachment; return; }
       this.chat = r.chat; this.drawChat(); refresh();
       return;
     }

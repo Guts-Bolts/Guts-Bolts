@@ -2,6 +2,7 @@
 // create, friends, people, groups, Bolts, sign up / log in) in a browser.
 // Pages are picked by the address after '#', like #/games or #/user/12.
 import * as gb from './gb.js';
+import { openMediaPicker, safeMediaUrl } from './media-picker.js';
 import { mountAvatar, avatarPicture, itemPicture, itemCamera } from './avatar3d.js';
 import { startTranslating, languagePicker } from '../lang/i18n.js';
 import { startLive, listen, stopListening, onLive } from './live.js';
@@ -85,7 +86,19 @@ function richText(value) {
   const source = String(value ?? '');
   const fence = /```([a-zA-Z0-9_+-]{0,24})[ \t]*\n([\s\S]*?)```/g;
   let out = '', last = 0, match;
-  const plain = (text) => esc(text).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+  const plain = (text) => {
+    const source = String(text);
+    const media = /\[media:(https?:[^\]\s]+)\]/gi;
+    let out = '', last = 0, match;
+    const escaped = (value) => esc(value).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+    while ((match = media.exec(source))) {
+      out += escaped(source.slice(last, match.index));
+      const url = safeMediaUrl(match[1]);
+      out += url ? '<img class="forum-media" src="' + esc(url) + '" alt="Attached image or GIF" loading="lazy" referrerpolicy="no-referrer">' : esc(match[0]);
+      last = media.lastIndex;
+    }
+    return out + escaped(source.slice(last));
+  };
   while ((match = fence.exec(source))) {
     out += plain(source.slice(last, match.index));
     const language = match[1].toLowerCase();
@@ -110,6 +123,19 @@ function insertCodeFence(textarea, language = 'lua') {
   if (!selected) textarea.setSelectionRange(caret, caret);
   textarea.focus();
 }
+view.addEventListener('click', (event) => {
+  const mediaButton = event.target.closest('[data-forum-media]');
+  if (!mediaButton) return;
+  const textarea = mediaButton.closest('form')?.querySelector('textarea[name="text"]');
+  if (!textarea) return;
+  openMediaPicker({ onSelect: ({ url }) => {
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const token = (start > 0 && textarea.value.slice(0, start).trim() ? '\n' : '') + '[media:' + url + ']';
+    if (textarea.value.length + token.length > Number(textarea.maxLength || 3000)) { toast('That attachment would exceed the message limit.'); return; }
+    textarea.setRangeText(token, start, end, 'end'); textarea.focus();
+  } });
+});
 view.addEventListener('click', async (event) => {
   const copy = event.target.closest('[data-copy-code]');
   if (copy) {
@@ -1149,7 +1175,7 @@ pages.forum = async (board, a, b) => {
     ${r.board.staffOnly && !r.canPost ? html`<p class="muted">Only Guts&amp;Bolts staff post here.</p>`
       : signedIn() ? html`<form class="form" data-form="forumPost"><input type="hidden" name="board" value="${r.board.id}">
         <label>Title</label><input type="text" name="title" maxlength="80" required>
-        <label>Message</label><textarea name="text" maxlength="3000" rows="7" required></textarea><p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <span class="small muted">Wrap Lua or other code in a copyable block.</span></p>
+        <label>Message</label><textarea name="text" maxlength="3000" rows="7" required></textarea><p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <button type="button" class="btn small" data-forum-media>Add image/GIF</button> <span class="small muted">Wrap Lua or other code in a copyable block.</span></p>
         <p><button class="btn green">Post thread</button> <span class="small muted">Be kind, and don't share personal info.</span></p></form>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to post.</p>`}`);
   loadForumAvatars();
@@ -1173,7 +1199,7 @@ async function forumThread(id, page) {
     ${forumPager(base, r.page, r.pages)}
     ${r.canReply ? html`<h2>Reply</h2><form class="form" data-form="forumReply"><input type="hidden" name="thread" value="${t.id}">
         <textarea name="text" maxlength="3000" rows="5" required></textarea>
-        <p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <button class="btn blue">Post reply</button></p></form>`
+        <p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <button type="button" class="btn small" data-forum-media>Add image/GIF</button> <button class="btn blue">Post reply</button></p></form>`
       : t.locked ? html`<p class="muted">This thread is locked, so nobody can reply.</p>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to reply.</p>`}`);
   loadForumAvatars();

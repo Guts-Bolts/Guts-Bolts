@@ -463,6 +463,8 @@ add_library(gb_engine STATIC
     src/core/Log.cpp
     src/core/Settings.cpp
     src/core/Scalability.cpp
+    src/core/Battery.cpp
+    src/core/PerfHint.cpp
     src/core/DeviceFeatures.cpp
     src/core/TexturePack.cpp
     src/core/KeyBinds.cpp
@@ -723,7 +725,7 @@ endif()
 if(GB_MOBILE)
     # Phones and tablets get the Player only. On Android it's a library that
     # SDL's Java activity loads (it must be called "main").
-    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerPhoto.cpp src/player/PlayerBreak.cpp src/player/PlayerSpectate.cpp src/player/PlayerClips.cpp src/player/WebKeyboard.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/PlayerVr.cpp src/player/LaunchLink.cpp)
+    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerPhoto.cpp src/player/PlayerBreak.cpp src/player/PlayerPerf.cpp src/player/PlayerSpectate.cpp src/player/PlayerClips.cpp src/player/WebKeyboard.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/PlayerVr.cpp src/player/LaunchLink.cpp)
     if(ANDROID)
         add_library(main SHARED ${PLAYER_SOURCES})
         target_link_libraries(main PRIVATE gb_engine)
@@ -1007,6 +1009,7 @@ set(PLAYER_SOURCES
     src/player/PlayerPasses.cpp
     src/player/PlayerPhoto.cpp
     src/player/PlayerBreak.cpp
+    src/player/PlayerPerf.cpp
     src/player/PlayerSpectate.cpp
     src/player/PlayerClips.cpp
     src/player/WebKeyboard.cpp
@@ -1355,6 +1358,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(ScalabilityTests tests/ScalabilityTests.cpp)
     target_link_libraries(ScalabilityTests PRIVATE gb_engine)
     add_test(NAME ScalabilityTests COMMAND ScalabilityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Phones and battery: battery saver's caps and 30 FPS, phone defaults, the "running slowly" hint.
+    add_executable(BatterySaverTests tests/BatterySaverTests.cpp)
+    target_link_libraries(BatterySaverTests PRIVATE gb_engine)
+    add_test(NAME BatterySaverTests COMMAND BatterySaverTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Your own keys (Settings > Keys): moving, swapping, AZERTY, saving.
     add_executable(KeyBindsTests tests/KeyBindsTests.cpp)

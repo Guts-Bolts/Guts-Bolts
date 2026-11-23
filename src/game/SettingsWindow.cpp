@@ -69,6 +69,13 @@ void draw(bool* open) {
     for (int i = 0; i < IM_ARRAYSIZE(capValues); ++i) if (capValues[i] == s.fpsCap) capIdx = i;
     if (ImGui::Combo("FPS Limit", &capIdx, caps, IM_ARRAYSIZE(caps))) s.fpsCap = capValues[capIdx];
     ImGui::EndDisabled();
+    {
+        int bs = s.batterySaver;
+        if (ImGui::Combo("Battery saver", &bs, GraphicsSettings::batterySaverNames(), GraphicsSettings::kSaverChoices))
+            s.setBatterySaver(bs);
+        help(GraphicsSettings::batterySaverHelp());
+        if (s.saverActive()) ImGui::TextDisabled("Battery saver is on right now: at most 30 FPS.");
+    }
     ImGui::Checkbox("Show FPS", &s.showFps);
     ImGui::TextDisabled("Current: %.0f FPS", ImGui::GetIO().Framerate);
 
