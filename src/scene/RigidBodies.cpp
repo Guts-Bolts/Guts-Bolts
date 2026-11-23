@@ -12,6 +12,7 @@
 //  * finally positions and rotations move by the velocities
 #include "Storms.h"
 #include "Physics.h"
+#include "SprungWheels.h"
 #include "Shatter.h"
 #include "Scene.h"
 #include "SceneNode.h"
@@ -1065,6 +1066,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     std::vector<Zone>& zones = S.zones;
     std::vector<SceneNode*>& stack = S.stack;
     bodies.clear(); index.clear(); constraintNodes.clear(); moverNodes.clear(); zones.clear(); stack.clear();
+    SprungWheels& sprung = scene.vehicles().sprung();
     stack.push_back(scene.root());
     while (!stack.empty()) {
         SceneNode* n = stack.back();
@@ -1074,6 +1076,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         if (n->isMover()) { if (n->enabled) moverNodes.push_back(n); continue; }
         if (!n->visible || n->isViewportFrame()) continue;   // (a ViewportFrame's parts don't fall)
         if (scene.isCharacterPart(n)) continue;
+        if (sprung.isWheel(scene, n)) continue;   // (wheels on springs: SprungWheels moves them)
         for (auto& c : n->children) stack.push_back(c.get());
         if (!n->isPart() || n->internal) continue;
         if (n->isForceZone() && n->enabled) zones.push_back({n, Physics::worldOBB(n)});
@@ -1091,7 +1094,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     }
     bool anyDynamic = false;
     for (auto& b : bodies) if (b.dynamic) { anyDynamic = true; break; }
-    if (!anyDynamic) return;
+    if (!anyDynamic) { sprung.prepare(scene, dt); return; }   // (forgets this frame's wheels)
     // The terrain is one more body that never moves (it isn't in `index`, so no
     // joint uses it, and it's not "solid" so the part-vs-part loop skips it: its
     // contacts are made separately below).
@@ -1118,6 +1121,18 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     std::vector<Joint>& joints = S.joints;
     std::vector<std::pair<int, int>>& noCollide = S.noCollide;
     joints.clear(); noCollide.clear();
+    // A part riding inside a loose part (a car's seat, its bonnet) doesn't bump into the part
+    // carrying it: it only moves with it after the step, so in the middle of one it'd be in
+    // the way (a car's springs couldn't lift it).
+    for (int i = 0; i < (int)bodies.size(); ++i) {
+        if (bodies[i].dynamic || !bodies[i].node) continue;
+        for (const SceneNode* p = bodies[i].node->parent; p; p = p->parent)
+            if (p->isPart() && !p->anchored) {
+                const int k = index.find(p->id);
+                if (k >= 0 && bodies[k].dynamic) noCollide.push_back({std::min(i, k), std::max(i, k)});
+                break;
+            }
+    }
     for (SceneNode* cn : constraintNodes) {
         Joint j;
         j.node = cn;
@@ -1274,6 +1289,15 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     for (size_t i = 0; i < bodies.size(); ++i) breakableBody[i] = bodies[i].node && Shatter::breakable(*bodies[i].node);
     BroadPhase& broad = S.broad;
 
+    // Cars with wheels on springs (SprungWheels.h): the ground under each wheel, once a frame.
+    std::vector<std::pair<SprungWheels::Car*, int>> cars;
+    for (SprungWheels::Car* car : sprung.prepare(scene, dt)) {
+        const int k = index.find(car->chassis->id);
+        if (k < 0 || !bodies[k].dynamic) continue;
+        if (car->throttle != 0.0f || car->steer != 0.0f) { bodies[k].awake = true; car->chassis->sleepTime = 0.0f; }
+        cars.push_back({car, k});
+    }
+
     for (int step = 0; step < substeps; ++step) {
         // ---- 3. Gravity + springs ----------------------------------------------
         // Water first: it wakes up what's in it, so gravity below pulls those too.
@@ -1331,6 +1355,14 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             }
         for (const ActiveMover& am : movers)
             if (group[am.body] >= 0) applyMover(am, bodies, assemblies[group[am.body]], h);
+        for (auto& [car, k] : cars) {   // springs and tyres push each car's chassis
+            Body& B = bodies[k];
+            if (!B.awake) continue;
+            SprungWheels::Body cb{B.pos, B.rot, B.v, B.w, B.invMass, B.invInertia()};
+            SprungWheels::step(*car, cb, h, g);
+            B.v = cb.v;
+            B.w = cb.w;
+        }
         for (auto& j : joints) {
             if (j.type != ConstraintType::Spring) continue;
             Body &A = bodies[j.a], &B = bodies[j.b];
@@ -1753,6 +1785,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         writeBack(b);
         if (b.pos.y < scene.world().fallenPartsHeight) fallen.push_back(n->id);
     }
+    sprung.pose(dt);   // (the wheels go where their springs are)
 }
 
 void Physics::wake(SceneNode* n) { if (n) n->sleepTime = 0.0f; }

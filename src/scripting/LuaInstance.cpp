@@ -2335,6 +2335,21 @@ int inst_index(lua_State* L) {
             if (is(k, "Torque"))        { lua_pushnumber(L, Vehicles::torque(n)); return 1; }
             if (is(k, "TurnSpeed"))     { lua_pushnumber(L, Vehicles::turnSpeed(n)); return 1; }
             if (is(k, "HeadsUpDisplay")) { lua_pushboolean(L, false); return 1; }
+            // Wheels on springs (SprungWheels.h): the springs and tyres, and what the car is doing.
+            static const struct { const char* name; double fallback; } kSprung[] = {
+                {"Grip", 1.0}, {"Suspension", 0.5}, {"Stiffness", 1.0}, {"SpringTravel", 1.0}};
+            for (const auto& a : kSprung)
+                if (is(k, a.name)) {
+                    const Attribute* at = n->findAttribute(a.name);
+                    lua_pushnumber(L, at && at->type == Attribute::Number ? at->n : a.fallback);
+                    return 1;
+                }
+            if (is(k, "Speed") || is(k, "WheelsOnGround")) {
+                const SprungWheels::Car* car = v.sprung().carOf(n->id);
+                if (is(k, "Speed")) lua_pushnumber(L, car ? car->speed : 0.0);
+                else lua_pushinteger(L, car ? car->onGround : 0);
+                return 1;
+            }
         }
     }
     if (part) {
@@ -2831,6 +2846,8 @@ int inst_set(lua_State* L) {
             if (is(k, "MaxSpeed"))  { setAttr(n, "MaxSpeed", Attribute::Number, std::max(0.0, luaL_checknumber(L, 3))); return 0; }
             if (is(k, "Torque"))    { setAttr(n, "Torque", Attribute::Number, std::max(0.0, luaL_checknumber(L, 3))); return 0; }
             if (is(k, "TurnSpeed")) { setAttr(n, "TurnSpeed", Attribute::Number, std::max(0.0, luaL_checknumber(L, 3))); return 0; }
+            for (const char* name : {"Grip", "Suspension", "Stiffness", "SpringTravel"})   // (SprungWheels.h)
+                if (is(k, name)) { setAttr(n, name, Attribute::Number, std::max(0.0, luaL_checknumber(L, 3))); return 0; }
             if (is(k, "HeadsUpDisplay")) return 0;
         }
         if (is(k, "Disabled") && Player::isSeat(n)) {   // switch a seat off (whoever's on it gets up)
