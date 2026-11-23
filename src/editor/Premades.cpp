@@ -821,6 +821,8 @@ const std::vector<PremadeInfo>& premadeList() {
         {Premade::MotorCart,            "Motor Cart",      "Hop on and drive with the arrow keys"},
         {Premade::Car,                  "Car",             "Sit in the driver's seat and drive with W/A/S/D (a VehicleSeat, no script)"},
         {Premade::Boat,                 "Boat",            "A boat in a pond: sit in it and steer with W/A/S/D"},
+        {Premade::Buggy,                "Buggy",           "A car with real suspension: each wheel bounces on its own spring (W/A/S/D)"},
+        {Premade::BumpyRoad,            "Bumpy Road",      "Speed bumps, potholes and a jump to try the Buggy's springs on"},
         {Premade::DominoRun,            "Domino Run",      "Knock the first one over..."},
         {Premade::CratePyramid,         "Crate Pyramid",   "A stack of loose crates to knock down"},
         {Premade::WindZone,             "Wind Zone",       "Blows loose parts upwards (change Mode, Strength and Direction in its Attributes)"},
@@ -1016,6 +1018,75 @@ SceneNode* buildPremade(Scene& scene, Premade kind, const glm::vec3& at) {
                 motor->motorSpeed = 0.0f;
                 motor->visible = false;
             }
+            break;
+        }
+        case Premade::Buggy: {
+            // A dune buggy on springs (scene/SprungWheels.h): the four parts called "Wheel"
+            // aren't joined to anything, so each hangs from the chassis on its own spring.
+            // The front two steer, all four drive. No script needed.
+            n = scene.insert(std::make_unique<SceneNode>("Buggy", NodeKind::Model));
+            const glm::vec3 orange(0.95f, 0.45f, 0.1f), dark(0.12f, 0.12f, 0.13f);
+            SceneNode* body = addPart(scene, "Chassis", Cube, at + glm::vec3(0, 2.1f, 0), {3.4f, 0.6f, 6.4f}, orange, Material::Metal);
+            body->anchored = false;
+            scene.reparent(body, n);
+            // (The parts riding on the chassis sit on top of it, not poking into it: a part
+            // that pokes into the part it rides on pushes it about.)
+            SceneNode* nose = addPart(scene, "Nose", Cube, at + glm::vec3(0, 2.65f, -2.4f), {3.0f, 0.5f, 1.4f}, orange, Material::Metal);
+            scene.reparent(nose, body);
+            for (float x : {-1.5f, 1.5f}) {   // the roll cage
+                SceneNode* bar = addPart(scene, "RollBar", Cube, at + glm::vec3(x, 3.6f, 1.2f), {0.25f, 2.4f, 0.25f}, dark, Material::Metal);
+                scene.reparent(bar, body);
+            }
+            SceneNode* top = addPart(scene, "RollBarTop", Cube, at + glm::vec3(0, 4.8f, 1.2f), {3.25f, 0.25f, 0.25f}, dark, Material::Metal);
+            scene.reparent(top, body);
+            SceneNode* back = addPart(scene, "SeatBack", Cube, at + glm::vec3(0, 3.1f, 1.75f), {1.6f, 1.4f, 0.3f}, dark);
+            scene.reparent(back, body);
+            SceneNode* seat = addPart(scene, "VehicleSeat", Cube, at + glm::vec3(0, 2.5f, 1.0f), {1.6f, 0.2f, 1.4f}, dark);
+            seat->tags = {"Seat", "VehicleSeat"};
+            vehicleSeatSettings(seat, 24.0f, 16.0f, 1.0f);
+            for (auto [name, value] : {std::pair<const char*, float>{"SpringTravel", 1.4f}, {"Stiffness", 1.0f},
+                                       {"Suspension", 0.45f}, {"Grip", 1.2f}}) {
+                Attribute a; a.name = name; a.type = Attribute::Number; a.n = value;
+                seat->attributes.push_back(a);
+            }
+            scene.reparent(seat, body);
+            for (int i = 0; i < 4; ++i) {
+                // Fat tyres: cylinders lying on their side, touching the ground.
+                const glm::vec3 wp = at + glm::vec3(i % 2 ? 2.3f : -2.3f, 1.05f, i / 2 ? 2.2f : -2.2f);
+                SceneNode* wheel = addPart(scene, "Wheel", PrimitiveType::Cylinder, wp, {2.1f, 1.0f, 2.1f}, dark);
+                wheel->transform.rotation = {0.0f, 0.0f, 90.0f};
+                wheel->anchored = false;
+                scene.reparent(wheel, n);
+                SceneNode* hub = addPart(scene, "Hub", PrimitiveType::Cylinder, wp + glm::vec3(i % 2 ? 0.45f : -0.45f, 0, 0),
+                                         {1.0f, 0.15f, 1.0f}, {0.75f, 0.75f, 0.78f}, Material::Metal);
+                hub->transform.rotation = {0.0f, 0.0f, 90.0f};
+                hub->canCollide = false;
+                scene.reparent(hub, wheel);   // (it turns with the wheel)
+            }
+            break;
+        }
+        case Premade::BumpyRoad: {
+            // A long road with speed bumps, a row of potholes, rough rocks and a jump at the end.
+            n = scene.insert(std::make_unique<SceneNode>("BumpyRoad", NodeKind::Model));
+            const glm::vec3 road(0.25f, 0.25f, 0.27f), paint(0.95f, 0.8f, 0.15f);
+            SceneNode* slab = addPart(scene, "Road", Cube, at + glm::vec3(0, 0.25f, -40.0f), {16.0f, 0.5f, 90.0f}, road, Material::Concrete);
+            scene.reparent(slab, n);
+            for (int i = 0; i < 4; ++i) {   // speed bumps
+                SceneNode* bump = addPart(scene, "SpeedBump", Cube, at + glm::vec3(0, 0.75f, -8.0f - i * 6.0f), {16.0f, 0.5f, 1.4f}, paint, Material::Concrete);
+                scene.reparent(bump, n);
+            }
+            for (int i = 0; i < 10; ++i) {   // rough rocks, bigger and smaller
+                const float x = -6.0f + (float)((i * 7) % 13), z = -34.0f - i * 1.7f;
+                SceneNode* rock = addPart(scene, "Rock", Cube, at + glm::vec3(x, 0.6f, z), glm::vec3(1.6f, 0.35f + 0.08f * (i % 4), 1.4f),
+                                          {0.45f, 0.42f, 0.4f}, Material::Slate);
+                rock->transform.rotation = {0.0f, (float)(i * 37 % 90), 0.0f};
+                scene.reparent(rock, n);
+            }
+            SceneNode* ramp = addPart(scene, "Ramp", Cube, at + glm::vec3(0, 1.4f, -66.0f), {10.0f, 0.6f, 10.0f}, paint, Material::Wood);
+            ramp->transform.rotation = {14.0f, 0.0f, 0.0f};   // (rises away from the start)
+            scene.reparent(ramp, n);
+            SceneNode* landing = addPart(scene, "Landing", Cube, at + glm::vec3(0, 0.25f, -100.0f), {16.0f, 0.5f, 30.0f}, road, Material::Concrete);
+            scene.reparent(landing, n);
             break;
         }
         case Premade::Boat: {

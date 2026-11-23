@@ -193,6 +193,11 @@ void Vehicles::update(Scene& scene, float dt, bool host) {
             continue;
         }
         if (!driving || parts.empty()) { ++it; continue; }
+        if (SprungWheels::hasWheels(vehicle)) {   // wheels on springs: the physics drives it (SprungWheels.h)
+            for (SceneNode* p : parts) p->sleepTime = 0.0f;
+            ++it;
+            continue;
+        }
 
         // No wheels: push the whole thing along (a boat's propeller), and turn it.
         right.y = 0.0f; fwd.y = 0.0f;

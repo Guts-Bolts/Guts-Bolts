@@ -523,6 +523,7 @@ add_library(gb_engine STATIC
     src/scene/Storms.cpp
     src/scene/Disasters.cpp
     src/scene/Vehicles.cpp
+    src/scene/SprungWheels.cpp
     src/scene/IkControls.cpp
     src/scene/LinkedModels.cpp
     src/scene/MaterialGraph.cpp
@@ -1619,6 +1620,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(BloodSyncTests tests/BloodSyncTests.cpp)
     target_link_libraries(BloodSyncTests PRIVATE gb_engine)
     add_test(NAME BloodSyncTests COMMAND BloodSyncTests)
+    add_executable(SprungWheelsTests tests/SprungWheelsTests.cpp src/editor/Premades.cpp)
+    target_include_directories(SprungWheelsTests PRIVATE src/)
+    target_link_libraries(SprungWheelsTests PRIVATE gb_engine)
+    add_test(NAME SprungWheelsTests COMMAND SprungWheelsTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
     add_executable(ArteryTests tests/ArteryTests.cpp)
     target_link_libraries(ArteryTests PRIVATE gb_engine)
     add_test(NAME ArteryTests COMMAND ArteryTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")

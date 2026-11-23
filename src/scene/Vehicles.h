@@ -19,6 +19,9 @@
 //  * No motor hinges (boats, hovercraft, sleds): the whole vehicle is pushed forward and
 //    turned, gripping sideways a little so it doesn't skid about.
 // The host does the driving (it runs the physics); joined players send their keys.
+//  * Wheels on springs (real suspension): parts called "Wheel" that aren't joined to
+//    anything. See SprungWheels.h.
+#include "SprungWheels.h"
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -54,7 +57,10 @@ public:
     // Tyre grip and suspension for a wheeled vehicle (Grip / Suspension seat attributes).
     static void handling(const SceneNode* seat, const std::vector<SceneNode*>& parts,
                          const std::vector<SceneNode*>& wheels, float dt);
-    void clear() { m_seats.clear(); m_now = 0.0; }
+    void clear() { m_seats.clear(); m_now = 0.0; m_sprung.clear(); }
+    // Cars with wheels on springs (the physics steps them: RigidBodies.cpp).
+    SprungWheels&       sprung() { return m_sprung; }
+    const SprungWheels& sprung() const { return m_sprung; }
 
 private:
     struct Input {
@@ -67,4 +73,5 @@ private:
     bool live(const Input& in) const { return in.driver && m_now - in.at < 0.5; }
     std::unordered_map<uint64_t, Input> m_seats;
     double m_now = 0.0;
+    SprungWheels m_sprung;
 };

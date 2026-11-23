@@ -19,6 +19,7 @@ enum class Premade {
     GearSword, GearRocketLauncher, GearSpeedCoil, GearGravityCoil, GearBomb, GearBlaster,
     WindZone, BreakableBridge,     // the physics workbench: force zones and joints that snap
     Car, Boat,                     // vehicles: a VehicleSeat drives them (scene/Vehicles.h)
+    Buggy, BumpyRoad,              // a car on springs (scene/SprungWheels.h) and somewhere bumpy to drive it
 };
 inline bool isGearPremade(Premade p) { return p >= Premade::GearSword && p <= Premade::GearBlaster; }
 

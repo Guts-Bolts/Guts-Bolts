@@ -184,6 +184,15 @@ const std::vector<Entry>& all() {
         {"LoadAnimation", "animator:LoadAnimation(animation) -> AnimationTrack", "Get a track you can :Play()", false},
         {"ApplyDescription", "humanoid:ApplyDescription(description)", "Dress the character in an outfit (a HumanoidDescription)", false},
         {"GetAppliedDescription", "humanoid:GetAppliedDescription() -> HumanoidDescription", "The outfit the character has on now", false},
+        // VehicleSeat (cars: wheels called "Wheel" in its Model hang on springs)
+        {"ThrottleFloat", "seat.ThrottleFloat = 1", "A VehicleSeat's gas: 1 forward, -1 back, 0 off. A script can drive an empty car with it", false},
+        {"SteerFloat", "seat.SteerFloat = -1", "A VehicleSeat's steering: -1 left, 1 right, 0 straight", false},
+        {"Stiffness", "seat.Stiffness = 2", "How strong a car's springs are (1 = rests as built, 2 = firm and high, 0.5 = soft and low)", false},
+        {"SpringTravel", "seat.SpringTravel = 1.5", "How far (studs) a car's wheels can move up and down on their springs", false},
+        {"Suspension", "seat.Suspension = 0.5", "How much a car's springs soak up bounces (0 = bouncy, 2 = dead stiff)", false},
+        {"Grip", "seat.Grip = 1", "How hard a car's tyres hold the road before it slides (0.3 = ice, 2 = racing tyres)", false},
+        {"WheelsOnGround", "seat.WheelsOnGround -> number", "How many of a car's sprung wheels touch the ground (0 = it's flying)", false},
+        {"Speed", "seat.Speed -> number", "How fast a car with sprung wheels is going forward, studs a second (backwards is minus)", false},
 
         // --- Events (obj.Name:Connect(...)) ---
         {"Touched", "part.Touched:Connect(function(otherPart) ... end)", "Something bumped into the part", false},
