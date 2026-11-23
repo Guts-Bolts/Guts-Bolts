@@ -80,7 +80,7 @@ export function videoPages(ctx) {
 
   const hero = html`<div class="portal-hero video-hero"><div><span class="portal-kicker">G&amp;B VIDEOS</span><h1>Videos</h1>
       <p>Watch videos about anything: games, music, how-tos, funny stuff. Upload your own for free, and follow people to hear about their new ones.</p>
-      <p><a class="btn green" href="#/videoupload">Upload a video</a></p></div></div>`;
+      <p><a class="btn green" href="#/videoupload">Upload a video</a> <a class="btn red" href="#/golive">&#9679; Go live</a> <a class="btn" href="#/live">Watch live</a></p></div></div>`;
 
   const flag = (v) => v.state === 'uploading' ? 'Upload didn\'t finish' : v.review === 'pending' ? 'Waiting for a check' : v.review ? 'Didn\'t pass' : '';
   const card = (v) => html`<a class="video-card" href="#/watch/${v.id}">
@@ -122,7 +122,7 @@ export function videoPages(ctx) {
       html`<a class="${args.cat === k ? 'on' : ''}" href="${feedLink(q, { cat: k })}">${n}</a>`)}</div>`;
     const channel = by && r.videos[0] ? r.videos[0].by : null;
     const title = q.get('by') === 'me' ? 'My videos' : channel ? channel.name + '\'s videos' : args.tag ? 'Tagged #' + args.tag : args.q ? 'Search: ' + args.q : 'Home';
-    show(html`${hero}<div class="box"><h2 class="boxhead">${title} <span class="small muted">(${r.total})</span></h2>
+    show(html`${hero}<div id="videoLiveRow"></div><div class="box"><h2 class="boxhead">${title} <span class="small muted">(${r.total})</span></h2>
       ${channel && q.get('by') !== 'me' ? html`<p class="small">${videoCount(channel.followers)} follower${channel.followers === 1 ? '' : 's'} &middot; <a href="#/user/${channel.userId}">Profile</a></p>` : ''}
       <form class="row video-search" data-video-search><input type="search" name="q" value="${args.q}" placeholder="Search videos" style="flex:1">
         <button class="btn small">Search</button></form>
@@ -132,6 +132,7 @@ export function videoPages(ctx) {
         : html`<p class="muted">No videos here yet. <a href="#/videoupload">Be the first to upload one!</a></p>`}
       <p class="video-pages">${r.page > 1 ? html`<a class="btn small" href="${feedLink(q, { page: r.page - 1 })}">&laquo; Back</a> ` : ''}
         ${r.more ? html`<a class="btn small" href="${feedLink(q, { page: r.page + 1 })}">More &raquo;</a>` : ''}</p></div>`);
+    if (ctx.liveRow && !by && !args.q && !args.tag && args.page === 1) ctx.liveRow(document.getElementById('videoLiveRow'));   // (streams.js)
     document.querySelector('[data-video-search]').addEventListener('submit', (e) => {
       e.preventDefault();
       location.hash = feedLink(q, { q: e.currentTarget.q.value.trim() });
