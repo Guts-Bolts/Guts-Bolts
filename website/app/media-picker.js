@@ -19,8 +19,12 @@ export function safeMediaUrl(value) {
 }
 export function normalizeMediaItem(item) {
   if (!item || typeof item !== 'object' || item.type === 'ad') return null;
-  const url = safeMediaUrl(item.url || item.src || item.file?.hd?.gif?.url || item.file?.gif?.url ||
-    item.file?.hd?.webp?.url || item.file?.webp?.url || item.file?.hd?.jpg?.url || item.file?.jpg?.url);
+  const url = safeMediaUrl(item.url || item.src ||
+    item.file?.hd?.gif?.url || item.file?.gif?.url ||
+    item.file?.hd?.webp?.url || item.file?.webp?.url ||
+    item.file?.hd?.jpg?.url || item.file?.jpg?.url ||
+    item.file?.hd?.jpeg?.url || item.file?.jpeg?.url ||
+    item.file?.hd?.png?.url || item.file?.png?.url);
   if (!url) return null;
   const title = typeof item.title === 'string' ? item.title.slice(0, 120) : '';
   return { url, title, slug: typeof item.slug === 'string' ? item.slug : '' };
@@ -35,7 +39,11 @@ async function klipyFetch(kind, mode, query = '', page = 1) {
   const params = new URLSearchParams({ page: String(page), per_page: String(PAGE_SIZE), content_filter: KLIPY_FILTER, format_filter: 'gif,webp,jpg' });
   if (mode === 'search') params.set('q', query);
   const response = await fetch(`${KLIPY_API}/${encodeURIComponent(KLIPY_KEY)}${path}?${params}`, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`KLIPY request failed (${response.status}).`);
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.text()).trim().slice(0, 240); } catch {}
+    throw new Error(`KLIPY request failed (${response.status})${detail ? `: ${detail}` : '.'}`);
+  }
   const payload = await response.json();
   if (payload?.result === false) throw new Error(payload?.message || 'KLIPY returned an unsuccessful response.');
   return extractItems(payload);
