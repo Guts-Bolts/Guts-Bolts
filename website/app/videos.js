@@ -315,7 +315,7 @@ export function videoPages(ctx) {
       if (!file || !picked) { say('Pick a video first.', true); return; }
       btn.disabled = true; say('Getting ready...');
       const thumb = pic || picked.thumb;
-      const start = await call('video.start', Object.assign(words, { size: file.size, secs: picked.secs || 0, w: picked.w || 0, h: picked.h || 0,
+      const start = await call('video.start', Object.assign(words, { size: file.size, secs: Math.round(picked.secs || 0), w: Math.round(picked.w || 0), h: Math.round(picked.h || 0),   // (whole numbers: gb.js signs numbers without their decimals)
         thumb: thumb ? await blobB64(thumb) : '' }));
       if (!start.ok) { btn.disabled = false; say(start.error, true); return; }
       const bar = document.getElementById('videoProgress');
