@@ -34,15 +34,15 @@ export const PRODUCTS = [
     ],
   },
   {
-    id: 'videos', name: 'Videos', status: 'soon', href: '#/soon/videos',
-    blurb: 'Upload videos about anything, follow channels, make playlists.',
-    pages: [],
-    links: [],
-    plans: [
-      'Upload and watch videos about anything, not just games',
-      'Channels, subscriptions, likes and comments',
-      'Playlists, watch history and search',
-      'Reports and staff moderation from day one',
+    id: 'videos', name: 'Videos', status: 'open', href: '#/videos',
+    blurb: 'Upload videos about anything, follow channels, like and comment.',
+    pages: ['videos', 'watch', 'videoupload'],
+    links: [
+      ['Home', '#/videos', 'videos'],
+      ['Trending', '#/videos?sort=week', 'videos-week'],
+      ['Most liked', '#/videos?sort=top', 'videos-top'],
+      ['My videos', '#/videos?by=me', 'videos-mine'],
+      ['Upload', '#/videoupload', 'videoupload'],
     ],
   },
   {
@@ -171,6 +171,11 @@ export function activeLink(page, hash) {
     return /[?&]sort=week/.test(h) ? 'art-week' : /[?&]sort=top/.test(h) ? 'art-top' : /[?&]by=me/.test(h) ? 'art-mine' : 'art';
   }
   if (page === 'artpiece') return 'art';
+  if (page === 'videos') {   // (videos.js) like the art gallery's tabs
+    const h = String(hash || '');
+    return /[?&]sort=week/.test(h) ? 'videos-week' : /[?&]sort=top/.test(h) ? 'videos-top' : /[?&]by=me/.test(h) ? 'videos-mine' : 'videos';
+  }
+  if (page === 'watch') return 'videos';
   if (page === 'paste') return /[?&]by=me/.test(String(hash || '')) ? 'paste-mine' : 'paste';
   if (page === 'pasteview') return 'paste';
   if (page === 'academy') return /[?&]mine=/.test(String(hash || '')) ? 'academy-mine' : 'academy';

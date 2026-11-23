@@ -301,6 +301,16 @@ private:
     std::string artReportName(const std::string& target) const;
     void saveArt();
     void loadArt();
+    // ServerVideo.cpp: G&B Videos (videos.json + files/video-<id>), same rules as worker/videos.js.
+    nlohmann::json videoOp(const std::string& name, User* me, const nlohmann::json& args);
+    bool videoCanSee(const nlohmann::json& v, const User* me) const;
+    nlohmann::json videoJson(const nlohmann::json& v, const User* me, bool full) const;
+    void videoTellFollowers(nlohmann::json& v);
+    void videoForget(const std::string& id);
+    std::string videoReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string videoReportName(const std::string& target) const;
+    void saveVideos();
+    void loadVideos();
     // ServerPaste.cpp: G&B Paste (pastes.json), same rules as worker/paste.js.
     nlohmann::json pasteOp(const std::string& name, User* me, const nlohmann::json& args);
     nlohmann::json* pasteLive(const std::string& id);
@@ -505,6 +515,7 @@ private:
     nlohmann::json m_events = nlohmann::json::array();   // ServerExtras.cpp
     nlohmann::json m_banLists = nlohmann::json::object();   // ServerBanLists.cpp: list id -> list
     nlohmann::json m_art = {{"pieces", nlohmann::json::object()}, {"posts", nlohmann::json::object()}};   // ServerArt.cpp
+    nlohmann::json m_videos = {{"videos", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerVideo.cpp
     nlohmann::json m_experiments = {{"games", nlohmann::json::object()}, {"data", nlohmann::json::object()}, {"journeys", nlohmann::json::object()}, {"jdata", nlohmann::json::object()}};   // ServerExperiments.cpp
     nlohmann::json m_shareLinks = {{"links", nlohmann::json::object()}, {"seen", nlohmann::json::object()}};   // ServerShareLinks.cpp
     nlohmann::json m_pastes = {{"pastes", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerPaste.cpp

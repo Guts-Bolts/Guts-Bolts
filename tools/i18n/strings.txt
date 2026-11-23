@@ -6225,6 +6225,7 @@
 "the players"
 "the server will fall behind and everyone will lag. Fewer loose parts at once."
 "the updater stopped before it finished"
+"the video"
 "them from the Toolbox."
 "them inside Guts&Bolts, which we can change or take away (for example if you're banned, or Guts&Bolts shuts down)."
 "then give the part a Texture in Properties."
