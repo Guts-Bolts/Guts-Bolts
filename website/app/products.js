@@ -47,6 +47,20 @@ export const PRODUCTS = [
     ],
   },
   {
+    id: 'audio', name: 'Audio', status: 'open', href: '#/audio',
+    blurb: 'Music, loops and sound effects. Listen, fave, and use them in your games for free.',
+    pages: ['audio', 'track', 'audioupload'],
+    links: [
+      ['All audio', '#/audio', 'audio'],
+      ['Best this week', '#/audio?sort=week', 'audio-week'],
+      ['Most played', '#/audio?sort=plays', 'audio-plays'],
+      ['Music', '#/audio?cat=music', 'audio-music'],
+      ['Sound effects', '#/audio?cat=sfx', 'audio-sfx'],
+      ['My audio', '#/audio?by=me', 'audio-mine'],
+      ['Upload', '#/audioupload', 'audioupload'],
+    ],
+  },
+  {
     id: 'art', name: 'Art', status: 'open', href: '#/art',
     blurb: 'Post drawings, pixel art, comics and renders. Fave the best.',
     pages: ['art', 'artpiece', 'artpost'],
@@ -140,7 +154,7 @@ export const APPS = [
 // way"), so adding a product to a group later means adding its id to `products`.
 export const GROUPS = [
   { id: 'games', name: 'Games', products: ['games'], later: [] },
-  { id: 'media', name: 'Media', products: ['videos', 'live'], later: ['Audio'] },
+  { id: 'media', name: 'Media', products: ['videos', 'live', 'audio'], later: [] },
   { id: 'creation', name: 'Creation', products: ['art'], later: ['Modeler', 'Image', 'Capture'] },
   { id: 'community', name: 'Community', products: ['communities', 'chat'], later: ['Press'] },
   { id: 'ai', name: 'AI', products: ['fyxa'], later: ['Fyxa Desktop', 'AI Lab'] },
@@ -170,6 +184,12 @@ export function activeLink(page, hash) {
     return /[?&]sort=week/.test(h) ? 'art-week' : /[?&]sort=top/.test(h) ? 'art-top' : /[?&]by=me/.test(h) ? 'art-mine' : 'art';
   }
   if (page === 'artpiece') return 'art';
+  if (page === 'audio') {   // (audio.js) the list's tabs, told apart by what's after the '?'
+    const h = String(hash || '');
+    return /[?&]sort=week/.test(h) ? 'audio-week' : /[?&]sort=plays/.test(h) ? 'audio-plays' : /[?&]by=me/.test(h) ? 'audio-mine'
+      : /[?&]cat=music/.test(h) ? 'audio-music' : /[?&]cat=sfx/.test(h) ? 'audio-sfx' : 'audio';
+  }
+  if (page === 'track') return 'audio';
   if (page === 'videos') {   // (videos.js) like the art gallery's tabs
     const h = String(hash || '');
     return /[?&]sort=week/.test(h) ? 'videos-week' : /[?&]sort=top/.test(h) ? 'videos-top' : /[?&]by=me/.test(h) ? 'videos-mine' : 'videos';
