@@ -7,6 +7,8 @@
 #include "Experiments.h"
 #include "Drawings.h"
 #include "LuaRealism.h"
+#include "LuauLibs.h"
+#include "RobloxMembers.h"
 #include "LuaDisasters.h"
 #include "ServerMemory.h"
 #include "../core/Pad.h"
@@ -2614,15 +2616,29 @@ int l_wait(lua_State* L) {
 }
 
 // spawn(fn, ...) — run fn right away in its own thread.
+// Gives back the thread (task.cancel takes it). A coroutine can be passed instead of fn.
 int l_spawn(lua_State* L) {
-    luaL_checktype(L, 1, LUA_TFUNCTION);
     int n = lua_gettop(L);
+    if (lua_isthread(L, 1)) {   // task.spawn(thread, ...): carry on (or start) that coroutine
+        lua_State* co = lua_tothread(L, 1);
+        lua_pushvalue(L, 1);
+        int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+        for (int i = 2; i <= n; ++i) lua_pushvalue(L, i);
+        lua_xmove(L, co, n - 1);
+        LuaApi::engine(L)->resume(co, ref, n - 1, L);
+        lua_settop(L, 1);
+        return 1;
+    }
+    luaL_checktype(L, 1, LUA_TFUNCTION);
     lua_State* co = lua_newthread(L);
+    lua_pushvalue(L, -1);
     int ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    for (int i = 1; i <= n; ++i) lua_pushvalue(L, i);
+    lua_insert(L, 1);   // (the thread, to give back)
+    for (int i = 2; i <= n + 1; ++i) lua_pushvalue(L, i);
     lua_xmove(L, co, n);
     LuaApi::engine(L)->resume(co, ref, n - 1, L);
-    return 0;
+    lua_settop(L, 1);
+    return 1;
 }
 
 // delay(seconds, fn, ...) — run fn later.
@@ -2631,11 +2647,14 @@ int l_delay(lua_State* L) {
     luaL_checktype(L, 2, LUA_TFUNCTION);
     int n = lua_gettop(L);
     lua_State* co = lua_newthread(L);
+    lua_pushvalue(L, -1);
     int ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    for (int i = 2; i <= n; ++i) lua_pushvalue(L, i);
+    lua_insert(L, 1);   // (the thread, to give back)
+    for (int i = 3; i <= n + 1; ++i) lua_pushvalue(L, i);
     lua_xmove(L, co, n - 1);
     LuaApi::engine(L)->schedule(co, ref, t, n - 2);
-    return 0;
+    lua_settop(L, 1);
+    return 1;
 }
 
 // require() is written in Lua (see the prelude) so a module may wait() while it starts.
@@ -3973,6 +3992,8 @@ void ScriptEngine::start(bool runScripts) {
     Experiments::install(L);      // AnalyticsService and ExperimentService (A/B tests)
     Drawings::install(L);         // AssetService: EditableImages, publishing drawings
     LuaRealism::install(L);       // workspace:FireBullet
+    LuauLibs::install(L);         // bit32, buffer, vector, table.clone, debug.traceback, Actors...
+    RobloxMembers::install(L);    // Model:MoveTo, Lighting.TimeOfDay, BindToRenderStep, TextBounds...
     LuaDisasters::install(L, m_runMode != RunMode::Client);   // game:GetService("Disasters"): lightning, tornadoes, tsunamis, earthquakes
     ServerMemory::install(L, m_runMode != RunMode::Client);   // game.ServerLowMemoryWarning, Stats' memory numbers
     // For Studio's AI tools: an object by its id number (they refer to objects that way).
@@ -4159,6 +4180,10 @@ void ScriptEngine::fireGui(SignalKind kind, uint64_t id) { fire(kind, id, nullpt
 void ScriptEngine::fireFocusLost(uint64_t id, bool enter) {
     fire(SignalKind::GuiFocusLost, id, [enter](lua_State* co) { lua_pushboolean(co, enter); return 1; });
 }
+void ScriptEngine::fireChanged(uint64_t id, const std::function<int(lua_State*)>& pushArgs) {
+    fire(SignalKind::Changed, id, pushArgs);
+}
+
 void ScriptEngine::firePropertyChanged(uint64_t id, const char* property) {
     std::string name = property;
     fire(SignalKind::Changed, id, [name](lua_State* co) { lua_pushstring(co, name.c_str()); return 1; });
@@ -5455,6 +5480,21 @@ int ScriptEngine::connect(SignalKind kind, uint64_t id, int fnRef, bool once) {
     c.kind = kind; c.id = id; c.fnRef = fnRef; c.once = once; c.owner = m_current;
     m_conns.push_back(c);
     return (int)m_conns.size() - 1;
+}
+
+void ScriptEngine::cancelThread(lua_State* co) {
+    for (auto it = m_waiting.begin(); it != m_waiting.end();) {
+        if (it->co == co) {
+            if (m_L) luaL_unref(m_L, LUA_REGISTRYINDEX, it->ref);
+            it = m_waiting.erase(it);
+        } else ++it;
+    }
+    for (auto& c : m_conns)
+        if (c.alive && c.waiter == co) {
+            c.alive = false;
+            if (m_L && c.threadRef != LUA_NOREF) luaL_unref(m_L, LUA_REGISTRYINDEX, c.threadRef);
+            c.threadRef = LUA_NOREF;
+        }
 }
 
 int ScriptEngine::connectWaiter(SignalKind kind, uint64_t id, lua_State* thread) {

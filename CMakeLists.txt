@@ -38,6 +38,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerPaste.cpp
     src/server/ServerLevels.cpp
     src/server/ServerVideo.cpp
+    src/server/ServerStream.cpp
     src/server/ServerAcademy.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
@@ -179,6 +180,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         message(FATAL_ERROR "Could not patch Lua os.execute for iOS: system(cmd) token not found")
     endif()
     file(WRITE "${LUA_LOSLIB}" "${LUA_LOSLIB_CONTENT}")
+endif()
+
+# Luau (Roblox's Lua) prints a whole number kept as a float as "5"; plain Lua 5.4 prints
+# "5.0", so `print(10 / 2)` and `"Coins: " .. coins / 2` came out wrong in Roblox scripts.
+# Drop Lua's ".0" (only when it's still there, so configuring again is fine).
+set(LUA_LOBJECT "${lua_SOURCE_DIR}/lobject.c")
+file(READ "${LUA_LOBJECT}" LUA_LOBJECT_CONTENT)
+set(LUA_INT_LOOK "if (buff[strspn(buff, \"-0123456789\")] == '\\0') {  /* looks like an int? */")
+string(FIND "${LUA_LOBJECT_CONTENT}" "${LUA_INT_LOOK}" LUA_INT_LOOK_AT)
+if(NOT LUA_INT_LOOK_AT EQUAL -1)
+    string(REPLACE "${LUA_INT_LOOK}" "if (0) {  /* Guts&Bolts: whole floats print like Luau (5, not 5.0) */"
+           LUA_LOBJECT_CONTENT "${LUA_LOBJECT_CONTENT}")
+    file(WRITE "${LUA_LOBJECT}" "${LUA_LOBJECT_CONTENT}")
+elseif(NOT LUA_LOBJECT_CONTENT MATCHES "Guts&Bolts: whole floats")
+    message(FATAL_ERROR "Could not find Lua's '.0' number printing in lobject.c (did the Lua version change?)")
 endif()
 
 file(GLOB LUA_SOURCES "${lua_SOURCE_DIR}/*.c")
@@ -568,6 +584,9 @@ add_library(gb_engine STATIC
     src/scripting/ScriptRemotes.cpp
     src/scripting/SpatialQueries.cpp
     src/scripting/Shapecasts.cpp
+    src/scripting/LuauLibs.cpp
+    src/scripting/StandIns.cpp
+    src/scripting/RobloxMembers.cpp
     src/scripting/Experiments.cpp
     src/scripting/Drawings.cpp
     src/scripting/LuaRealism.cpp
@@ -1102,6 +1121,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     target_link_libraries(ServerArtTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerArtTests COMMAND ServerArtTests)
 
+    # GIFs, emoji reactions and forum votes (ServerForum.cpp, ServerSocial.cpp, TextFilter.cpp).
+    add_executable(ServerReactionsTests tests/ServerReactionsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerReactionsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerReactionsTests gb_version)
+    target_link_libraries(ServerReactionsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerReactionsTests COMMAND ServerReactionsTests)
+
     # G&B Paste: making, listing, running out, deleting, reporting (ServerPaste.cpp).
     add_executable(ServerPasteTests tests/ServerPasteTests.cpp ${GB_SERVER_TEST_SOURCES})
     target_include_directories(ServerPasteTests PRIVATE src/ ${GB_GENERATED})
@@ -1122,6 +1148,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerVideoTests gb_version)
     target_link_libraries(ServerVideoTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerVideoTests COMMAND ServerVideoTests)
+    # G&B Live: going live, pieces in and out, chat with time outs and slow mode, followers, reports (ServerStream.cpp).
+    add_executable(ServerStreamTests tests/ServerStreamTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerStreamTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerStreamTests gb_version)
+    target_link_libraries(ServerStreamTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerStreamTests COMMAND ServerStreamTests)
 
     # G&B Academy: writing, publishing, lessons, progress, likes, reports (ServerAcademy.cpp).
     add_executable(ServerAcademyTests tests/ServerAcademyTests.cpp ${GB_SERVER_TEST_SOURCES})
@@ -1469,6 +1501,24 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(CopsAndRobbersApiTests tests/CopsAndRobbersApiTests.cpp)
     target_link_libraries(CopsAndRobbersApiTests PRIVATE gb_engine)
     add_test(NAME CopsAndRobbersApiTests COMMAND CopsAndRobbersApiTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The rest of Luau's library: bit32, buffer, vector, table.freeze, debug.traceback, Actors...
+    add_executable(LuauLibraryTests tests/LuauLibraryTests.cpp)
+    target_link_libraries(LuauLibraryTests PRIVATE gb_engine)
+    add_test(NAME LuauLibraryTests COMMAND LuauLibraryTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Roblox members written in Lua: Model:MoveTo, Lighting.TimeOfDay, BindToRenderStep... (RobloxMembers.cpp)
+    add_executable(RobloxMembersTests tests/RobloxMembersTests.cpp)
+    target_link_libraries(RobloxMembersTests PRIVATE gb_engine)
+    add_test(NAME RobloxMembersTests COMMAND RobloxMembersTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Roblox classes kept as stand-ins: ObjectValue, Configuration, MeshPart, Atmosphere... (StandIns.h)
+    add_executable(StandInClassesTests tests/StandInClassesTests.cpp)
+    target_link_libraries(StandInClassesTests PRIVATE gb_engine)
+    add_test(NAME StandInClassesTests COMMAND StandInClassesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Weld / Motor6D / character joints, hinge limits, mesh stand-ins, fast bullets, the Blaster gun.

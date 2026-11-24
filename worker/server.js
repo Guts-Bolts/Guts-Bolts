@@ -32,7 +32,9 @@ import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
 import { installLevels, LEVELS_LOOK_ONLY, LEVELS_COSTLY } from './levels.js';   // levels, XP, daily streaks, profile walls
+import { installSeo } from './seo.js';   // pages search engines can read (seoAsk)
 import { installVideos, VIDEO_LOOK_ONLY, VIDEO_COSTLY } from './videos.js';   // G&B Videos: upload and watch videos
+import { installStreams, STREAM_LOOK_ONLY, STREAM_COSTLY } from './streams.js';   // G&B Live: live streams in Videos
 import { installAcademy, ACADEMY_LOOK_ONLY, ACADEMY_COSTLY } from './academy.js';   // G&B Academy: courses anyone can write
 import { installFyxaCloud } from './fyxa-cloud.js';   // Fyxa answered by Cloudflare's AI, with daily limits
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
@@ -335,7 +337,7 @@ const kDeletedName = 'Deleted user';
 const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 1000, kResetHours = 24;
 const TICKET_TOPICS = ['password', 'account', 'underage', 'privacy', 'copyright', 'other'];   // (underage: a parent or someone else says an account belongs to someone under 18; privacy: see/fix/delete/copy my data or opt out; copyright: a takedown notice, website/copyright.html)
 const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass: 'pass' })[a.kind] || a.kind;
-const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste', 'course', 'video'];   // video: "video" or "video:comment" (videos.js); art: "piece" or "piece:comment" (art.js)
+const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste', 'course', 'video', 'stream'];   // video: "video" or "video:comment" (videos.js); art: "piece" or "piece:comment" (art.js)
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.
 const kMaxComments = 500, kCommentLength = 200, kCommentCooldown = 15, kCommentsPage = 20;
 // Trades (ServerItems.cpp has the same): a trade nobody answers expires after kTradeExpiry.
@@ -403,6 +405,41 @@ const FORUM_BOARDS = [
 ];
 const kForumTitle = 80, kForumText = 3000, kForumPage = 20, kMaxForumPosts = 500, kMaxBoardThreads = 1000;
 const kThreadCooldown = 60, kReplyCooldown = 15;
+// Emoji reactions on forum posts and chat messages (ServerForum.cpp / ServerSocial.cpp have the
+// same list). Only these, so nobody can stuff words or links into a "reaction".
+export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👀'];
+const kMaxReactors = 500;   // people per emoji on one post or message
+// {emoji: [account ids]} -> [{emoji, count, mine}] in REACTIONS order (empty ones left out).
+export function reactionList(reacts, meId) {
+  const out = [];
+  for (const e of REACTIONS) {
+    const who = reacts && Array.isArray(reacts[e]) ? reacts[e] : [];
+    if (who.length) out.push({ emoji: e, count: who.length, mine: !!meId && who.includes(meId) });
+  }
+  return out;
+}
+// Turns `emoji` on or off for `meId` in holder.reacts. Returns an error, or '' when it worked.
+export function toggleReaction(holder, emoji, meId) {
+  if (!REACTIONS.includes(emoji)) return 'Pick one of the reactions.';
+  const reacts = holder.reacts && typeof holder.reacts === 'object' ? holder.reacts : {};
+  const who = Array.isArray(reacts[emoji]) ? reacts[emoji] : [];
+  const i = who.indexOf(meId);
+  if (i >= 0) who.splice(i, 1);
+  else { if (who.length >= kMaxReactors) return 'That reaction is full.'; who.push(meId); }
+  if (who.length) reacts[emoji] = who; else delete reacts[emoji];
+  if (Object.keys(reacts).length) holder.reacts = reacts; else delete holder.reacts;
+  return '';
+}
+// The forum's card view: a short plain-words preview of the first post, and its first picture.
+const MEDIA_TOKEN = /\[media:(https:\/\/[^\s\]]+)\]/i;
+export function forumPreview(text) {
+  const plain = String(text || '').replace(/```[\s\S]*?```/g, ' [code] ').replace(/\[media:[^\]]*\]/gi, ' ').replace(/\s+/g, ' ').trim();
+  return plain.length > 220 ? plain.slice(0, 217).trimEnd() + '…' : plain;
+}
+export function forumImage(text) { const m = MEDIA_TOKEN.exec(String(text || '')); return m ? m[1] : ''; }
+const forumScore = (th) => Object.values(th.votes || {}).reduce((n, v) => n + (v > 0 ? 1 : v < 0 ? -1 : 0), 0);
+// "Hot": votes and replies count, newer threads win ties (like Reddit's).
+const forumHot = (th) => { const s = forumScore(th) + Math.min(th.posts.length - 1, 50) / 5; return Math.sign(s) * Math.log10(Math.max(Math.abs(s), 1)) + th.at / 45000; };
 // Player badges (ServerSocial.cpp has the same list): earned automatically, checked
 // whenever a profile is looked at. `need` says how to get one.
 const PLAYER_BADGES = [
@@ -470,6 +507,9 @@ const COSTLY = {
   'comments.post':       [30, 90, 600],
   'forum.post':          [10, 30, 600],
   'forum.reply':         [30, 90, 600],
+  'forum.react':         [240, 720, 600],
+  'forum.vote':          [240, 720, 600],
+  'party.react':         [240, 720, 600],
   'ai.preferences.update': [10, 30, 600],
   'ai.content.eligibility.update': [60, 180, 600],
   'ai.sessions.create': [20, 40, 600],
@@ -516,6 +556,7 @@ Object.assign(COSTLY, ART_COSTLY);   // art.js
 Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
 Object.assign(COSTLY, LEVELS_COSTLY);   // levels.js
 Object.assign(COSTLY, VIDEO_COSTLY);   // videos.js
+Object.assign(COSTLY, STREAM_COSTLY);   // streams.js
 Object.assign(COSTLY, ACADEMY_COSTLY);   // academy.js
 Object.assign(COSTLY, EXPERIMENTS_COSTLY);   // experiments.js
 Object.assign(COSTLY, JOURNEYS_COSTLY);   // journeys.js
@@ -564,7 +605,7 @@ export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.m
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
 for (const op of LEVELS_LOOK_ONLY) GUEST_OK.add(op);   // guests can read profile walls (levels.js)
-for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
 for (const op of SHARE_GUEST_OK) GUEST_OK.add(op);   // sharelinks.js (anyone can open a link)
 
@@ -3538,6 +3579,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('paste.')) return this.pasteOp(name, me, args);   // paste.js
     if (name.startsWith('wall.') || name === 'levels.me' || name === 'showcase.set') return this.levelsOp(name, me, args);   // levels.js
     if (name.startsWith('video.')) return this.videoOp(name, me, args);   // videos.js
+    if (name.startsWith('stream.')) return this.streamOp(name, me, args);   // streams.js
     if (name.startsWith('academy.')) return this.academyOp(name, me, args);   // academy.js
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
@@ -3963,6 +4005,14 @@ export class GbServerObject extends DurableObject {
         chat.messages = [...(chat.messages || []), message].slice(-200);
         chat.updated = now(); syncChat(chat);
         this.chatPosted(chat, message);   // live pings, and the Lyreto gateway (chats.js)
+        return okay({ chat, me: this.meJson(me) });
+      }
+      if (name === 'party.react') {   // emoji on one message, on or off (everyone in the chat sees it)
+        const m = (chat.messages || []).find((x) => x.id === str(args, 'message'));
+        if (!m || m.system) return fail('That message is gone.');
+        const bad = toggleReaction(m, str(args, 'emoji'), me.id);
+        if (bad) return fail(bad);
+        syncChat(chat); this.chatPing(chat);
         return okay({ chat, me: this.meJson(me) });
       }
       if (name === 'party.invite') {
@@ -5674,9 +5724,10 @@ export class GbServerObject extends DurableObject {
         if (!p) return fail('That post isn\'t there any more.');
         if (p.by === me.id) return fail('You can\'t report yourself.');
         target = id; about = p.by; copy = { subject: 'Forum: ' + th.title, body: p.text, at: p.at };
-      } else if (kind === 'art' || kind === 'paste' || kind === 'course' || kind === 'video') {
+      } else if (kind === 'art' || kind === 'paste' || kind === 'course' || kind === 'video' || kind === 'stream') {
         const r = kind === 'art' ? this.artReportTarget(id, me) : kind === 'paste' ? this.pasteReportTarget(id, me)
-          : kind === 'video' ? this.videoReportTarget(id, me) : this.academyReportTarget(id, me);   // art.js, paste.js, videos.js, academy.js
+          : kind === 'video' ? this.videoReportTarget(id, me) : kind === 'stream' ? this.streamReportTarget(id, me)
+          : this.academyReportTarget(id, me);   // art.js, paste.js, videos.js, streams.js, academy.js
         if (typeof r === 'string') return fail(r);
         target = r.target; about = r.about; copy = r.copy;
       } else {
@@ -6044,6 +6095,7 @@ export class GbServerObject extends DurableObject {
       if (x.kind === 'art') { r.name = this.artReportName(x.target); r.piece = x.target.split(':')[0]; }   // art.js
       if (x.kind === 'paste') r.name = this.pasteReportName(x.target);   // paste.js
       if (x.kind === 'video') { r.name = this.videoReportName(x.target); r.video = x.target.split(':')[0]; }   // videos.js
+      if (x.kind === 'stream') { r.name = this.streamReportName(x.target); r.stream = x.target.split(':')[0]; }   // streams.js
       if (x.kind === 'course') r.name = this.academyReportName(x.target);   // academy.js
       if (x.status === 'closed') { r.outcome = x.outcome; r.closedBy = who(x.closedBy); r.closedAt = x.closedAt; }
       return r;
@@ -6060,7 +6112,11 @@ export class GbServerObject extends DurableObject {
     const threadsIn = (board) => [...this.forum.values()].filter((th) => th.board === board)
       .sort((x, y) => (y.pinned ? 1 : 0) - (x.pinned ? 1 : 0) || y.last - x.last);
     const summary = (th) => ({ id: th.id, title: th.title, by: who(th.by), at: th.at, last: th.last, lastBy: who(th.lastBy),
-      replies: th.posts.length - 1, views: th.views || 0, pinned: !!th.pinned, locked: !!th.locked });
+      replies: th.posts.length - 1, views: th.views || 0, pinned: !!th.pinned, locked: !!th.locked,
+      board: th.board, boardName: (boardOf(th.board) || { name: '?' }).name,
+      score: forumScore(th), myVote: me.userId !== 0 ? ((th.votes || {})[me.id] || 0) : 0,
+      preview: forumPreview(th.posts[0] && th.posts[0].text), image: forumImage(th.posts[0] && th.posts[0].text),
+      reactions: reactionList(th.posts[0] && th.posts[0].reacts, me.id) });
     // One page of a thread (page -1 = the last page).
     const threadPage = (th, page) => {
       const pages = Math.max(1, Math.ceil(th.posts.length / kForumPage));
@@ -6068,9 +6124,9 @@ export class GbServerObject extends DurableObject {
       const b = boardOf(th.board) || { name: '?' };
       const posts = th.posts.slice(p * kForumPage, (p + 1) * kForumPage).filter((x) => !hidden(x.by))
         .map((x) => ({ id: x.id, text: x.text, at: x.at, edited: x.edited || 0, by: who(x.by), first: x.id === th.posts[0].id,
-          canDelete: me.userId !== 0 && (x.by === me.id || staff) }));
+          canDelete: me.userId !== 0 && (x.by === me.id || staff), reactions: reactionList(x.reacts, me.id) }));
       return okay({ thread: Object.assign(summary(th), { board: th.board, boardName: b.name }), posts, page: p, pages,
-        canReply: me.userId !== 0 && (!th.locked || staff), canModerate: staff });
+        canReply: me.userId !== 0 && (!th.locked || staff), canModerate: staff, canReact: me.userId !== 0, reactions: REACTIONS });
     };
     if (name === 'forum.boards') {
       return okay({ boards: FORUM_BOARDS.map((b) => {
@@ -6108,13 +6164,19 @@ export class GbServerObject extends DurableObject {
       return okay({ results: matches.slice(page * pageSize, (page + 1) * pageSize), total: matches.length, page, pages });
     }
     if (name === 'forum.list') {
-      const b = boardOf(str(args, 'board'));
+      // board "all" = every board (the front page feed). sort: active (newest reply, the old
+      // order), hot, new (newest thread) or top (most votes). Pinned threads stay on top in a board.
+      const all = str(args, 'board') === 'all';
+      const b = all ? { id: 'all', name: 'All boards', about: 'Every board in one feed.', staffOnly: false } : boardOf(str(args, 'board'));
       if (!b) return fail('That board doesn\'t exist.');
-      const list = threadsIn(b.id).filter((th) => !hidden(th.by));
+      const sort = ['hot', 'new', 'top', 'active'].includes(str(args, 'sort')) ? str(args, 'sort') : 'active';
+      const key = { active: (th) => th.last, new: (th) => th.at, top: forumScore, hot: forumHot }[sort];
+      const list = (all ? [...this.forum.values()] : threadsIn(b.id)).filter((th) => !hidden(th.by))
+        .sort((x, y) => (all ? 0 : (y.pinned ? 1 : 0) - (x.pinned ? 1 : 0)) || key(y) - key(x) || y.last - x.last);
       const pages = Math.max(1, Math.ceil(list.length / kForumPage)), page = clamp(num(args, 'page'), 0, pages - 1);
-      return okay({ board: { id: b.id, name: b.name, about: b.about, staffOnly: !!b.staffOnly },
+      return okay({ board: { id: b.id, name: b.name, about: b.about, staffOnly: !!b.staffOnly }, sort,
         threads: list.slice(page * kForumPage, (page + 1) * kForumPage).map(summary), page, pages,
-        canPost: me.userId !== 0 && (!b.staffOnly || staff) });
+        canPost: !all && me.userId !== 0 && (!b.staffOnly || staff) });
     }
     if (name === 'forum.post') {
       if (me.userId === 0) return fail('Sign up to post on the forum.');
@@ -6140,8 +6202,31 @@ export class GbServerObject extends DurableObject {
     const th = this.forum.get(str(args, 'thread'));
     if (!th) return fail('That thread isn\'t there any more.');
     if (name === 'forum.thread') {
-      if (me.userId !== 0 && me.id !== th.by) { th.views = (th.views || 0) + 1; this.dirty.forum.add(th.id); }
+      // (peek: a link card in a chat or post looking at it, which isn't a visit)
+      if (me.userId !== 0 && me.id !== th.by && args.peek !== true) { th.views = (th.views || 0) + 1; this.dirty.forum.add(th.id); }
       return threadPage(th, num(args, 'page'));
+    }
+    if (name === 'forum.vote') {   // vote: 1 (up), -1 (down) or 0 (take it back). Answers the thread's card.
+      if (me.userId === 0) return fail('Sign up to vote on the forum.');
+      const v = num(args, 'vote');
+      if (![1, -1, 0].includes(v)) return fail('Vote up, down, or take your vote back.');
+      const starter = this.users.get(th.by);
+      if (starter && (this.blocks(me, starter) || this.blocks(starter, me))) return fail('You can\'t vote on this thread.');
+      th.votes = th.votes || {};
+      if (v) th.votes[me.id] = v; else delete th.votes[me.id];
+      this.dirty.forum.add(th.id);
+      return okay({ thread: summary(th) });
+    }
+    if (name === 'forum.react') {   // emoji on one post, on or off. Answers that post's reactions.
+      if (me.userId === 0) return fail('Sign up to react on the forum.');
+      const p = th.posts.find((x) => x.id === str(args, 'post'));
+      if (!p) return fail('That post is already gone.');
+      const author = this.users.get(p.by);
+      if (author && (this.blocks(me, author) || this.blocks(author, me))) return fail('You can\'t react to this post.');
+      const bad = toggleReaction(p, str(args, 'emoji'), me.id);
+      if (bad) return fail(bad);
+      this.dirty.forum.add(th.id);
+      return okay({ post: p.id, reactions: reactionList(p.reacts, me.id) });
     }
     if (name === 'forum.reply') {
       if (me.userId === 0) return fail('Sign up to post on the forum.');
@@ -7038,6 +7123,8 @@ export class GbServerObject extends DurableObject {
     if (url.pathname.startsWith('/artpic/')) return this.artPictureResponse(url.pathname.slice(8));
     // PUT /vidup/<id>, GET /vid/<id> and /vidthumb/<id>: a video's file and picture (videos.js).
     if (/^\/(vidup|vid|vidthumb)\//.test(url.pathname)) return this.videoFetch(request, url);
+    // PUT /liveup/<id>, GET /live/<id>/<n> and /live/<id>/pic: a live stream's pieces and picture (streams.js).
+    if (/^\/(liveup|live)\//.test(url.pathname)) return this.streamFetch(request, url);
     // GET /pasteraw/<id>: a paste's text alone (paste.js).
     if (url.pathname.startsWith('/pasteraw/')) return this.pasteRawResponse(url.pathname.slice(10));
     // GET /decal/<asset id or number>: a decal's picture (decals are always free and public), e.g. a hat's texture.
@@ -7179,6 +7266,8 @@ installPromoText(GbServerObject);
 installShareLinks(GbServerObject);
 installArt(GbServerObject);
 installPaste(GbServerObject);
+installSeo(GbServerObject);
 installVideos(GbServerObject);
+installStreams(GbServerObject);
 installAcademy(GbServerObject);
 installLevels(GbServerObject);   // levels.js (wraps op() and meJson(): keep it last)

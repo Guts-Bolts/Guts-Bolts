@@ -321,6 +321,16 @@ private:
     bool wallCanPost(const User& me, const User& owner) const;
     void levelsEarn(const std::string& name, User& me);   // XP after a request worked
     long long giveXp(User& u, long long amount);
+    // ServerStream.cpp: G&B Live (streams.json; pieces only in memory), same rules as worker/streams.js.
+    nlohmann::json streamOp(const std::string& name, User* me, const nlohmann::json& args);
+    nlohmann::json streamJson(const nlohmann::json& s, const User* me, long long t);
+    void streamEnd(nlohmann::json& s, long long t, const std::string& why);
+    void streamTidy(long long t);
+    long long streamViewers(const std::string& id, long long t);
+    std::string streamReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string streamReportName(const std::string& target) const;
+    void saveStreams();
+    void loadStreams();
     // ServerPaste.cpp: G&B Paste (pastes.json), same rules as worker/paste.js.
     nlohmann::json pasteOp(const std::string& name, User* me, const nlohmann::json& args);
     nlohmann::json* pasteLive(const std::string& id);
@@ -526,6 +536,9 @@ private:
     nlohmann::json m_banLists = nlohmann::json::object();   // ServerBanLists.cpp: list id -> list
     nlohmann::json m_art = {{"pieces", nlohmann::json::object()}, {"posts", nlohmann::json::object()}};   // ServerArt.cpp
     nlohmann::json m_videos = {{"videos", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerVideo.cpp
+    nlohmann::json m_streams = {{"streams", nlohmann::json::object()}, {"made", nlohmann::json::object()}, {"told", nlohmann::json::object()}};   // ServerStream.cpp
+    std::map<std::string, std::map<long long, std::string>> m_streamPieces;   // stream id -> piece number -> bytes (ServerStream.cpp)
+    std::map<std::string, std::map<std::string, long long>> m_streamWatch;    // stream id -> watcher -> last seen
     nlohmann::json m_experiments = {{"games", nlohmann::json::object()}, {"data", nlohmann::json::object()}, {"journeys", nlohmann::json::object()}, {"jdata", nlohmann::json::object()}};   // ServerExperiments.cpp
     nlohmann::json m_shareLinks = {{"links", nlohmann::json::object()}, {"seen", nlohmann::json::object()}};   // ServerShareLinks.cpp
     nlohmann::json m_pastes = {{"pastes", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerPaste.cpp

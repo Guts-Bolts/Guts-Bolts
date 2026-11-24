@@ -51,6 +51,9 @@ constexpr Rule kCostly[] = {
     {"video.start", 10, 30, 3600},   // ServerVideo.cpp (worker/videos.js VIDEO_COSTLY)
     {"video.comment", 30, 90, 600},
     {"video.like", 240, 720, 600},
+    {"stream.start", 10, 30, 3600},   // ServerStream.cpp (worker/streams.js STREAM_COSTLY)
+    {"stream.chat", 60, 180, 600},
+    {"stream.snap", 120, 360, 3600},
     {"paste.make", 60, 180, 3600},   // ServerPaste.cpp (worker/paste.js PASTE_COSTLY)
     {"wall.post", 20, 60, 600},   // ServerLevels.cpp (worker/levels.js LEVELS_COSTLY)
     {"academy.save", 60, 180, 3600},   // ServerAcademy.cpp (worker/academy.js ACADEMY_COSTLY)
@@ -61,6 +64,9 @@ constexpr Rule kCostly[] = {
     {"share.open", 120, 240, 600},
     {"share.done", 120, 360, 600},
     {"forum.reply", 30, 90, 600},
+    {"forum.react", 240, 720, 600},
+    {"forum.vote", 240, 720, 600},
+    {"party.react", 240, 720, 600},
     {"chat.translate", 400, 1200, 600},
     {"groups.create", 5, 15, 3600},
     {"bolts.redeem", 20, 60, 600},   // (so nobody can guess promo codes over and over)

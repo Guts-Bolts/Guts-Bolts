@@ -1,13 +1,13 @@
 // The "official website" files that search engines, ad buyers and browsers look for:
 //   /robots.txt                    which pages search engines may visit, and where the sitemap is
-//   /sitemap.xml                   the public pages (the legal pages are in it too)
+//   /sitemap.xml                   the public pages (now made by seo.js, which adds every game, video...)
 //   /.well-known/security.txt      where to report a security problem (see SECURITY.md)
 //   /.well-known/gpc.json          says the site respects Global Privacy Control (website/app/ads.js)
 //   /terms                         short address for the Terms of Service (they live in the app)
 // The legal pages themselves are plain files in website/: privacy, cookies, copyright, contact.
 
 export const LEGAL_PAGES = ['/privacy', '/cookies', '/copyright', '/contact'];
-const PUBLIC_PAGES = ['/', '/app/', '/products', '/products/sysfix', '/products/contentforge', ...LEGAL_PAGES];
+export const PUBLIC_PAGES = ['/', '/app/', '/products', '/products/sysfix', '/products/contentforge', ...LEGAL_PAGES];
 // When the legal pages last changed (the date at the top of privacy.html).
 export const LEGAL_UPDATED = '2026-11-19';
 

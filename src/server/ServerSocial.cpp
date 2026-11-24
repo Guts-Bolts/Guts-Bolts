@@ -413,6 +413,16 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             const json copy = *chat; syncChat(copy);
             json r = okay(); r["chat"] = copy; r["me"] = meJson(me); return r;
         }
+        if (name == "party.react") {   // emoji on one message, on or off (worker/server.js has the same)
+            if (!(*chat)["messages"].is_array()) return fail("That message is gone.");
+            json* msg = nullptr;
+            for (json& m : (*chat)["messages"]) if (m.value("id", std::string()) == str("message")) msg = &m;
+            if (!msg || msg->value("system", false)) return fail("That message is gone.");
+            const std::string bad = toggleReaction(*msg, str("emoji"), me.id);
+            if (!bad.empty()) return fail(bad);
+            const json copy = *chat; syncChat(copy);
+            json r = okay(); r["chat"] = copy; r["me"] = meJson(me); return r;
+        }
         if (name == "party.invite") {
             if (chat->value("owner", std::string()) != me.id) return fail("Only the party owner can invite people.");
             auto it = m_users.find(str("user"));

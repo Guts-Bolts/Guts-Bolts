@@ -180,7 +180,7 @@ export function installArt(Cls) {
     }
     if (name === 'art.get') {
       if (!this.artCanSee(p, me)) return fail('That piece isn\'t here (any more).');
-      if (!me || p.by !== me.id) { p.views = (p.views || 0) + 1; this.artSave(p); }
+      if (args.quiet !== true && (!me || p.by !== me.id)) { p.views = (p.views || 0) + 1; this.artSave(p); }
       return okay({ piece: this.artJson(p, me, true) });
     }
 

@@ -4,7 +4,7 @@
 //   - pictures from people who aren't Verified wait for a staff check ("pending")
 //   - faves, comments (the artist is told), edits by the artist, deletes by the artist or staff
 //   - kPostsPerDay posts a day (Verified: kPostsPerDayVerified)
-//   art.list {sort, cat, tag, by, q, page}  art.get {id}  art.picture {id, thumb}  art.post {...}  art.edit {...}
+//   art.list {sort, cat, tag, by, q, page}  art.get {id, quiet}  art.picture {id, thumb}  art.post {...}  art.edit {...}
 //   art.delete {id}  art.fave {id, on}  art.comment {id, text}  art.uncomment {id, comment}  art.pending {}  art.review {id, ok, note}
 // Kept in art.json ({pieces: id -> piece, posts: account -> {day, n}}); pictures are files/art-<id> and files/artthumb-<id>.
 #include "Server.h"
@@ -193,7 +193,7 @@ json GbServer::artOp(const std::string& name, User* me, const json& args) {
     }
     if (name == "art.get") {
         if (!p || !artCanSee(*p, me)) return fail("That piece isn't here (any more).");
-        if (!me || sv(*p, "by") != me->id) { (*p)["views"] = p->value("views", 0LL) + 1; saveArt(); }
+        if (!(args.contains("quiet") && args["quiet"] == true) && (!me || sv(*p, "by") != me->id)) { (*p)["views"] = p->value("views", 0LL) + 1; saveArt(); }
         json r = okay(); r["piece"] = artJson(*p, me, true); return r;
     }
 

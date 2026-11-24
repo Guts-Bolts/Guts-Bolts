@@ -280,7 +280,7 @@ export function installVideos(Cls) {
     const v = this.videos.get(str(args, 'id'));
     if (name === 'video.get') {
       if (!this.videoCanSee(v, me)) return fail('That video isn\'t here (any more).');
-      if (v.state === 'ready' && (!me || v.by !== me.id)) { v.views = (v.views || 0) + 1; this.videoSave(v); }
+      if (args.quiet !== true && v.state === 'ready' && (!me || v.by !== me.id)) { v.views = (v.views || 0) + 1; this.videoSave(v); }
       return okay({ video: this.videoJson(v, me, true) });
     }
 
