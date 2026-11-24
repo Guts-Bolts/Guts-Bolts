@@ -83,7 +83,7 @@ test('videos: a page you can watch right there, with VideoObject data, and readi
   s.videos.set(v.id, v);
   const r = await build(ask, '/videos/' + v.id);
   assert.equal(r.status, 200);
-  assert.match(r.html, /<video class="media" controls[^>]* src="\/vid\/v-abc123"/);
+  assert.match(r.html, /<video class="media"[^>]* controls[^>]* src="\/vid\/v-abc123"/);
   const vo = jsonLd(r.html).find((d) => d['@type'] === 'VideoObject');
   assert.equal(vo.duration, 'PT2M5S');
   assert.equal(vo.uploadDate, new Date(1790000000 * 1000).toISOString());

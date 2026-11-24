@@ -30,13 +30,18 @@ const CSP = [
   'upgrade-insecure-requests',
 ].join('; ');
 
+const EMBED_CSP = CSP.replace("frame-ancestors 'none'", 'frame-ancestors *');
+
 export function withSecurityHeaders(response, request) {
   // Cloudflare WebSocket upgrade responses (101) must be returned unchanged.
   if (response.status === 101) return response;
   const headers = new Headers(response.headers);
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  headers.set('X-Frame-Options', 'DENY');
+  // /embed/<id> (worker/seo.js) is just a video player that any site may put in a frame
+  // (X's player card, forums, blogs). Every other page stays unframeable.
+  const embed = /^\/embed\/[^/]+\/?$/.test(new URL(request.url).pathname);
+  if (!embed) headers.set('X-Frame-Options', 'DENY');
   // (camera and screen sharing: going live in G&B Live, website/app/streams.js)
   headers.set('Permissions-Policy', 'camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=(), usb=()');
   headers.set('Origin-Agent-Cluster', '?1');
@@ -44,6 +49,6 @@ export function withSecurityHeaders(response, request) {
   if (url.protocol === 'https:' && (url.hostname === 'gutsandbolts.net' || url.hostname.endsWith('.gutsandbolts.net')))
     headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   const type = headers.get('content-type') || '';
-  if (type.toLowerCase().startsWith('text/html')) headers.set('Content-Security-Policy', CSP);
+  if (type.toLowerCase().startsWith('text/html')) headers.set('Content-Security-Policy', embed ? EMBED_CSP : CSP);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

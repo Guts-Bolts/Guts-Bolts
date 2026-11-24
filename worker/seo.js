@@ -11,6 +11,7 @@
 //   /academy       /academy/<id>     a course              (#/course/<id>)
 //   /groups        /groups/<id>      a group               (#/group/<id>)
 //   /users/<number>                  someone's profile     (#/user/<number>)
+//   /embed/<id>                      just the video player, for other sites to put in a frame
 //   /sitemap.xml                     every page above, plus the fixed pages in legal.js
 // Each page has its own title and description, a canonical address, share cards (Open Graph and
 // Twitter), structured data (schema.org JSON-LD), alt text on every picture, one <h1>, and a
@@ -70,8 +71,38 @@ export const duration = (secs) => {
   return 'PT' + (s >= 3600 ? Math.floor(s / 3600) + 'H' : '') + (s >= 60 ? Math.floor((s % 3600) / 60) + 'M' : '') + (s % 60) + 'S';
 };
 
+// ---------- videos in chat apps ----------
+// Discord, Telegram, Slack, iMessage and the rest read these tags to show a video right in the
+// chat. Discord plays the file itself (og:video, a plain mp4 or webm address); it only puts other
+// sites' players (iframes) in chats for a short list of big sites, so the file is what counts.
+// X (Twitter) and some others use the player card instead: twitter:player is /embed/<id>, a page
+// with just our player that other sites are allowed to put in a frame (security.js).
+// v: { src, type ('mp4' | 'webm' | 'mov' | ''), w, h, embed (path), secs }
+const PLAYABLE = { mp4: 'video/mp4', webm: 'video/webm' };   // (what chat apps can play: not .mov)
+export function videoTags(v) {
+  const file = abs(v.src), mime = PLAYABLE[v.type] || (v.type ? '' : 'video/mp4');   // (older videos didn't save a type: they're mp4)
+  const w = v.w > 0 ? Math.round(v.w) : 1280, h = v.h > 0 ? Math.round(v.h) : 720;
+  const embed = SITE + v.embed;
+  let t = '';
+  if (mime) {
+    t += '<meta property="og:video" content="' + esc(file) + '">\n' +
+      '<meta property="og:video:url" content="' + esc(file) + '">\n' +
+      '<meta property="og:video:secure_url" content="' + esc(file) + '">\n' +
+      '<meta property="og:video:type" content="' + mime + '">\n' +
+      '<meta property="og:video:width" content="' + w + '">\n' +
+      '<meta property="og:video:height" content="' + h + '">\n';
+    if (v.secs > 0) t += '<meta property="video:duration" content="' + Math.round(v.secs) + '">\n';
+  }
+  t += '<meta name="twitter:card" content="player">\n' +
+    '<meta name="twitter:player" content="' + esc(embed) + '">\n' +
+    '<meta name="twitter:player:width" content="' + w + '">\n' +
+    '<meta name="twitter:player:height" content="' + h + '">\n' +
+    (mime ? '<meta name="twitter:player:stream" content="' + esc(file) + '">\n<meta name="twitter:player:stream:content_type" content="' + mime + '">\n' : '');
+  return t;
+}
 // ---------- the page around the content ----------
-// opts: { title, description, path, image, imageAlt, type, body, data: [json-ld...], noindex, crumbs: [[name, path]] }
+// opts: { title, description, path, image, imageAlt, type, body, data: [json-ld...], noindex, crumbs: [[name, path]],
+//        video: { src, type, w, h, secs, embed } (chat-app video tags), head: extra <head> html }
 export function page(opts, env = {}) {
   const url = SITE + opts.path;
   const title = opts.title ? opts.title + ' | ' + NAME : NAME;
@@ -95,8 +126,7 @@ export function page(opts, env = {}) {
     '<meta property="og:url" content="' + esc(url) + '">\n' +
     '<meta property="og:image" content="' + esc(image) + '">\n' +
     '<meta property="og:image:alt" content="' + esc(opts.imageAlt || opts.title || NAME) + '">\n' +
-    (opts.video ? '<meta property="og:video" content="' + esc(abs(opts.video)) + '">\n' : '') +
-    '<meta name="twitter:card" content="summary_large_image">\n' +
+    (opts.video ? videoTags(opts.video) : '<meta name="twitter:card" content="summary_large_image">\n') +
     '<meta name="twitter:title" content="' + esc(opts.title || NAME) + '">\n' +
     '<meta name="twitter:description" content="' + esc(opts.description) + '">\n' +
     '<meta name="twitter:image" content="' + esc(image) + '">\n' +
@@ -104,7 +134,7 @@ export function page(opts, env = {}) {
     '<link rel="icon" href="/img/icon.png">\n<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">\n' +
     '<link rel="preload" href="/img/logo.png" as="image">\n' +
     '<link rel="stylesheet" href="/fonts/font.css">\n' +
-    '<style>' + CSS + '</style>\n' +
+    '<style>' + CSS + '</style>\n' + (opts.head || '') +
     data.map(ld).join('\n') + '\n</head>\n<body>\n' +
     '<header class="top"><div class="wrap"><a class="logo" href="/"><img src="/img/logo.png" alt="Guts &amp; Bolts" width="720" height="242"></a>' +
     '<nav aria-label="Sections">' + SECTIONS.map((s) => '<a href="/' + s + '">' + SECTION_NAMES[s] + '</a>').join('') +
@@ -135,6 +165,7 @@ main{padding-bottom:32px}h1{font-size:clamp(26px,3.4vw,40px);line-height:1.15;ma
 .hero{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:clamp(16px,3vw,36px);align-items:start}
 @media (max-width:820px){.hero{grid-template-columns:1fr}}
 .media{background:#000;border-radius:14px;overflow:hidden;display:block}.media img,.media video{display:block;width:100%;height:auto;max-height:78vh;object-fit:contain;margin:0 auto}
+.hero .gbp{aspect-ratio:16/9;height:auto;max-height:78vh;border-radius:14px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
 .btn{display:inline-block;background:var(--red);color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:999px;margin:8px 0}
 .btn:hover{background:var(--red-dark)}dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:12px 0}dt{color:var(--muted)}dd{margin:0}
@@ -155,6 +186,31 @@ const byLine = (p, extra = '') => '<p class="by">by ' + (p && p.userId ? '<a hre
 const count = (n, one) => Number(n || 0).toLocaleString('en-US') + ' ' + one + (n === 1 ? '' : 's');
 const gamePic = (g) => (g.thumb ? '/thumb/' + encodeURIComponent(g.id) + '?v=' + g.thumb : g.icon ? '/icon/' + encodeURIComponent(g.id) + '?v=' + g.icon : '');
 const itemHash = (a) => (LIBRARY_KINDS.has(a.kind) ? '#/library/' + encodeURIComponent(String(a.num || a.id)) : '#/item/' + encodeURIComponent(a.id));
+
+// A video, ready for G&B's player (website/app/player.js wraps it; without scripts it's a normal video).
+const videoTag = (v, cls) => '<video class="' + cls + '" data-gbp controls preload="metadata" playsinline src="' + esc(v.src) + '"' +
+  (v.poster ? ' poster="' + esc(v.poster) + '"' : '') + (v.w && v.h ? ' width="' + v.w + '" height="' + v.h + '"' : '') +
+  ' data-id="' + esc(v.id) + '" data-title="' + esc(v.title) + '" data-by="' + esc(v.by && v.by.name) + '" aria-label="' + esc(v.title) + '"></video>';
+const PLAYER_HEAD = '<link rel="stylesheet" href="/app/videoplayer.css">\n<script type="module" src="/app/player.js"></script>\n';
+
+// /embed/<id>: just the player, filling the whole frame, for other sites and apps to put in an
+// iframe (X's player card, forums, blogs). security.js lets any site frame these pages (only these).
+export async function embedPage(ask, id) {
+  const r = await ask({ op: 'video.get', args: { id, quiet: true } });
+  if (!r.ok || !r.video || r.video.state !== 'ready' || r.video.review || !r.video.src || r.video.src.includes('?k=')) return null;
+  const v = r.video, path = '/videos/' + encodeURIComponent(v.id);
+  return '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+    '<title>' + esc(v.title) + ' | ' + NAME + '</title>\n<meta name="robots" content="noindex">\n' +
+    '<link rel="canonical" href="' + SITE + path + '">\n<link rel="icon" href="/img/icon.png">\n' +
+    '<style>html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,sans-serif}' +
+    '.gbp,video.full{position:absolute;inset:0;width:100%;height:100%}video{object-fit:contain;background:#000}' +
+    '.gb-tag{position:absolute;top:10px;left:12px;z-index:5;color:#fff;text-decoration:none;font-weight:700;font-size:15px;' +
+    'text-shadow:0 1px 3px rgba(0,0,0,.8);max-width:calc(100% - 24px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .3s}' +
+    '.gb-tag small{display:block;font-weight:500;opacity:.85}.gbp:not(.gbp-paused):not(:hover) ~ .gb-tag{opacity:0}</style>\n' + PLAYER_HEAD +
+    '</head>\n<body>\n' + videoTag(v, 'full') +
+    '<a class="gb-tag" href="' + SITE + path + '" target="_blank" rel="noopener">' + esc(v.title) +
+    '<small>' + esc(v.by && v.by.name) + ' · Guts&amp;Bolts</small></a>\n</body>\n</html>\n';
+}
 
 // ---------- one page for each kind of thing ----------
 async function gamePageOrItem(ask, id, wantGame) {
@@ -233,15 +289,17 @@ const BUILDERS = {
     const path = '/videos/' + encodeURIComponent(v.id);
     const description = blurb(v.text) || v.title + ', a video by ' + v.by.name + ' on Guts&Bolts.';
     return {
-      title: v.title, description, path, image: v.poster, imageAlt: v.title, type: 'video.other', video: v.src,
+      title: v.title, description, path, image: v.poster, imageAlt: v.title, type: 'video.other',
+      video: { src: v.src, type: v.type, w: v.w, h: v.h, secs: v.secs, embed: '/embed/' + encodeURIComponent(v.id) },
       crumbs: [['Videos', '/videos'], [v.title, path]],
       data: [{ '@context': 'https://schema.org', '@type': 'VideoObject', name: v.title, description: blurb(v.text, 2000) || description,
         thumbnailUrl: [abs(v.poster) || DEFAULT_PIC], uploadDate: iso(v.at), duration: v.secs ? duration(v.secs) : undefined,
         contentUrl: abs(v.src), embedUrl: SITE + path, url: SITE + path, author: person(v.by), keywords: (v.tags || []).join(', ') || undefined,
         width: v.w || undefined, height: v.h || undefined,
         interactionStatistic: { '@type': 'InteractionCounter', interactionType: 'https://schema.org/WatchAction', userInteractionCount: v.views || 0 } }],
-      body: '<article><div class="hero"><div><video class="media" controls preload="metadata" playsinline src="' + esc(v.src) + '"' +
-        (v.poster ? ' poster="' + esc(v.poster) + '"' : '') + (v.w && v.h ? ' width="' + v.w + '" height="' + v.h + '"' : '') + ' aria-label="' + esc(v.title) + '"></video>' +
+      // (people who click a shared link land here: player.js gives the video G&B's own player)
+      head: PLAYER_HEAD,
+      body: '<article><div class="hero"><div>' + videoTag(v, 'media') +
         '<h1>' + esc(v.title) + '</h1>' + byLine(v.by, ' · ' + count(v.views, 'view') + ' · ' + day(v.at)) +
         (v.text ? '<p class="lead">' + esc(v.text) + '</p>' : '') + '</div><div class="card">' +
         openBtn('#/watch/' + encodeURIComponent(v.id), 'Watch on Guts&Bolts') +
@@ -451,10 +509,17 @@ export function installSeo(Cls) {
 
 // ---------- routing ----------
 const ROUTE = /^\/(games|items|videos|art|paste|academy|groups|users)(?:\/([^/]{1,80}))?\/?$/;
-export const isSeoPath = (path) => path === '/sitemap.xml' || ROUTE.test(path);
+const EMBED = /^\/embed\/([^/]{1,80})\/?$/;
+export const isSeoPath = (path) => path === '/sitemap.xml' || ROUTE.test(path) || EMBED.test(path);
 
 // The page for this address as { status, html } (or { moved }), without the cache. For tests too.
 export async function build(ask, path, env = {}) {
+  const e = EMBED.exec(path);
+  if (e) {
+    let html = null;
+    try { html = await embedPage(ask, decodeURIComponent(e[1])); } catch { return { status: 503, html: '<!doctype html><title>Try again soon</title><p>Guts&amp;Bolts is busy. Try again in a moment.</p>' }; }
+    return html ? { status: 200, html } : { status: 404, html: '<!doctype html><title>Not found</title><style>body{background:#000;color:#fff;font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0}</style><p>This video isn\'t on Guts&amp;Bolts (any more).</p>' };
+  }
   const m = ROUTE.exec(path);
   if (!m) return null;
   let id = '';
@@ -470,6 +535,8 @@ const notFound = (env, path = '/') => page({ title: 'Not found', description: 'T
 
 // Where the app shows the same thing, for a server on a computer (GB_SERVER), which has no seoAsk.
 export function appAddress(path) {
+  const e = EMBED.exec(path);
+  if (e) return '/app/#/watch/' + e[1];
   const m = ROUTE.exec(path);
   if (!m) return '/app/';
   const id = m[2] || '';
