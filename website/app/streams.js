@@ -12,6 +12,7 @@
 //   - Watchers' browsers fetch each new piece and feed them, one after another, into one
 //     <video> through Media Source Extensions ('sequence' mode lines up their times).
 import { VIDEO_CAT_NAMES, videoCount } from './videos.js';
+import { gbPlayer } from './videoplayer.js';   // the YouTube-style player (live mode)
 
 const POLL_MS = 2500;   // how often the page asks what's new (newest piece, chat, viewers)
 const SNAP_MS = 60000;  // how often the streamer's page sends a new picture for the list
@@ -222,7 +223,7 @@ export function streamPages(ctx) {
               <span class="small">It was live ${ago(s.ended)}${s.peak ? ', with up to ' + videoCount(s.peak) + ' watching' : ''}.</span>
               <a class="btn small" href="#/videos?by=${s.by.userId}">See ${s.by.name}'s videos</a></div>`
             : !playable ? html`<div class="live-over"><b>This browser can't play live streams yet.</b><span class="small">Try Chrome, Edge or Firefox.</span></div>`
-            : html`<video id="livePlayer" playsinline muted autoplay controls></video>
+            : html`<video id="livePlayer" playsinline muted autoplay></video>
               <button class="btn small live-sound" id="liveSound">&#128264; Turn sound on</button>
               <div class="live-wait" id="liveWait">Waiting for the stream...</div>`}</div>
           <h1 class="video-title">${s.state === 'live' ? html`<span class="live-badge inline">LIVE</span> ` : ''}${s.title}</h1>
@@ -241,6 +242,7 @@ export function streamPages(ctx) {
       </div>`);
     const video = document.getElementById('livePlayer');
     const note = (text) => { const w = document.getElementById('liveWait'); if (w) { w.textContent = text; w.hidden = false; } };
+    if (video) gbPlayer(video, { live: true, title: s.title, by: s.by.name, poster: s.poster });   // (videoplayer.js: our own controls)
     const player = video ? new LivePlayer(video, s, note) : null;
     if (video) {
       video.addEventListener('playing', () => { const w = document.getElementById('liveWait'); if (w) w.hidden = true; });

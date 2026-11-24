@@ -1,0 +1,125 @@
+/* G&B's video player (videoplayer.js). Everything is under .gbp so it never changes the page around it.
+   Red for the bar and knob (the G&B logo red), white icons, the site's font. */
+.gbp { --gbp-red: var(--gb-red, #d4202a); position: relative; width: 100%; height: 100%; background: #000; overflow: hidden;
+  font-family: var(--gb-font, inherit); color: #fff; user-select: none; -webkit-user-select: none; outline: none;
+  -webkit-tap-highlight-color: transparent; }
+.gbp video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: #000; object-fit: contain; }
+.gbp button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; box-shadow: none; min-width: 0; }
+.gbp svg { width: 100%; height: 100%; fill: currentColor; display: block; }
+
+/* The dark fade behind the controls. */
+.gbp-shade { position: absolute; left: 0; right: 0; bottom: 0; height: 120px; pointer-events: none;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .75)); opacity: 0; transition: opacity .25s; }
+.gbp-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 12px 4px; opacity: 0; transition: opacity .25s; z-index: 3; }
+.gbp.gbp-awake .gbp-shade, .gbp.gbp-awake .gbp-bottom, .gbp.gbp-paused:not(.gbp-fresh) .gbp-bottom, .gbp.gbp-paused:not(.gbp-fresh) .gbp-shade { opacity: 1; }
+.gbp:not(.gbp-awake):not(.gbp-paused) { cursor: none; }
+.gbp:not(.gbp-awake):not(.gbp-paused) .gbp-bottom { pointer-events: none; }
+
+/* Seek bar. */
+.gbp-seek { position: relative; height: 16px; display: flex; align-items: center; cursor: pointer; touch-action: none; outline: none; }
+.gbp-rail { position: relative; width: 100%; height: 3px; background: rgba(255, 255, 255, .25); transition: height .1s; }
+.gbp-seek:hover .gbp-rail, .gbp-seek.gbp-dragging .gbp-rail, .gbp-seek:focus-visible .gbp-rail { height: 5px; }
+.gbp-loaded, .gbp-hoverbar, .gbp-done { position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(0); }
+.gbp-loaded { background: rgba(255, 255, 255, .45); }
+.gbp-hoverbar { background: rgba(255, 255, 255, .5); opacity: 0; }
+.gbp-seek.gbp-hovering .gbp-hoverbar { opacity: 1; }
+.gbp-done { background: var(--gbp-red); }
+.gbp-knob { position: absolute; top: 50%; left: 0; width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; border-radius: 50%;
+  background: var(--gbp-red); transform: scale(0); transition: transform .1s; pointer-events: none; }
+.gbp-seek:hover .gbp-knob, .gbp-seek.gbp-dragging .gbp-knob, .gbp-seek:focus-visible .gbp-knob, .gbp-touch .gbp-knob { transform: scale(1); }
+.gbp-peek { position: absolute; bottom: 22px; left: 0; transform: translateX(-50%); display: none; flex-direction: column; align-items: center;
+  gap: 4px; pointer-events: none; }
+.gbp-seek.gbp-hovering .gbp-peek, .gbp-seek.gbp-dragging .gbp-peek { display: flex; }
+.gbp-peek canvas { display: none; width: 160px; height: 90px; border: 2px solid #fff; border-radius: 4px; background: #000; }
+.gbp-peek.pic canvas { display: block; }
+.gbp-peek span { font-size: 13px; font-weight: bold; background: rgba(0, 0, 0, .7); padding: 1px 6px; border-radius: 3px; text-shadow: 0 1px 2px #000; }
+
+/* The row of buttons. */
+.gbp-row { display: flex; align-items: center; gap: 4px; height: 44px; }
+.gbp-btn { width: 40px; height: 40px; padding: 8px !important; opacity: .92; flex: none; }
+.gbp-btn:hover, .gbp-btn:focus-visible { opacity: 1; }
+.gbp-btn:focus-visible, .gbp-livebtn:focus-visible, .gbp-big:focus-visible { outline: 2px solid #fff; outline-offset: -2px; border-radius: 4px; }
+.gbp-btn.on { color: var(--gbp-red); }
+.gbp-btn[hidden] { display: none; }
+.gbp-cc.on { color: #fff; box-shadow: inset 0 -3px 0 var(--gbp-red) !important; }
+.gbp-gap { flex: 1; }
+.gbp-time { font-size: 13px; white-space: nowrap; padding: 0 6px; font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
+.gbp-vol { display: flex; align-items: center; }
+.gbp-volbar { -webkit-appearance: none; appearance: none; width: 0; height: 4px; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer;
+  background: linear-gradient(to right, #fff var(--gbp-vol, 100%), rgba(255, 255, 255, .3) var(--gbp-vol, 100%)); border-radius: 2px;
+  transition: width .2s, opacity .2s, margin .2s; }
+.gbp-vol:hover .gbp-volbar, .gbp-volbar:focus-visible { width: 64px; opacity: 1; margin: 0 8px 0 2px; }
+.gbp-volbar::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 0; }
+.gbp-volbar::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 0; }
+.gbp-livebtn { font-size: 13px; font-weight: bold; letter-spacing: .06em; padding: 0 8px !important; display: flex; align-items: center; gap: 6px; }
+.gbp-livebtn::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--gbp-red); }
+.gbp-livebtn.behind::before { background: #999; }
+
+/* Big play button in the middle (before it starts, and when paused on a phone). */
+.gbp-big { position: absolute; left: 50%; top: 50%; width: 72px; height: 50px; margin: -25px 0 0 -36px; padding: 10px 20px !important;
+  border-radius: 12px; background: rgba(20, 20, 20, .8) !important; z-index: 2; transition: background .15s, opacity .2s; }
+.gbp-big:hover { background: var(--gbp-red) !important; }
+.gbp.gbp-fresh .gbp-big { background: var(--gbp-red) !important; }
+.gbp:not(.gbp-paused) .gbp-big, .gbp:not(.gbp-fresh):not(.gbp-touch):not(.gbp-ended) .gbp-big { opacity: 0; pointer-events: none; }
+.gbp-touch.gbp-paused:not(.gbp-awake):not(.gbp-fresh):not(.gbp-ended) .gbp-big { opacity: 0; pointer-events: none; }
+
+/* Play/pause pop in the middle when you click, and the double-tap ripples. */
+.gbp-flash { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; padding: 14px; border-radius: 50%;
+  background: rgba(0, 0, 0, .55); opacity: 0; pointer-events: none; }
+.gbp-flash.go { animation: gbp-pop .5s ease-out; }
+@keyframes gbp-pop { from { opacity: 1; transform: scale(.8); } to { opacity: 0; transform: scale(1.4); } }
+.gbp-tap { position: absolute; top: 0; bottom: 0; width: 38%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; font-size: 12px; font-weight: bold; background: rgba(255, 255, 255, .14); opacity: 0; pointer-events: none; }
+.gbp-tap svg { width: 34px; height: 34px; }
+.gbp-tap-l { left: 0; border-radius: 0 50% 50% 0 / 0 50% 50% 0; }
+.gbp-tap-r { right: 0; border-radius: 50% 0 0 50% / 50% 0 0 50%; }
+.gbp-tap.go { animation: gbp-ripple .6s ease-out; }
+@keyframes gbp-ripple { 0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Loading spinner and the little message ("Volume 60%"). */
+.gbp-spin { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, .25); border-top-color: #fff; display: none; animation: gbp-turn .8s linear infinite; pointer-events: none; }
+.gbp.gbp-loading:not(.gbp-paused) .gbp-spin { display: block; }
+@keyframes gbp-turn { to { transform: rotate(360deg); } }
+.gbp-note { position: absolute; top: 12%; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, .7); padding: 6px 12px;
+  border-radius: 4px; font-size: 14px; font-weight: bold; opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap; z-index: 4; }
+.gbp.gbp-noting .gbp-note { opacity: 1; }
+
+/* Settings menu. */
+.gbp-menu { position: absolute; right: 12px; bottom: 60px; z-index: 5; min-width: 220px; max-height: calc(100% - 72px); overflow-y: auto;
+  background: rgba(28, 28, 28, .94); border-radius: 8px; padding: 6px 0; font-size: 14px; box-shadow: 0 4px 20px rgba(0, 0, 0, .5); }
+.gbp-menu[hidden] { display: none; }
+.gbp-menu button { display: flex !important; width: 100%; justify-content: space-between; gap: 16px; padding: 9px 14px !important;
+  text-align: left; border-radius: 0 !important; }
+.gbp-menu button:hover, .gbp-menu button:focus-visible { background: rgba(255, 255, 255, .12) !important; outline: none; }
+.gbp-menu button b { font-weight: normal; opacity: .8; }
+.gbp-menu [aria-checked="true"][data-speed] { color: #fff; font-weight: bold; box-shadow: inset 3px 0 0 var(--gbp-red) !important; }
+.gbp-menu .gbp-mback { font-weight: bold; border-bottom: 1px solid rgba(255, 255, 255, .15) !important; margin-bottom: 4px; }
+.gbp-keys { display: grid; gap: 6px; padding: 6px 14px 8px; font-size: 13px; }
+.gbp-keys kbd { display: inline-block; min-width: 64px; font: inherit; font-weight: bold; color: #fff; }
+
+/* Captions look like YouTube's. */
+.gbp video::cue { background: rgba(8, 8, 8, .75); color: #fff; font-family: var(--gb-font, sans-serif); }
+
+/* Full screen. */
+.gbp.gbp-fs { border: 0; }
+.gbp.gbp-fs .gbp-row { height: 54px; }
+.gbp.gbp-fs .gbp-btn { width: 50px; height: 50px; padding: 11px !important; }
+
+/* Phones: bigger touch targets, no volume slider (phones use their own buttons), no theater mode. */
+.gbp-touch .gbp-volbar { display: none; }
+.gbp-touch .gbp-big { width: 64px; height: 64px; margin: -32px 0 0 -32px; padding: 16px !important; border-radius: 50%; }
+.gbp-touch .gbp-seek { height: 22px; }
+.gbp-touch .gbp-rail { height: 4px; }
+@media (max-width: 700px) {
+  .gbp-theater { display: none; }
+  .gbp-bottom { padding: 0 6px 2px; }
+  .gbp-btn { width: 38px; height: 38px; padding: 8px !important; }
+  .gbp-time { font-size: 12px; padding: 0 2px; }
+  .gbp-menu { right: 6px; bottom: 52px; min-width: 200px; }
+}
+@media (max-width: 400px) { .gbp-pip { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .gbp-flash.go, .gbp-tap.go { animation-duration: .01s; }
+  .gbp-spin { animation-duration: 2s; }
+}

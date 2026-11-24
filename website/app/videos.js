@@ -4,6 +4,8 @@
 //   #/videoupload[?edit=<id>]               upload a video (or change its words)
 // app.js hands over its helpers with videoPages(ctx), and adds the pages it returns.
 
+import { gbPlayer } from './videoplayer.js';   // the YouTube-style player
+
 export const VIDEO_CAT_NAMES = { gaming: 'Gaming', music: 'Music', funny: 'Funny', howto: 'How-to', animation: 'Animation',
   vlog: 'Vlogs', sports: 'Sports', science: 'Science & tech', news: 'News', other: 'Other' };
 const SORTS = [['new', 'Newest'], ['week', 'Trending this week'], ['top', 'Most liked'], ['views', 'Most watched']];
@@ -158,10 +160,10 @@ export function videoPages(ctx) {
     const followBtn = signedIn() && !v.mine
       ? html`<button class="btn small ${v.following ? '' : 'blue'}" data-act="follow" data-op="${v.following ? 'follow.remove' : 'follow.add'}" data-user="${v.by.id}">${v.following ? 'Following' : 'Follow'}</button>` : '';
     show(html`<p class="small"><a href="#/videos">&laquo; Videos</a></p>${reviewBox}
-      <div class="video-watch">
+      <div class="video-watch video-watch-areas" id="videoWatch">
+        <div class="video-stage video-player-stage">${v.src ? html`<video id="videoPlayer" playsinline preload="metadata" src="${v.src}" ${v.poster ? html`poster="${v.poster}"` : ''}></video>`
+          : html`<span class="video-nopic">&#9654;</span>`}</div>
         <div class="video-main">
-          <div class="video-stage">${v.src ? html`<video controls playsinline preload="metadata" src="${v.src}" ${v.poster ? html`poster="${v.poster}"` : ''}></video>`
-            : html`<span class="video-nopic">&#9654;</span>`}</div>
           <h1 class="video-title">${v.title}</h1>
           <div class="video-bar">
             <span class="video-channel">${person(v.by)} <span class="small muted">${videoCount(v.by.followers)} follower${v.by.followers === 1 ? '' : 's'}</span> ${followBtn}</span>
@@ -186,6 +188,11 @@ export function videoPages(ctx) {
         </div>
         <aside class="video-next box"><h2 class="boxhead">Up next</h2><div id="videoNext" class="small muted">Loading...</div></aside>
       </div>`);
+
+    // The player (videoplayer.js): its own controls, keys, theater mode, and picking up where you left off.
+    const playerVideo = document.getElementById('videoPlayer');
+    if (playerVideo) gbPlayer(playerVideo, { id: v.id, title: v.title, by: v.by.name, poster: v.poster,
+      onTheater: (on) => document.getElementById('videoWatch')?.classList.toggle('theater', on) });
 
     // Up next: more from the same person first, then what's popular.
     Promise.all([call('video.list', { by: v.by.userId }), call('video.list', { sort: 'week' }), call('video.list', { sort: 'top' })]).then((lists) => {
