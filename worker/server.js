@@ -31,6 +31,7 @@ import { installPromoText } from './promotext.js';   // Promotional text on game
 import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js';   // share links that count clicks, plays and buys
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
+import { installSeo } from './seo.js';   // pages search engines can read (seoAsk)
 import { installVideos, VIDEO_LOOK_ONLY, VIDEO_COSTLY } from './videos.js';   // G&B Videos: upload and watch videos
 import { installStreams, STREAM_LOOK_ONLY, STREAM_COSTLY } from './streams.js';   // G&B Live: live streams in Videos
 import { installAcademy, ACADEMY_LOOK_ONLY, ACADEMY_COSTLY } from './academy.js';   // G&B Academy: courses anyone can write
@@ -7262,6 +7263,7 @@ installPromoText(GbServerObject);
 installShareLinks(GbServerObject);
 installArt(GbServerObject);
 installPaste(GbServerObject);
+installSeo(GbServerObject);
 installVideos(GbServerObject);
 installStreams(GbServerObject);
 installAcademy(GbServerObject);

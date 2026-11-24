@@ -118,7 +118,7 @@ export function installPaste(Cls) {
     if (name === 'paste.get') {
       const p = this.pasteLive(str(args, 'id'));
       if (!p) return fail('That paste isn\'t here. It may have run out or been deleted.');
-      if (!me || p.by !== me.id) { p.views = (p.views || 0) + 1; this.pasteSave(p); }
+      if (args.quiet !== true && (!me || p.by !== me.id)) { p.views = (p.views || 0) + 1; this.pasteSave(p); }
       return okay({ paste: this.pasteJson(p, me, true) });
     }
     if (!me || me.userId === 0) return fail('Sign up to make pastes.');

@@ -117,7 +117,7 @@ export function streamPages(ctx) {
       <p>Watch people stream games, art, music and talk shows, and chat with them while it happens. Going live is free, right from your browser.</p>
       <p><a class="btn red" href="#/golive">&#9679; Go live</a> <a class="btn" href="#/videos">Videos</a></p></div></div>`;
   const card = (s) => html`<a class="video-card live-card" href="#/live/${s.id}">
-      <span class="video-thumb">${s.poster ? html`<img loading="lazy" src="${s.poster}" alt="">` : html`<span class="video-nopic">&#9679;</span>`}
+      <span class="video-thumb">${s.poster ? html`<img loading="lazy" src="${s.poster}" alt="${s.title}">` : html`<span class="video-nopic">&#9679;</span>`}
         ${s.state === 'live' ? html`<span class="live-badge">LIVE</span><span class="video-time">${videoCount(s.viewers)} watching</span>`
           : html`<span class="video-time">Ended</span>`}</span>
       <span class="video-card-text"><b>${s.title}</b><span class="small muted">${s.by.name}</span>

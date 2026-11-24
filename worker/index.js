@@ -25,6 +25,7 @@ import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { handleAds, withAdsMeta } from './ads.js';
 import { handleLegal } from './legal.js';
+import { handleSeo, withSeoHead } from './seo.js';
 import { handleStripe } from './stripe.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
 import { checkSupabaseHealth, listSupabaseActivity, supabasePublicConfig } from './supabase.js';
@@ -264,6 +265,9 @@ async function route(request, env, ctx) {
     if (url.pathname.startsWith('/download/')) return handleDownload(request, env, url);
     const ads = handleAds(request, env, url);   // /ads.txt and /ads-config (ads.js)
     if (ads) return ads;
+    const seo = await handleSeo(request, env, url, env.GB_SERVER ? null
+      : (req) => env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main')).seoAsk(req), ctx);   // pages for search engines + sitemap.xml (seo.js)
+    if (seo) return seo;
     const legal = handleLegal(request, url);   // robots.txt, sitemap.xml, security.txt, gpc.json, /terms (legal.js)
     if (legal) return legal;
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
@@ -362,9 +366,9 @@ async function route(request, env, ctx) {
     if (productPage) {
       const pageUrl = new URL(productPage[1] ? '/products/' + productPage[1].toLowerCase() : '/products', url.origin);
       pageUrl.search = url.search;
-      return withAdsMeta(await env.ASSETS.fetch(new Request(pageUrl, request)), env);
+      return withSeoHead(withAdsMeta(await env.ASSETS.fetch(new Request(pageUrl, request)), env), url, env);
     }
-    return withAdsMeta(await env.ASSETS.fetch(request), env);
+    return withSeoHead(withAdsMeta(await env.ASSETS.fetch(request), env), url, env);
 }
 
 // Videos when the server runs on a computer (GB_SERVER): its requests are JSON over TCP, so the file

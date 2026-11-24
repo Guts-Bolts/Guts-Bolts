@@ -86,7 +86,7 @@ export function videoPages(ctx) {
 
   const flag = (v) => v.state === 'uploading' ? 'Upload didn\'t finish' : v.review === 'pending' ? 'Waiting for a check' : v.review ? 'Didn\'t pass' : '';
   const card = (v) => html`<a class="video-card" href="#/watch/${v.id}">
-      <span class="video-thumb">${v.poster ? html`<img loading="lazy" src="${v.poster}" alt="">` : html`<span class="video-nopic">&#9654;</span>`}
+      <span class="video-thumb">${v.poster ? html`<img loading="lazy" src="${v.poster}" alt="${v.title}">` : html`<span class="video-nopic">&#9654;</span>`}
         ${v.secs ? html`<span class="video-time">${videoTime(v.secs)}</span>` : ''}</span>
       <span class="video-card-text"><b>${v.title}</b><span class="small muted">${v.by.name}</span>
         <span class="small muted">${videoCount(v.views)} views &middot; ${ago(v.at)}${flag(v) ? html` &middot; <span class="video-flag">${flag(v)}</span>` : ''}</span></span></a>`;
@@ -263,7 +263,7 @@ export function videoPages(ctx) {
         Only upload videos you made yourself (or have the right to share), and follow the <a href="#/terms">rules</a>.
         ${waits ? 'Staff check new videos from people who aren\'t Verified before everyone can watch them.' : ''}</p>`}
       <form class="form" data-video-upload>
-        ${old ? (old.poster ? html`<p><img class="video-preview" src="${old.poster}" alt=""></p>` : '')
+        ${old ? (old.poster ? html`<p><img class="video-preview" src="${old.poster}" alt="${old.title || 'Video picture'}"></p>` : '')
           : html`<p><input type="file" name="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.mov,.webm,.m4v" required></p>
             <p><video class="video-preview" id="videoPreview" controls muted playsinline hidden></video></p>`}
         <p><label>Title<br><input type="text" name="title" maxlength="100" required value="${old ? old.title : ''}" style="width:100%"></label></p>
