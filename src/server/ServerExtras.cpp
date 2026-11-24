@@ -42,6 +42,15 @@ const Achievement kAchievements[] = {
     {"dressed-up",   "Dressed Up",    "Save an outfit",                     "outfits",    1},
     {"party-goer",   "Party Goer",    "Get a free item from an event",      "events",     1},
     {"one-year",     "One Year Club", "Have your account for a whole year", "days",       365},
+    // Uploading and getting noticed (the counts come from ServerLeaderboards.cpp uploadCounts).
+    {"first-upload", "First Upload",  "Upload anything: a game, item, art, video or paste", "uploads", 1},
+    {"prolific",     "Prolific",      "Upload 25 things",                   "uploads",    25},
+    {"artist",       "Artist",        "Post your first piece of art",       "art",        1},
+    {"fan-favorite", "Fan Favorite",  "Get 25 faves on your art",           "artFaves",   25},
+    {"filmmaker",    "Filmmaker",     "Upload your first video",            "videos",     1},
+    {"hit-maker",    "Hit Maker",     "Get 1,000 visits on your games",     "visits",     1000},
+    {"superstar",    "Superstar",     "Get 10,000 visits on your games",    "visits",     10000},
+    {"adventurer",   "Adventurer",    "Play 100 different games",           "played",     100},
 };
 } // namespace
 
@@ -55,7 +64,12 @@ json GbServer::achievementsOf(const User& u) const {
         if (a.kind == "game") { ++games; visits += a.plays; }
         else if (a.kind != "model" && a.kind != "devproduct" && a.kind != "pass") ++items;
     }
+    long long made = 0;
+    for (const auto& [id, a] : m_assets) if (a.creator == u.id) ++made;
+    const json more = uploadCounts(u.id);
     stats["gamesMade"] = games; stats["itemsMade"] = items; stats["visits"] = visits;
+    stats["art"] = more["art"]; stats["artFaves"] = more["artFaves"]; stats["videos"] = more["videos"];
+    stats["uploads"] = made + more.value("art", 0LL) + more.value("videos", 0LL) + more.value("pastes", 0LL);
     json earned = json::array(), rest = json::array();
     for (const Achievement& x : kAchievements) {
         const long long have = stats.value(x.stat, 0LL);
