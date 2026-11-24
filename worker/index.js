@@ -257,7 +257,7 @@ async function route(request, env, ctx) {
     const url = new URL(request.url);
     // The site lives at gutsandbolts.net. The old workers.dev address only keeps answering
     // older apps (the server and its pictures); people opening it in a browser get moved.
-    if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|artpic|pasteraw|download|avatar|vid|vidthumb|vidup|live|liveup)(\/|$)/.test(url.pathname))
+    if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|artpic|imgpic|pasteraw|download|avatar|vid|vidthumb|vidup|live|liveup)(\/|$)/.test(url.pathname))
       return Response.redirect('https://gutsandbolts.net' + url.pathname + url.search, 301);
     // Share links (sharelinks.js): gutsandbolts.net/s/<code> opens the website's #/s/<code> page, which counts the click.
     const share = /^\/s\/([A-Za-z0-9]{4,16})\/?$/.exec(url.pathname);
@@ -274,7 +274,7 @@ async function route(request, env, ctx) {
     // Stripe's own servers call this (signature-checked in stripe.js), so it skips the bot check.
     if (url.pathname === '/api/stripe/webhook') return handleStripe(request, env, url);
     const stripePath = url.pathname === '/api/stripe/checkout' || url.pathname === '/api/stripe/config';
-    const picture = /^\/(thumb|icon|shot|wear|decal|artpic|pasteraw|avatar)\//.test(url.pathname);
+    const picture = /^\/(thumb|icon|shot|wear|decal|artpic|imgpic|pasteraw|avatar)\//.test(url.pathname);
     // Videos (videos.js): /vid/<id> and /vidthumb/<id> count like pictures; /vidup/<id> (sending one) like a request.
     const video = /^\/(vid|vidthumb|vidup)\//.test(url.pathname);
     // Live streams (streams.js): /live/<id>/<n> pieces count like pictures; /liveup/<id> (the streamer sending one) like a request.
@@ -470,6 +470,18 @@ async function pictureFor(request, env, url) {
     for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
     const type = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[r.type] || 'application/octet-stream';
     return new Response(data, { headers: { 'content-type': type, 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
+  }
+  if (url.pathname.startsWith('/imgpic/')) {   // a picture on G&B Image (image.js; the C++ server answers image.picture)
+    const [id, which] = url.pathname.slice(8).split('/');
+    let key = '';
+    try { key = decodeURIComponent(id || '').replace(/\.(png|jpe?g|gif|webp)$/i, ''); } catch { key = ''; }
+    const r = await serverAsk(env, { op: 'image.picture', args: { id: key, thumb: which === 'thumb' } });
+    if (!r.ok || !r.data) return new Response('No picture.', { status: 404 });
+    const bin = atob(r.data), data = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
+    const type = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[r.type] || 'application/octet-stream';
+    return new Response(data, { headers: { 'content-type': type, 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; sandbox" } });
   }
   if (url.pathname.startsWith('/pasteraw/')) {   // a paste's text alone (paste.js; the C++ server answers paste.raw)
     let id = '';

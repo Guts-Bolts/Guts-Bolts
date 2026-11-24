@@ -1,0 +1,40 @@
+/* G&B Image (image.js). Only uses app.css's colour tokens, so dark mode and themes keep working.
+   The picture lists reuse the Art portal's cards (art.css). */
+.product-image .product-icon { background: #c2410c; }
+.image-about ul { margin: 4px 0 8px; padding-left: 20px; }
+.image-about li { margin: 4px 0; }
+.image-view { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; align-items: start; }
+.image-stage { background: #11161e; border: 2px solid var(--line); display: grid; place-items: center; min-height: 240px;
+  /* a checkerboard behind see-through pictures */
+  background-image: linear-gradient(45deg, #1a212c 25%, transparent 25%, transparent 75%, #1a212c 75%),
+    linear-gradient(45deg, #1a212c 25%, transparent 25%, transparent 75%, #1a212c 75%);
+  background-size: 20px 20px; background-position: 0 0, 10px 10px; }
+.image-stage img { display: block; max-width: 100%; max-height: 80vh; object-fit: contain; }
+.image-side { margin: 0; }
+.image-side h1 { margin: 0 0 6px; font-size: 20px; overflow-wrap: anywhere; }
+.image-codes label { display: block; margin: 6px 0; }
+.image-codes .row { gap: 4px; flex-wrap: nowrap; }
+.image-codes input { flex: 1; min-width: 0; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+/* The editor */
+.image-drop { border: 2px dashed var(--line); padding: 18px; text-align: center; background: var(--panel2); }
+.image-drop.on { border-color: var(--gb-red, #d4202a); }
+.image-toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0 4px; }
+.image-group { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.image-group > b { margin-right: 2px; }
+.image-canvas-wrap { background: #11161e; border: 2px solid var(--line); padding: 4px; display: grid; place-items: center; overflow: hidden;
+  background-image: linear-gradient(45deg, #1a212c 25%, transparent 25%, transparent 75%, #1a212c 75%),
+    linear-gradient(45deg, #1a212c 25%, transparent 25%, transparent 75%, #1a212c 75%);
+  background-size: 20px 20px; background-position: 0 0, 10px 10px; }
+.image-canvas-wrap canvas { display: block; max-width: 100%; cursor: crosshair; touch-action: none; }
+.image-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 10px 0; }
+.image-panel { border: 1px solid var(--line); background: var(--panel2); padding: 6px 10px 10px; margin: 0; min-width: 0; }
+.image-panel legend { font-weight: bold; font-size: 13px; padding: 0 4px; }
+.image-panel label { display: block; margin: 4px 0; }
+.image-panel input[type=number] { width: 90px; }
+.image-panel input[type=range] { width: 100%; }
+.image-panel p label { display: inline-block; margin-right: 8px; }
+.image-upload { border-top: 2px solid var(--line); padding-top: 6px; }
+.image-upload h3 { margin: 6px 0; }
+@media (max-width: 700px) {
+  .image-view { grid-template-columns: 1fr; }
+}

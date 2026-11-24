@@ -329,6 +329,25 @@ private:
     std::string pasteReportName(const std::string& target) const;
     void savePastes();
     void loadPastes();
+    // ServerImage.cpp: G&B Image (images.json + files/image-<id>), same rules as worker/image.js.
+    nlohmann::json imageOp(const std::string& name, User* me, const nlohmann::json& args);
+    bool imageCanSee(const nlohmann::json& m, const User* me) const;
+    nlohmann::json imageJson(const nlohmann::json& m, const User* me, bool full) const;
+    std::string imageReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string imageReportName(const std::string& target) const;
+    void saveImages();
+    void loadImages();
+    // ServerBoards.cpp: G&B Boards (boards.json; "kanban" so it isn't mixed up with the forum's boards), same rules as worker/boards.js.
+    nlohmann::json kanbanOp(const std::string& name, User* me, const nlohmann::json& args);
+    bool kanbanOn(const nlohmann::json& b, const User* me) const;
+    bool kanbanCanSee(const nlohmann::json& b, const User* me) const;
+    nlohmann::json kanbanPerson(const std::string& id) const;
+    nlohmann::json kanbanSummary(const nlohmann::json& b) const;
+    nlohmann::json kanbanJson(const nlohmann::json& b, const User* me) const;
+    std::string kanbanReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string kanbanReportName(const std::string& target) const;
+    void saveKanban();
+    void loadKanban();
     // ServerAcademy.cpp: G&B Academy (academy.json), same rules as worker/academy.js.
     nlohmann::json academyOp(const std::string& name, User* me, const nlohmann::json& args);
     bool academyCanSee(const nlohmann::json& c, const User* me) const;
@@ -532,6 +551,8 @@ private:
     nlohmann::json m_experiments = {{"games", nlohmann::json::object()}, {"data", nlohmann::json::object()}, {"journeys", nlohmann::json::object()}, {"jdata", nlohmann::json::object()}};   // ServerExperiments.cpp
     nlohmann::json m_shareLinks = {{"links", nlohmann::json::object()}, {"seen", nlohmann::json::object()}};   // ServerShareLinks.cpp
     nlohmann::json m_pastes = {{"pastes", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerPaste.cpp
+    nlohmann::json m_images = {{"images", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerImage.cpp
+    nlohmann::json m_kanban = {{"boards", nlohmann::json::object()}};   // ServerBoards.cpp
     nlohmann::json m_academy = {{"courses", nlohmann::json::object()}, {"progress", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerAcademy.cpp
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;
