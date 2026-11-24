@@ -56,7 +56,7 @@ local p = Instance.new('Part'); p.Name = 'CmpNew'; p.Anchored = true; p.Parent =
             "with the starting version, only their changes are listed and the one you both changed is a conflict", d)
     d = m.call("compare_scenes", action="merge")
     out = lua(m, "print(workspace.CmpKeep.Size.X, workspace.CmpMove.Transparency, workspace.CmpMove.Color.B > 0.9)")
-    t.check(t.ok(d) and d["done"] == 1 and out.split() == ["6.0", "0.5", "false"], "merge leaves conflicts alone unless they're picked", (d, out))
+    t.check(t.ok(d) and d["done"] == 1 and out.split() == ["6", "0.5", "false"], "merge leaves conflicts alone unless they're picked", (d, out))
 
     d = m.call("compare_scenes", action="compare", other="NoSuchGameHere")
     t.check(t.code(d) == "CANT_COMPARE", "a game that doesn't exist is refused", d)

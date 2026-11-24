@@ -318,6 +318,8 @@ public:
     // result: the thread's first return value as text ("" for nil, or if it waited / failed).
     void       resume(lua_State* co, int ref, int nargs, lua_State* from = nullptr, std::string* result = nullptr);
     void       schedule(lua_State* co, int ref, double delay, int startArgs);
+    // task.cancel(thread): forget a thread that is waiting (wait(), task.delay, :Wait()).
+    void       cancelThread(lua_State* co);
     void       checkTimeout(lua_State* L);
     float&     clockTime();
     void       applyClockTime();

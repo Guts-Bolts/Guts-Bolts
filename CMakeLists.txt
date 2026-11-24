@@ -180,6 +180,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     file(WRITE "${LUA_LOSLIB}" "${LUA_LOSLIB_CONTENT}")
 endif()
 
+# Luau (Roblox's Lua) prints a whole number kept as a float as "5"; plain Lua 5.4 prints
+# "5.0", so `print(10 / 2)` and `"Coins: " .. coins / 2` came out wrong in Roblox scripts.
+# Drop Lua's ".0" (only when it's still there, so configuring again is fine).
+set(LUA_LOBJECT "${lua_SOURCE_DIR}/lobject.c")
+file(READ "${LUA_LOBJECT}" LUA_LOBJECT_CONTENT)
+set(LUA_INT_LOOK "if (buff[strspn(buff, \"-0123456789\")] == '\\0') {  /* looks like an int? */")
+string(FIND "${LUA_LOBJECT_CONTENT}" "${LUA_INT_LOOK}" LUA_INT_LOOK_AT)
+if(NOT LUA_INT_LOOK_AT EQUAL -1)
+    string(REPLACE "${LUA_INT_LOOK}" "if (0) {  /* Guts&Bolts: whole floats print like Luau (5, not 5.0) */"
+           LUA_LOBJECT_CONTENT "${LUA_LOBJECT_CONTENT}")
+    file(WRITE "${LUA_LOBJECT}" "${LUA_LOBJECT_CONTENT}")
+elseif(NOT LUA_LOBJECT_CONTENT MATCHES "Guts&Bolts: whole floats")
+    message(FATAL_ERROR "Could not find Lua's '.0' number printing in lobject.c (did the Lua version change?)")
+endif()
+
 file(GLOB LUA_SOURCES "${lua_SOURCE_DIR}/*.c")
 list(REMOVE_ITEM LUA_SOURCES
     "${lua_SOURCE_DIR}/lua.c"       # stand-alone interpreter
@@ -567,6 +582,7 @@ add_library(gb_engine STATIC
     src/scripting/ScriptRemotes.cpp
     src/scripting/SpatialQueries.cpp
     src/scripting/Shapecasts.cpp
+    src/scripting/LuauLibs.cpp
     src/scripting/Experiments.cpp
     src/scripting/Drawings.cpp
     src/scripting/LuaRealism.cpp
@@ -1461,6 +1477,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(CopsAndRobbersApiTests tests/CopsAndRobbersApiTests.cpp)
     target_link_libraries(CopsAndRobbersApiTests PRIVATE gb_engine)
     add_test(NAME CopsAndRobbersApiTests COMMAND CopsAndRobbersApiTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The rest of Luau's library: bit32, buffer, vector, table.freeze, debug.traceback, Actors...
+    add_executable(LuauLibraryTests tests/LuauLibraryTests.cpp)
+    target_link_libraries(LuauLibraryTests PRIVATE gb_engine)
+    add_test(NAME LuauLibraryTests COMMAND LuauLibraryTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Weld / Motor6D / character joints, hinge limits, mesh stand-ins, fast bullets, the Blaster gun.

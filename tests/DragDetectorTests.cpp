@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
     std::snprintf(where, sizeof(where), "local c = Vector3.new(%f, %f, %f)\n", c.x, c.y - 2.5f, c.z);
     code.replace(code.find("local c = ..."), 13, where);
     std::string out = run(session, code);
-    check(out == "DragDetector true TranslatePlane 1.0 true",
+    check(out == "DragDetector true TranslatePlane 1 true",
           "Instance.new(\"DragDetector\") and its properties: " + out);
     SceneNode* crate = find(scene, "Crate");
     if (!crate) { std::cerr << "no crate\n"; return 1; }

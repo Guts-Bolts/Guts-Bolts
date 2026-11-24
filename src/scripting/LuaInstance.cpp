@@ -3281,6 +3281,11 @@ int inst_new(lua_State* L) {
         Attribute col; col.name = "TeamColor"; col.type = Attribute::Color3; col.v = glm::vec3(1.0f);
         Attribute aa; aa.name = "AutoAssignable"; aa.type = Attribute::Bool; aa.b = true;
         n->attributes = {c, col, aa};
+    } else if (cls == "Actor") {   // Parallel Luau's Actor: a Model whose scripts get messages (LuauLibs.cpp)
+        n = std::make_unique<SceneNode>(cls, NodeKind::Model);
+        Attribute a;
+        a.name = "RobloxClass"; a.type = Attribute::String; a.s = "Actor";
+        n->attributes.push_back(a);
     } else if (cls == "WorldModel") {   // (a Model in a ViewportFrame; ours are all the same)
         n = std::make_unique<SceneNode>(cls, NodeKind::Model);
         Attribute a;
@@ -3464,6 +3469,7 @@ int sig_wait(lua_State* L) {
 int sig_index(lua_State* L) {
     const char* k = luaL_checkstring(L, 2);
     if (is(k, "Connect") || is(k, "connect")) { lua_pushcfunction(L, sig_connect); return 1; }
+    if (is(k, "ConnectParallel"))             { lua_pushcfunction(L, sig_connect); return 1; }   // (Parallel Luau: runs like Connect here)
     if (is(k, "Once"))                        { lua_pushcfunction(L, sig_once);    return 1; }
     if (is(k, "Wait"))                        { lua_pushcfunction(L, sig_wait);    return 1; }
     return luaL_error(L, "'%s' is not a valid member of an event (try :Connect)", k);

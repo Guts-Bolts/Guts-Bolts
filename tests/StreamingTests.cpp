@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
         print(workspace.StreamingTargetRadius)
         workspace.StreamingTargetRadius = 100
     )");
-    check(out == "false 512.0true 100.032.0", "workspace.StreamingEnabled / StreamingTargetRadius (at least 32): " + out);
+    check(out == "false 512true 10032", "workspace.StreamingEnabled / StreamingTargetRadius (at least 32): " + out);
 
     // A map: a block near the middle, a part and a two-part tower far away, and a big
     // "City" group spread across the whole map (its insides become pieces).
