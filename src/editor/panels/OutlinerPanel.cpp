@@ -532,7 +532,7 @@ std::string className(const SceneNode& n) {
         case NodeKind::Mover:        return kMoverClassNames[(int)n.mover.type];
         case NodeKind::Gui:        return kGuiClassNames[(int)n.gui.type];
         case NodeKind::Camera:     return "Camera";
-        case NodeKind::Constraint: return std::string(kConstraintNames[(int)n.constraintType]) + "Constraint";
+        case NodeKind::Constraint: return kConstraintClassNames[std::clamp((int)n.constraintType, 0, kConstraintTypeCount - 1)];
         default: return n.name == "SpawnLocation" ? "SpawnLocation" : "Part";
     }
 }

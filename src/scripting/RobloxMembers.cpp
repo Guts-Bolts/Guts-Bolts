@@ -98,8 +98,108 @@ keptProperty("Massless", isPart, false, boolean)
 keptProperty("RootPriority", isPart, 0, number)
 keptProperty("EnableFluidForces", isPart, true, boolean)
 keptProperty("PivotOffset", isPart, CFrame.new(), function(v) return v end)
-GET.AssemblyRootPart = function(self) if not isPart(self) then return false end return true, self end
 GET.CenterOfMass = function(self) if not isPart(self) then return false end return true, self.Position end
+
+-- ----- Assemblies: parts held rigidly together (welds, Motor6Ds, RigidConstraints) -----
+local function rigidJoint(d)
+    local c = classOf(d)
+    return c == "WeldConstraint" or c == "RigidConstraint" or isA(d, "JointInstance")
+end
+local function endsOf(d)
+    local a, b
+    pcall(function() a, b = d.Part0, d.Part1 end)
+    if a == nil and b == nil then
+        pcall(function()
+            a = d.Attachment0 and d.Attachment0.Parent
+            b = d.Attachment1 and d.Attachment1.Parent
+        end)
+    end
+    return a, b
+end
+local function assemblyOf(part)
+    local joints = {}
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if rigidJoint(d) then
+            local on = true
+            pcall(function() on = d.Enabled ~= false end)
+            if on then
+                local a, b = endsOf(d)
+                if a and b and isPart(a) and isPart(b) then joints[#joints + 1] = { a, b } end
+            end
+        end
+    end
+    local seen, out, todo = { [part] = true }, { part }, { part }
+    while #todo > 0 do
+        local p = table.remove(todo)
+        for _, j in ipairs(joints) do
+            local q = j[1] == p and j[2] or j[2] == p and j[1] or nil
+            if q and not seen[q] then seen[q] = true out[#out + 1] = q todo[#todo + 1] = q end
+        end
+    end
+    return out
+end
+local function partSize(p) local s = p.Size return s.X * s.Y * s.Z end
+-- Roblox's order: an anchored part, then the highest RootPriority, then not Massless, then the biggest.
+local function rootOf(parts)
+    local best
+    local function better(p, q)
+        if p.Anchored ~= q.Anchored then return p.Anchored end
+        if p.RootPriority ~= q.RootPriority then return p.RootPriority > q.RootPriority end
+        if p.Massless ~= q.Massless then return not p.Massless end
+        return partSize(p) > partSize(q)
+    end
+    for _, p in ipairs(parts) do if not best or better(p, best) then best = p end end
+    return best
+end
+local function massOfAssembly(parts)
+    local m = 0
+    for _, p in ipairs(parts) do if not p.Massless then m = m + p.Mass end end
+    return m
+end
+GET.AssemblyRootPart = function(self)
+    if not isPart(self) then return false end
+    if not self:IsDescendantOf(workspace) then return true, nil end
+    return true, rootOf(assemblyOf(self))
+end
+GET.AssemblyMass = function(self)
+    if not isPart(self) then return false end
+    return true, massOfAssembly(assemblyOf(self))
+end
+GET.AssemblyCenterOfMass = function(self)
+    if not isPart(self) then return false end
+    local parts, sum, m = assemblyOf(self), Vector3.zero, 0
+    for _, p in ipairs(parts) do
+        if not p.Massless then sum = sum + p.Position * p.Mass m = m + p.Mass end
+    end
+    return true, m > 0 and sum / m or self.Position
+end
+method("GetRootPart", isPart, "BasePart", function(self) return rootOf(assemblyOf(self)) end)
+method("IsGrounded", isPart, "BasePart", function(self)
+    for _, p in ipairs(assemblyOf(self)) do if p.Anchored then return true end end
+    return false
+end)
+method("GetNoCollisionConstraints", isPart, "BasePart", function(self)
+    local out = {}
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if classOf(d) == "NoCollisionConstraint" and (d.Part0 == self or d.Part1 == self) then out[#out + 1] = d end
+    end
+    return out
+end)
+-- The nearest spot on the part's outside (a point inside it comes back as it is).
+method("GetClosestPointOnSurface", isPart, "BasePart", function(self, pos)
+    local cf, half = self.CFrame, self.Size / 2
+    local ok, sh = pcall(function() return self.Shape end)
+    local shape = ok and enumName(sh) or nil
+    local l = cf:PointToObjectSpace(pos)
+    if shape == "Ball" then
+        local r = math.min(half.X, half.Y, half.Z)
+        if l.Magnitude <= r then return pos end
+        return cf:PointToWorldSpace(l.Unit * r)
+    end
+    if math.abs(l.X) <= half.X and math.abs(l.Y) <= half.Y and math.abs(l.Z) <= half.Z then return pos end
+    return cf:PointToWorldSpace(Vector3.new(math.clamp(l.X, -half.X, half.X), math.clamp(l.Y, -half.Y, half.Y),
+                                            math.clamp(l.Z, -half.Z, half.Z)))
+end)
 GET.ExtentsSize = function(self) if not isPart(self) then return false end return true, self.Size end
 
 method("GetVelocityAtPosition", isPart, "BasePart", function(self, pos)
@@ -126,7 +226,7 @@ method("GetNetworkOwnershipAuto", isPart, "BasePart", function(self) return keep
 local function joinedTo(part)
     local found = {}
     for _, d in ipairs(workspace:GetDescendants()) do
-        if isA(d, "JointInstance") or isA(d, "WeldConstraint") or isA(d, "Constraint") then
+        if (isA(d, "JointInstance") or isA(d, "WeldConstraint") or isA(d, "Constraint")) and classOf(d) ~= "LineForce" then
             local a, b
             pcall(function() a, b = d.Part0, d.Part1 end)
             if a == nil and b == nil then

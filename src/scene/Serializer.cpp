@@ -420,7 +420,13 @@ nlohmann::json jointToJson(const JointProps& p) {
             {"angActuator", kActuatorNames[(int)p.angularActuator]}, {"angVelocity", p.angularVelocity},
             {"motorTorque", p.motorMaxTorque}, {"angSpeed", p.angularSpeed}, {"targetAngle", p.targetAngle},
             {"servoTorque", p.servoMaxTorque}, {"angLimits", p.angularLimitsEnabled}, {"lowerAngle", p.lowerAngle},
-            {"incline", p.inclinationAngle}};
+            {"incline", p.inclinationAngle}, {"maxAngle", p.maxAngle}, {"maxTorque", std::min(p.maxTorque, 1e30f)},
+            {"destruction", p.destructionEnabled}, {"destructionForce", p.destructionForce},
+            {"destructionTorque", p.destructionTorque}, {"magnitude", p.lineMagnitude},
+            {"atCenter", p.applyAtCenterOfMass}, {"inverseSquare", p.inverseSquareLaw},
+            {"reaction", p.reactionForceEnabled}, {"lineMaxForce", std::min(p.lineMaxForce, 1e30f)},
+            {"winch", p.winchEnabled}, {"winchTarget", p.winchTarget}, {"winchSpeed", p.winchSpeed},
+            {"winchForce", p.winchForce}, {"winchResponsiveness", p.winchResponsiveness}};
 }
 
 void jointFromJson(const nlohmann::json& j, JointProps& p) {
@@ -464,6 +470,21 @@ void jointFromJson(const nlohmann::json& j, JointProps& p) {
     p.angularLimitsEnabled = flag("angLimits", false);
     p.lowerAngle         = num("lowerAngle", d.lowerAngle, -180.0f, 180.0f);
     p.inclinationAngle   = num("incline", 0.0f, -180.0f, 180.0f);
+    p.maxAngle           = num("maxAngle", d.maxAngle, 0.0f, 180.0f);
+    p.maxTorque          = num("maxTorque", d.maxTorque, 0.0f, 1e30f);
+    p.destructionEnabled = flag("destruction", false);
+    p.destructionForce   = num("destructionForce", 0.0f, 0.0f, 1e30f);
+    p.destructionTorque  = num("destructionTorque", 0.0f, 0.0f, 1e30f);
+    p.lineMagnitude      = num("magnitude", d.lineMagnitude, -1e30f, 1e30f);
+    p.applyAtCenterOfMass  = flag("atCenter", false);
+    p.inverseSquareLaw     = flag("inverseSquare", false);
+    p.reactionForceEnabled = flag("reaction", false);
+    p.lineMaxForce       = num("lineMaxForce", d.lineMaxForce, 0.0f, 1e30f);
+    p.winchEnabled       = flag("winch", false);
+    p.winchTarget        = num("winchTarget", d.winchTarget, 0.0f, big);
+    p.winchSpeed         = num("winchSpeed", d.winchSpeed, 0.0f, big);
+    p.winchForce         = num("winchForce", d.winchForce, 0.0f, 1e30f);
+    p.winchResponsiveness = num("winchResponsiveness", d.winchResponsiveness, 0.0f, 200.0f);
 }
 
 nlohmann::json particleToJson(const ParticleProps& p, bool enabled) {
@@ -945,7 +966,8 @@ json toJson(const SceneNode& n) {
         j["motorSpeed"] = n.motorSpeed; j["motorTorque"] = n.motorTorque;
         j["thickness"] = n.thickness; j["color"] = vec(n.color); j["enabled"] = n.enabled;
         if (n.breakForce > 0.0f) j["breakForce"] = n.breakForce;
-        if (usesJointProps(n.constraintType) || (n.constraintType == ConstraintType::Hinge && n.joint.angularLimitsEnabled))
+        if (usesJointProps(n.constraintType) || (n.constraintType == ConstraintType::Hinge && n.joint.angularLimitsEnabled) ||
+            (n.constraintType == ConstraintType::Rope && n.joint.winchEnabled))
             j["joint"] = Serializer::jointToJson(n.joint);
         if (n.legacyJoint) {   // Weld / Motor6D
             j["legacy"] = n.legacyJoint;

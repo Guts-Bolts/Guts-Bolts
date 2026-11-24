@@ -138,15 +138,7 @@ std::vector<Class> build() {
         {"UIDragDetector", Base::Model, false, false, {"UIComponent", "UIBase"},
          {B("Enabled", true), S("DragStyle", "TranslatePlane"), S("ResponseStyle", "Offset"), I("BoundingUI")}},
 
-        // --- physics we don't have yet ---
-        {"NoCollisionConstraint", Base::Model, false, false, {}, {I("Part0"), I("Part1"), B("Enabled", true)}},
-        {"RigidConstraint", Base::Model, false, false, {"Constraint"}, withJoint({B("DestructionEnabled", false), N("DestructionForce", 0), N("DestructionTorque", 0)})},
-        {"PlaneConstraint", Base::Model, false, false, {"Constraint"}, joint},
-        {"UniversalConstraint", Base::Model, false, false, {"Constraint"}, withJoint({B("LimitsEnabled", false), N("MaxAngle", 45), N("Radius", 0.2)})},
-        {"TorsionSpringConstraint", Base::Model, false, false, {"Constraint"},
-         withJoint({N("Stiffness", 100), N("Damping", 0.01), N("MaxTorque", kInf), B("LimitsEnabled", false), N("MaxAngle", 45), N("Restitution", 0)})},
-        {"LineForce", Base::Model, false, false, {"Constraint"},
-         withJoint({N("Magnitude", 1000), B("ApplyAtCenterOfMass", false), B("InverseSquareLaw", false), N("MaxForce", kInf), B("ReactionForceEnabled", false)})},
+        // --- physics we don't have yet (the real constraints are in RigidBodies.cpp) ---
         {"AnimationConstraint", Base::Model, false, false, {"Constraint"}, withJoint({N("MaxForce", 10000), N("MaxTorque", 10000), F("Transform"), B("IsKinematic", false)})},
         {"VelocityMotor", Base::Model, false, false, {"JointInstance"}, {I("Part0"), I("Part1"), N("MaxVelocity", 0), N("DesiredAngle", 0), I("Hole")}},
         {"BuoyancySensor", Base::Model, false, false, {"SensorBase"}, {B("FullySubmerged", false), B("TouchingSurface", false), S("UpdateType", "OnRead")}},

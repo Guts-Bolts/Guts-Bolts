@@ -1720,6 +1720,35 @@ struct Converter {
             node->thickness = 0.1f;
             node->color = {0.6f, 0.62f, 0.66f};
             ++report.constraints;
+        } else if (c == "RigidConstraint" || c == "PlaneConstraint" || c == "UniversalConstraint" ||
+                   c == "TorsionSpringConstraint" || c == "NoCollisionConstraint" || c == "LineForce") {
+            // The rest of Roblox's constraints (see "More Constraints" in RigidBodies.cpp).
+            node = std::make_unique<SceneNode>(name, NodeKind::Constraint);
+            for (int i = 0; i < kConstraintTypeCount; ++i)
+                if (c == kConstraintClassNames[i]) node->constraintType = (ConstraintType)i;
+            auto big = [](double v) { return std::isfinite(v) ? (float)std::clamp(v, -1e30, 1e30) : (v > 0 ? 1e30f : -1e30f); };
+            JointProps& p = node->joint;
+            p.limitsEnabled = in.flag("LimitsEnabled", false);
+            p.restitution = std::clamp((float)in.num("Restitution", 0.0), 0.0f, 1.0f);
+            p.maxAngle = (float)in.num("MaxAngle", 45.0);
+            p.maxTorque = big(in.num("MaxTorque", HUGE_VAL) * kTorqueScale);
+            p.destructionEnabled = in.flag("DestructionEnabled", false);
+            p.destructionForce = big(in.num("DestructionForce", 0.0) * kForceScale);
+            p.destructionTorque = big(in.num("DestructionTorque", 0.0) * kTorqueScale);
+            p.lineMagnitude = big(in.num("Magnitude", 1000.0) * kForceScale);
+            p.applyAtCenterOfMass = in.flag("ApplyAtCenterOfMass", false);
+            p.inverseSquareLaw = in.flag("InverseSquareLaw", false);
+            p.reactionForceEnabled = in.flag("ReactionForceEnabled", false);
+            p.lineMaxForce = big(in.num("MaxForce", HUGE_VAL) * kForceScale);
+            if (c == "TorsionSpringConstraint") {
+                node->stiffness = (float)in.num("Stiffness", 100.0) * kTorqueScale;
+                node->damping = (float)in.num("Damping", 0.01) * kTorqueScale;
+            }
+            node->enabled = in.flag("Enabled", true);
+            node->visible = in.flag("Visible", false);
+            node->thickness = 0.1f;
+            node->color = {0.6f, 0.62f, 0.66f};
+            ++report.constraints;
         } else if (auto mt = std::find(std::begin(kMoverClassNames), std::end(kMoverClassNames), c); mt != std::end(kMoverClassNames)) {
             // BodyVelocity, BodyGyro... and LinearVelocity, AlignPosition...: classic games'
             // vehicles and flying keep working. (Roblox's numbers are turned into ours.)
@@ -2607,7 +2636,7 @@ struct XmlWriter {
             break;
         }
         case NodeKind::Constraint:
-            if (n.constraintType == ConstraintType::Weld) { refProp("Part0", n.ref0); refProp("Part1", n.ref1); }
+            if (joinsParts(n.constraintType)) { refProp("Part0", n.ref0); refProp("Part1", n.ref1); }
             else { refProp("Attachment0", n.ref0); refProp("Attachment1", n.ref1); }
             if (n.constraintType == ConstraintType::Rope || n.constraintType == ConstraintType::Rod)
                 flt("Length", std::max(0.0f, n.length) * kExportScale);
@@ -2621,7 +2650,32 @@ struct XmlWriter {
                 flt("AngularVelocity", n.motorSpeed);
                 flt("MotorMaxTorque", n.motorTorque);
             }
-            if (usesJointProps(n.constraintType)) {
+            if ((int)n.constraintType >= (int)ConstraintType::Rigid) {   // (the newer ones)
+                const JointProps& p = n.joint;
+                const ConstraintType t = n.constraintType;
+                if (t == ConstraintType::Universal || t == ConstraintType::TorsionSpring) {
+                    boolean("LimitsEnabled", p.limitsEnabled);
+                    flt("MaxAngle", p.maxAngle);
+                    flt("Restitution", p.restitution);
+                }
+                if (t == ConstraintType::TorsionSpring) {
+                    flt("Stiffness", n.stiffness / kTorqueScale);
+                    flt("Damping", n.damping / kTorqueScale);
+                    flt("MaxTorque", (double)p.maxTorque / kTorqueScale);
+                }
+                if (t == ConstraintType::Rigid) {
+                    boolean("DestructionEnabled", p.destructionEnabled);
+                    flt("DestructionForce", (double)p.destructionForce / kForceScale);
+                    flt("DestructionTorque", (double)p.destructionTorque / kTorqueScale);
+                }
+                if (t == ConstraintType::LineForce) {
+                    flt("Magnitude", (double)p.lineMagnitude / kForceScale);
+                    boolean("ApplyAtCenterOfMass", p.applyAtCenterOfMass);
+                    boolean("InverseSquareLaw", p.inverseSquareLaw);
+                    boolean("ReactionForceEnabled", p.reactionForceEnabled);
+                    flt("MaxForce", (double)p.lineMaxForce / kForceScale);
+                }
+            } else if (usesJointProps(n.constraintType)) {
                 const JointProps& p = n.joint;
                 auto huge = [](float v, float scale) { return (double)v / scale; };   // ("no limit" stays very big)
                 boolean("LimitsEnabled", p.limitsEnabled);

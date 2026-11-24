@@ -683,6 +683,8 @@ struct Joint {
     float          accMotor = 0.0f;
     glm::vec3      imp{0.0f};               // impulse it has given this substep (for BreakForce)
     float          peak = 0.0f;             // the hardest it was pulled this step (force)
+    glm::vec3      angImp{0.0f};            // RigidConstraint: turning impulse this substep (DestructionTorque)
+    float          peakTorque = 0.0f;       // the hardest it was twisted this step
     // Ball socket / prismatic / cylindrical: the impulse each limit or actuator row
     // has added up this substep (so limits only push, and actuators stay under
     // their force), and how fast a limit row bounces back (Restitution).
@@ -787,6 +789,70 @@ void solveJointProps(Joint& j, Body& A, Body& B, float h, bool firstPass) {
         if (firstPass) j.bounce[r] = approach < -0.5f ? -p.restitution * approach : 0.0f;
         return j.bounce[r];
     };
+
+    // Attachment1's axis (X, or Y for a torsion spring) leans no further than `most` degrees from Attachment0's.
+    auto coneLimit = [&](float most, bool aboutPoint, const glm::vec3& local) {
+        const glm::vec3 xa = fa * local, xb = fb * local;
+        const glm::vec3 c = glm::cross(xa, xb);
+        const float s = glm::length(c);
+        if (s < 1e-5f) return;
+        const glm::vec3 u = -c / s;
+        const float gap = glm::radians(std::clamp(most, 0.0f, 180.0f)) - std::atan2(s, glm::dot(xa, xb));
+        const float b = bounceFor(Joint::Cone, glm::dot(B.w - A.w, u));
+        if (aboutPoint) pivotRow(A, B, ra, rb, u, limitTarget(gap, h, b), j.acc[Joint::Cone], 0.0f, kFree);
+        else angularRow(A, B, u, limitTarget(gap, h, b), j.acc[Joint::Cone], 0.0f, kFree);
+    };
+    auto holdPoints = [&]() {
+        for (int ax = 0; ax < 3; ++ax) {
+            glm::vec3 e(0.0f);
+            e[ax] = 1.0f;
+            dummy = 0.0f;
+            linearRow(A, B, ra, rb, e, -beta * glm::dot(pb - pa, e), dummy, -kFree, kFree);
+        }
+    };
+    switch (j.type) {
+        case ConstraintType::Rigid: {   // a weld between two attachments: same place, same way round
+            holdPoints();
+            glm::quat err = B.rot * glm::inverse(A.rot * j.rel);
+            if (err.w < 0) err = -err;
+            const glm::vec3 e = 2.0f * glm::vec3(err.x, err.y, err.z);
+            for (int ax = 0; ax < 3; ++ax) {
+                glm::vec3 u(0.0f);
+                u[ax] = 1.0f;
+                dummy = 0.0f;
+                const glm::vec3 w0 = B.w;
+                angularRow(A, B, u, -beta * glm::dot(e, u), dummy, -kFree, kFree);
+                if (B.dynamic) j.angImp += glm::inverse(B.invInertia()) * (B.w - w0);
+            }
+            return;
+        }
+        case ConstraintType::Plane: {   // B's point stays on the flat plane through A's point, facing A's X
+            const glm::vec3 raB = pb - A.pos;
+            dummy = 0.0f;
+            linearRow(A, B, raB, rb, x, -beta * glm::dot(pb - pa, x), dummy, -kFree, kFree);
+            return;
+        }
+        case ConstraintType::Universal: {   // a ball joint whose secondary axes (Y) stay at right angles
+            holdPoints();
+            const glm::vec3 ya = fa * glm::vec3(0, 1, 0), yb = fb * glm::vec3(0, 1, 0);
+            glm::vec3 u = glm::cross(ya, yb);
+            const float s = glm::length(u);
+            if (s > 1e-5f) {
+                u /= s;
+                dummy = 0.0f;
+                // dot(ya, yb) = 0 is the goal: turning B about u changes it by -|u|.
+                pivotRow(A, B, ra, rb, u, beta * glm::dot(ya, yb) / s, dummy, -kFree, kFree);
+            }
+            if (p.limitsEnabled) coneLimit(p.maxAngle, true, glm::vec3(1, 0, 0));
+            return;
+        }
+        case ConstraintType::TorsionSpring:   // its spring is a force (step 3); only the limit is solved here
+            if (p.limitsEnabled) coneLimit(p.maxAngle, false, glm::vec3(0, 1, 0));
+            return;
+        case ConstraintType::LineForce:
+            return;
+        default: break;
+    }
 
     if (j.type == ConstraintType::BallSocket) {
         // The two points stay together...
@@ -1138,6 +1204,11 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         j.node = cn;
         j.type = cn->constraintType;
         glm::vec3 pa, pb, axa, axb;
+        if (j.type == ConstraintType::NoCollision) {   // two parts that pass through each other, nothing more
+            const int ia = index.find(cn->ref0), ib = index.find(cn->ref1);
+            if (ia >= 0 && ib >= 0 && ia != ib) noCollide.push_back({std::min(ia, ib), std::max(ia, ib)});
+            continue;
+        }
         if (j.type == ConstraintType::Weld) {
             const int ia = index.find(cn->ref0), ib = index.find(cn->ref1);
             if (ia < 0 || ib < 0 || ia == ib) continue;
@@ -1189,7 +1260,10 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             }
         }
         if (!bodies[j.a].dynamic && !bodies[j.b].dynamic) continue;
-        if (j.type == ConstraintType::Weld || j.type == ConstraintType::Hinge || usesJointProps(j.type))
+        // (a plane, a torsion spring or a line force don't stop their parts bumping, like Roblox)
+        if (j.type == ConstraintType::Weld || j.type == ConstraintType::Hinge ||
+            (usesJointProps(j.type) && j.type != ConstraintType::Plane && j.type != ConstraintType::TorsionSpring &&
+             j.type != ConstraintType::LineForce))
             noCollide.push_back({std::min(j.a, j.b), std::max(j.a, j.b)});
         // A running motor keeps things awake; a connected body wakes its partner.
         const JointProps& jp = cn->joint;
@@ -1201,7 +1275,9 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                        (jointSlides(j.type) && jp.actuator == Actuator::Servo && jp.servoMaxForce > 0.0f &&
                         std::abs(jp.targetPosition - jp.currentPosition) > 0.01f) ||
                        (j.type == ConstraintType::Cylindrical && jp.angularActuator == Actuator::Servo &&
-                        jp.servoMaxTorque > 0.0f && std::abs(wrapAngle(glm::radians(jp.targetAngle - jp.currentAngle))) > 0.01f);
+                        jp.servoMaxTorque > 0.0f && std::abs(wrapAngle(glm::radians(jp.targetAngle - jp.currentAngle))) > 0.01f) ||
+                       (j.type == ConstraintType::LineForce && jp.lineMagnitude != 0.0f) ||
+                       (j.type == ConstraintType::Rope && jp.winchEnabled && std::abs(cn->length - jp.winchTarget) > 0.01f);
         if (motorOn || bodies[j.a].awake || bodies[j.b].awake) {
             bodies[j.a].awake = bodies[j.b].awake = true;
         }
@@ -1377,6 +1453,47 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             applyImpulse(A, ra, imp);
             applyImpulse(B, rb, -imp);
             j.imp += imp;
+        }
+        for (auto& j : joints) {
+            const JointProps& p = j.node->joint;
+            Body &A = bodies[j.a], &B = bodies[j.b];
+            if (j.type == ConstraintType::Rope && p.winchEnabled) {
+                // The winch reels the rope towards WinchTarget, WinchSpeed studs a second at most.
+                const float step = std::max(0.0f, p.winchSpeed) * h;
+                j.length += std::clamp(std::max(0.0f, p.winchTarget) - j.length, -step, step);
+                j.node->length = j.length;
+            } else if (j.type == ConstraintType::LineForce) {
+                // Along the line between the two attachments: Attachment0 is pulled towards
+                // Attachment1 (a negative Magnitude pushes it away).
+                const glm::vec3 ra = A.rot * j.la, rb = B.rot * j.lb;
+                const glm::vec3 d = (B.pos + rb) - (A.pos + ra);
+                const float len = glm::length(d);
+                if (len < 1e-4f) continue;
+                float f = p.lineMagnitude;
+                if (p.inverseSquareLaw) f /= std::max(len * len, 1e-2f);
+                f = std::clamp(f, -p.lineMaxForce, p.lineMaxForce);
+                const glm::vec3 imp = d / len * f * h;
+                applyImpulse(A, p.applyAtCenterOfMass ? glm::vec3(0.0f) : ra, imp);
+                if (p.reactionForceEnabled) applyImpulse(B, p.applyAtCenterOfMass ? glm::vec3(0.0f) : rb, -imp);
+                if (A.dynamic) A.awake = true;
+            } else if (j.type == ConstraintType::TorsionSpring) {
+                // Turns the two secondary axes (Y) back into line: Stiffness x angle, less Damping x spin.
+                const glm::vec3 ya = (A.rot * j.qa) * glm::vec3(0, 1, 0), yb = (B.rot * j.qb) * glm::vec3(0, 1, 0);
+                const glm::vec3 c = glm::cross(yb, ya);
+                const float sn = glm::length(c);
+                if (sn < 1e-5f) continue;
+                const glm::vec3 u = c / sn;
+                const float angle = std::atan2(sn, glm::dot(ya, yb));
+                const glm::mat3 IA = A.dynamic ? A.invInertia() : glm::mat3(0.0f);
+                const glm::mat3 IB = B.dynamic ? B.invInertia() : glm::mat3(0.0f);
+                const float k = glm::dot(u, IA * u) + glm::dot(u, IB * u);
+                if (k < 1e-9f) continue;
+                const float most = std::max(0.0f, p.maxTorque) * h;
+                const float lambda = std::clamp(Movers::springDv(angle, glm::dot(B.w - A.w, u), std::max(0.0f, j.node->stiffness),
+                                                                 std::max(0.0f, j.node->damping), 1.0f / k, h) / k, -most, most);
+                if (A.dynamic) A.w -= IA * u * lambda;
+                if (B.dynamic) B.w += IB * u * lambda;
+            }
         }
 
         // ---- 4. Contacts ----------------------------------------------------------
@@ -1579,6 +1696,8 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                     float cdot = glm::dot(B.velocityAt(pb) - A.velocityAt(pa), dir);
                     float lambda = -(cdot + beta * C) / effMass(A, B, ra, rb, dir);
                     if (j.type == ConstraintType::Rope) lambda = std::min(lambda, 0.0f);   // ropes only pull
+                    if (j.type == ConstraintType::Rope && j.node->joint.winchEnabled)       // (a winch pulls no harder than WinchForce)
+                        lambda = std::max(lambda, -std::max(0.0f, j.node->joint.winchForce) * h);
                     applyImpulse(A, ra, -dir * lambda);
                     applyImpulse(B, rb, dir * lambda);
                     continue;
@@ -1663,6 +1782,8 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             for (float& a : j.acc) a = 0.0f;
             j.peak = std::max(j.peak, glm::length(j.imp) / h);
             j.imp = glm::vec3(0.0f);
+            j.peakTorque = std::max(j.peakTorque, glm::length(j.angImp) / h);
+            j.angImp = glm::vec3(0.0f);
         }
         if (Physics::debugOn() && step == substeps - 1) {
             auto& dbg = Physics::debugView().contacts;
@@ -1745,7 +1866,10 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     // Breakable joints: pulled harder than BreakForce, they snap (and switch themselves off).
     for (const Joint& j : joints) {
         j.node->jointForce = j.peak;
-        if (j.node->breakForce > 0.0f && j.peak > j.node->breakForce) {
+        const JointProps& jp = j.node->joint;
+        const bool destroyed = j.type == ConstraintType::Rigid && jp.destructionEnabled &&
+                               (j.peak > jp.destructionForce || j.peakTorque > jp.destructionTorque);
+        if (destroyed || (j.node->breakForce > 0.0f && j.peak > j.node->breakForce)) {
             j.node->enabled = false;
             j.node->broken = true;
             bodies[j.a].node->sleepTime = 0.0f;
@@ -1764,7 +1888,18 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         ++dbg.steps;
     }
 
-    // Where sliders and spinners are now (CurrentPosition / CurrentAngle).
+    // Where sliders and spinners are now (CurrentPosition / CurrentAngle), and how far
+    // apart each pair of attachments is (CurrentDistance / CurrentLength).
+    for (const Joint& j : joints) {
+        const Body &A = bodies[j.a], &B = bodies[j.b];
+        JointProps& p = j.node->joint;
+        p.currentDistance = glm::length((B.pos + B.rot * j.lb) - (A.pos + A.rot * j.la));
+        if (j.type == ConstraintType::TorsionSpring || j.type == ConstraintType::Universal) {
+            const glm::vec3 axis = j.type == ConstraintType::TorsionSpring ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+            const glm::vec3 a = (A.rot * j.qa) * axis, b = (B.rot * j.qb) * axis;
+            p.currentAngle = glm::degrees(std::atan2(glm::length(glm::cross(a, b)), glm::dot(a, b)));
+        }
+    }
     for (const Joint& j : joints) {
         if (!jointSlides(j.type)) continue;
         const Body &A = bodies[j.a], &B = bodies[j.b];

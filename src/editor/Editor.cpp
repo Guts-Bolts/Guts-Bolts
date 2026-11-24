@@ -2043,7 +2043,7 @@ void Editor::renderSceneValidator() {
             }
 
             if (node->isConstraint()) {
-                const bool weld = node->constraintType == ConstraintType::Weld;
+                const bool weld = joinsParts(node->constraintType);
                 const char* expected = weld ? "Part" : "Attachment";
                 reference(node, node->ref0, weld ? "Part0" : "Attachment0", expected,
                           "Assign this constraint to two existing endpoints of the required type.");
@@ -3350,8 +3350,9 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         auto c = std::make_unique<SceneNode>(what, NodeKind::Constraint);
         c->constraintType = (ConstraintType)(ct - std::begin(kConstraintClassNames));
         c->color = c->constraintType == ConstraintType::Rope ? glm::vec3(0.45f, 0.32f, 0.2f) : glm::vec3(0.6f, 0.62f, 0.66f);
+        if (c->constraintType == ConstraintType::TorsionSpring) { c->stiffness = 100.0f; c->damping = 0.01f; }   // (Roblox's)
         if (parent && parent->isPart()) {
-            if (c->constraintType == ConstraintType::Weld) c->ref0 = parent->id;
+            if (joinsParts(c->constraintType)) c->ref0 = parent->id;
             else {
                 SceneNode* att = nullptr;
                 for (auto& ch : parent->children) if (ch->isAttachment()) { att = ch.get(); break; }
@@ -3360,7 +3361,7 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
             }
         }
         Log::system("Set the " + what + "'s " +
-                    (c->constraintType == ConstraintType::Weld ? "Part1" : "Attachment1") +
+                    (joinsParts(c->constraintType) ? "Part1" : "Attachment1") +
                     " to join it to another part (or use the Constraints tool to click two parts).");
         put(std::move(c));
     }
