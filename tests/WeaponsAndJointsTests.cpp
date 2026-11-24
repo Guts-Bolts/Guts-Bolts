@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
         local x, y, z = CFrame.fromOrientation(0, math.rad(90), 0):ToOrientation()
         print(math.floor(math.deg(y) + 0.5))
     )");
-    check(out.find("3.0 7.0 2.0 -1.0 5.0 12 -2.0") != std::string::npos && out.find("90") != std::string::npos,
+    check(out.find("3 7 2 -1 5 12 -2") != std::string::npos && out.find("90") != std::string::npos,
           "toObjectSpace, ToWorldSpace, .p, lookVector, magnitude, GetComponents, inverse, ToOrientation (" + out + ")");
 
     // --- player:WaitForChild("PlayerGui") finds it straight away (it used to wait forever) ---
@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
               game:GetService("Players").LocalPlayer:GetMouse().Move ~= nil,
               math.floor(math.abs(a.Orientation.Y) + 0.5))
     )");
-    check(out.find("old 24.0 1.0 true true true true true true 90") != std::string::npos,
+    check(out.find("old 24 1 true true true true true true 90") != std::string::npos,
           "FontSize, part surfaces, SizeConstraint, Axis, Sound roll-off, RigType, MouseButton1Down, mouse.Move (" + out + ")");
 
     // --- Weld and Motor6D ---
@@ -152,8 +152,8 @@ int main(int argc, char** argv) {
         local m = Instance.new("CylinderMesh") m.Parent = p m.Scale = Vector3.new(1, 2, 1)
         print(h.LimitsEnabled, h.UpperAngle, h.LowerAngle, tostring(p.Shape), m.ClassName, m.Scale.Y)
     )");
-    check(out.find("true 45.0 -30.0") != std::string::npos && out.find("Cylinder") != std::string::npos &&
-          out.find("CylinderMesh 2.0") != std::string::npos, "hinge limits and CylinderMesh (" + out + ")");
+    check(out.find("true 45 -30") != std::string::npos && out.find("Cylinder") != std::string::npos &&
+          out.find("CylinderMesh 2") != std::string::npos, "hinge limits and CylinderMesh (" + out + ")");
 
     // --- A Motor6D survives saving ---
     {

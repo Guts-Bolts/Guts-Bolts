@@ -89,6 +89,8 @@ public:
     // A ClickDetector event (SignalKind::Click*), by the player with this UserId (0 = ours).
     void fireClickDetector(SignalKind kind, uint64_t detectorId, int userId = 0);
     void firePropertyChanged(uint64_t id, const char* property);   // obj.Changed(property) (a TextBox's Text...)
+    // obj.Changed with any arguments (a stand-in ObjectValue gives its new Value, see StandIns.h).
+    void fireChanged(uint64_t id, const std::function<int(lua_State*)>& pushArgs);
     void fireAnimationEvents();                         // AnimationTracks: Stopped, KeyframeReached...
     // DataStoreService's saved data for this game (a file in the player's account folder).
     const nlohmann::json& saveData();
@@ -318,6 +320,8 @@ public:
     // result: the thread's first return value as text ("" for nil, or if it waited / failed).
     void       resume(lua_State* co, int ref, int nargs, lua_State* from = nullptr, std::string* result = nullptr);
     void       schedule(lua_State* co, int ref, double delay, int startArgs);
+    // task.cancel(thread): forget a thread that is waiting (wait(), task.delay, :Wait()).
+    void       cancelThread(lua_State* co);
     void       checkTimeout(lua_State* L);
     float&     clockTime();
     void       applyClockTime();

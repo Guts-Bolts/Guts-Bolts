@@ -1,6 +1,8 @@
 // Scene objects for scripts: Instance (parts, models, scripts), Humanoid,
 // Lighting, and the Signal / Connection event objects.
 #include "LuaApi.h"
+#include "StandIns.h"
+#include "../core/Log.h"
 #include "../online/Protocol.h"
 #include "ScriptEngine.h"
 #include "ScriptHistory.h"
@@ -53,6 +55,36 @@ struct SignalRef { SignalKind kind; uint64_t id; };
 struct ConnRef   { int index; };
 
 bool is(const char* a, const char* b) { return std::strcmp(a, b) == 0; }
+
+// Roblox members written in Lua (RobloxMembers.cpp): GB.ExtraGet[k](self) gives back
+// (true, value) when it knows k for this object; GB.ExtraSet[k](self, value) gives back true.
+// They're asked last, just before "not a valid member", so our own members always win.
+bool extraGet(lua_State* L, const char* k) {
+    const int top = lua_gettop(L);
+    if (lua_getfield(L, LUA_REGISTRYINDEX, "GB.ExtraGet") != LUA_TTABLE || lua_getfield(L, -1, k) != LUA_TFUNCTION) {
+        lua_settop(L, top);
+        return false;
+    }
+    lua_pushvalue(L, 1);
+    lua_call(L, 1, 2);
+    if (!lua_toboolean(L, -2)) { lua_settop(L, top); return false; }
+    lua_replace(L, top + 1);   // (the value, where the table was)
+    lua_settop(L, top + 1);
+    return true;
+}
+bool extraSet(lua_State* L, const char* k) {
+    const int top = lua_gettop(L);
+    if (lua_getfield(L, LUA_REGISTRYINDEX, "GB.ExtraSet") != LUA_TTABLE || lua_getfield(L, -1, k) != LUA_TFUNCTION) {
+        lua_settop(L, top);
+        return false;
+    }
+    lua_pushvalue(L, 1);
+    lua_pushvalue(L, 3);
+    lua_call(L, 2, 1);
+    const bool done = lua_toboolean(L, -1);
+    lua_settop(L, top);
+    return done;
+}
 
 bool parseMaterial(const std::string& s, Material& out) { return materialFromName(s, out); }
 
@@ -233,10 +265,20 @@ void setAttr(SceneNode* n, const char* name, Attribute::Type t, double num, glm:
     n->attributes.push_back(a);
 }
 
+// A stand-in for a Roblox class we have no object of our own for (StandIns.h), or null.
+const StandIns::Class* standIn(const SceneNode* n) {
+    if (!n || n->attributes.empty()) return nullptr;
+    for (const Attribute& a : n->attributes)
+        if (a.name == "RobloxClass" && a.type == Attribute::String) return StandIns::find(a.s);
+    return nullptr;
+}
+
 const char* className(lua_State* L, const SceneNode* n) {
     if (n == E(L)->scene()->root()) return "Workspace";
     if (n == E(L)->scene()->cameraNode()) return "Camera";
     if (E(L)->scene()->isServiceFolder(n)) return n->name.c_str();   // StarterPack, ServerScriptService...
+    if (n->kind != NodeKind::Model)
+        if (const StandIns::Class* c = standIn(n)) return c->name;   // a MeshPart, a SurfaceLight, a CanvasGroup...
     switch (n->kind) {
         case NodeKind::Model:
             // A stand-in for a Roblox object we don't have (an imported SpecialMesh): it
@@ -292,6 +334,13 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
     if (cls == "Instance") return true;
     std::string mine = className(L, n);
     if (cls == mine) return true;
+    if (const StandIns::Class* c = standIn(n)) {
+        for (const char* parent : c->isA)
+            if (cls == parent) return true;
+        if (c->base == StandIns::Base::Model) return false;   // (a Configuration isn't a Model)
+        if (c->base == StandIns::Base::Part && cls == "Part") return false;   // (a MeshPart isn't a Part)
+    }
+    if (n->kind == NodeKind::Remote && !n->remoteFunction && cls == "BaseRemoteEvent") return true;
     if (n->kind == NodeKind::Part && (cls == "BasePart" || cls == "Part" || cls == "PVInstance")) return true;
     if (n->kind == NodeKind::Model && (cls == "Model" || cls == "Folder" || cls == "PVInstance")) return true;
     if (n->isClickDetector() && cls == "ClickDetector") return true;   // (a DragDetector is one too)
@@ -732,7 +781,12 @@ int m_GetAttribute(lua_State* L) {
 int m_GetAttributes(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
     lua_newtable(L);
-    for (const auto& a : n->attributes) { pushAttribute(L, a); lua_setfield(L, -2, a.name.c_str()); }
+    const StandIns::Class* sc = standIn(n);   // (a stand-in's properties aren't attributes to scripts)
+    for (const auto& a : n->attributes) {
+        if (sc && (a.name == "RobloxClass" || StandIns::prop(sc, a.name.c_str()))) continue;
+        pushAttribute(L, a);
+        lua_setfield(L, -2, a.name.c_str());
+    }
     return 1;
 }
 
@@ -1932,7 +1986,6 @@ bool guiNewIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "Image"))             { g.image = Online::assetRef(luaL_checkstring(L, 3)); return true; }
         if (is(k, "ImageColor3"))       { g.imageColor = LuaApi::checkColor3(L, 3); return true; }
         if (is(k, "ImageTransparency")) { g.imageTransparency = t01(); return true; }
-        if (is(k, "ScaleType")) return true;
     }
     if (n->isGuiButton() && is(k, "AutoButtonColor")) { g.autoButtonColor = lua_toboolean(L, 3); return true; }
     return false;
@@ -2183,6 +2236,227 @@ int seat_sit(lua_State* L) {
     return 0;
 }
 
+// --- Stand-ins (StandIns.h): Roblox classes kept as one of our objects plus attributes ---
+
+Attribute* findAttr(SceneNode* n, const char* name) {
+    for (Attribute& a : n->attributes) if (a.name == name) return &a;
+    return nullptr;
+}
+
+std::string cframeText(const glm::mat4& m) {
+    std::string s;
+    char buf[32];
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 4; ++r) { std::snprintf(buf, sizeof buf, "%.9g ", m[c][r]); s += buf; }
+    return s;
+}
+glm::mat4 cframeFromText(const std::string& s) {
+    glm::mat4 m(1.0f);
+    const char* p = s.c_str();
+    for (int i = 0; i < 16 && *p; ++i) {
+        char* end = nullptr;
+        float v = std::strtof(p, &end);
+        if (end == p) return glm::mat4(1.0f);
+        m[i / 4][i % 4] = v;
+        p = end;
+    }
+    return m;
+}
+
+// The new object for Instance.new(name), with its properties at their starting values.
+std::unique_ptr<SceneNode> makeStandIn(const StandIns::Class& c) {
+    std::unique_ptr<SceneNode> n;
+    switch (c.base) {
+        case StandIns::Base::Model: n = std::make_unique<SceneNode>(c.name, NodeKind::Model); break;
+        case StandIns::Base::Part:
+            n = std::make_unique<SceneNode>(c.name);
+            n->primitiveType = PrimitiveType::Cube;
+            n->mesh     = MeshLibrary::get(PrimitiveType::Cube);
+            n->anchored = false;
+            n->color    = {0.64f, 0.64f, 0.66f};
+            n->transform.position = {0.0f, 0.5f, 0.0f};
+            if (std::strcmp(c.name, "NegateOperation") == 0) n->transparency = 0.5f;
+            break;
+        case StandIns::Base::Remote: n = std::make_unique<SceneNode>(c.name, NodeKind::Remote); break;
+        case StandIns::Base::SpotLight:
+            n = std::make_unique<SceneNode>(c.name, NodeKind::Light);
+            n->lightType = LightType::Spot;
+            n->color = {1.0f, 1.0f, 1.0f};
+            break;
+        case StandIns::Base::Decal:
+            n = std::make_unique<SceneNode>(c.name, NodeKind::Decal);
+            n->color = {1.0f, 1.0f, 1.0f};
+            break;
+        case StandIns::Base::Frame:
+            n = std::make_unique<SceneNode>(c.name, NodeKind::Gui);
+            n->gui.type = GuiType::Frame;
+            Guis::setDefaults(*n);
+            break;
+    }
+    Attribute rc; rc.name = "RobloxClass"; rc.type = Attribute::String; rc.s = c.name;
+    n->attributes.push_back(rc);
+    for (const StandIns::Prop& p : c.props) {
+        Attribute a;
+        a.name = p.name;
+        switch (p.type) {
+            case StandIns::Type::Bool:     a.type = Attribute::Bool;   a.b = p.n != 0; break;
+            case StandIns::Type::Number:   a.type = Attribute::Number; a.n = p.n; break;
+            case StandIns::Type::String:   a.type = Attribute::String; a.s = p.s; break;
+            case StandIns::Type::Vector3:
+            case StandIns::Type::Vector2:  a.type = Attribute::Vector3; a.v = {p.x, p.y, p.z}; break;
+            case StandIns::Type::Color3:   a.type = Attribute::Color3;  a.v = {p.x, p.y, p.z}; break;
+            case StandIns::Type::Instance: a.type = Attribute::Number;  a.n = 0; break;   // (the object's id; 0 = nil)
+            case StandIns::Type::CFrame:   a.type = Attribute::String;  a.s = ""; break;  // ("" = CFrame.new())
+        }
+        n->attributes.push_back(a);
+    }
+    if (!c.works) {
+        static std::vector<std::string> warned;
+        if (std::find(warned.begin(), warned.end(), c.name) == warned.end()) {
+            warned.push_back(c.name);
+            Log::warn(std::string(c.name) + " can be made and keeps its properties, but it doesn't do anything in Guts&Bolts yet");
+        }
+    }
+    return n;
+}
+
+void pushStandInProp(lua_State* L, SceneNode* n, const StandIns::Prop& p) {
+    const Attribute* a = findAttr(n, p.name);
+    if (!a) { lua_pushnil(L); return; }
+    switch (p.type) {
+        case StandIns::Type::Instance: {
+            SceneNode* o = a->n > 0 ? E(L)->resolve((uint64_t)a->n) : nullptr;
+            if (o && o == E(L)->scene()->lightingFolder(false)) LuaApi::pushLighting(L);
+            else if (o) LuaApi::pushInstance(L, o->id);
+            else lua_pushnil(L);
+            return;
+        }
+        case StandIns::Type::CFrame:  LuaApi::pushCFrame(L, cframeFromText(a->s)); return;
+        case StandIns::Type::Vector2: LuaApi::pushVector2(L, glm::vec2(a->v.x, a->v.y)); return;
+        default: pushAttribute(L, *a); return;
+    }
+}
+
+// Lighting's fog and clouds from an Atmosphere / Clouds, and a BodyColors' colours on its character.
+void applyStandIn(lua_State* L, SceneNode* n, const StandIns::Class* c) {
+    if (!c || !n->parent) return;
+    Scene* scene = E(L)->scene();
+    auto num = [&](const char* k, float d) { const Attribute* a = findAttr(n, k); return a && a->type == Attribute::Number ? (float)a->n : d; };
+    auto col = [&](const char* k, glm::vec3 d) { const Attribute* a = findAttr(n, k); return a && a->type == Attribute::Color3 ? a->v : d; };
+    auto flag = [&](const char* k, bool d) { const Attribute* a = findAttr(n, k); return a && a->type == Attribute::Bool ? a->b : d; };
+    const bool inLighting = n->parent == scene->lightingFolder(false);
+    if (std::strcmp(c->name, "Atmosphere") == 0 && inLighting) {
+        Environment& e = scene->environment();
+        const float density = glm::clamp(num("Density", 0.395f), 0.0f, 1.0f);
+        e.fogEnabled = density > 0.0f;
+        e.fogDensity = density * 0.03f;   // (0.395, Roblox's starting Density, is about our usual fog)
+        e.fogColor   = col("Color", glm::vec3(0.78f));
+        e.fogSunGlow = glm::clamp(0.3f + num("Glare", 0.0f) * 0.07f, 0.0f, 1.0f);
+        e.fogWisps   = glm::clamp(num("Haze", 0.0f) / 10.0f, 0.0f, 1.0f);
+    } else if (std::strcmp(c->name, "Clouds") == 0 && (inLighting || n->parent->id == Scene::kTerrainId ||
+                                                       n->parent->name == "Terrain")) {
+        Environment& e = scene->environment();
+        e.clouds     = flag("Enabled", true);
+        e.cloudCover = glm::clamp(num("Cover", 0.5f), 0.0f, 1.0f);
+        e.cloudColor = col("Color", glm::vec3(1.0f));
+    } else if (std::strcmp(c->name, "BodyColors") == 0 && n->parent->kind == NodeKind::Model) {
+        struct Limb { const char* prop; const char* parts[4]; };
+        static const Limb limbs[] = {
+            {"HeadColor3", {"Head"}},
+            {"TorsoColor3", {"Torso", "UpperTorso", "LowerTorso"}},
+            {"LeftArmColor3", {"Left Arm", "LeftUpperArm", "LeftLowerArm", "LeftHand"}},
+            {"RightArmColor3", {"Right Arm", "RightUpperArm", "RightLowerArm", "RightHand"}},
+            {"LeftLegColor3", {"Left Leg", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot"}},
+            {"RightLegColor3", {"Right Leg", "RightUpperLeg", "RightLowerLeg", "RightFoot"}},
+        };
+        for (const Limb& l : limbs) {
+            const Attribute* a = findAttr(n, l.prop);
+            if (!a || a->type != Attribute::Color3) continue;
+            for (const char* name : l.parts)
+                if (name)
+                    if (SceneNode* part = n->parent->findChild(name))
+                        if (part->isPart()) part->color = a->v;
+        }
+    }
+}
+
+// obj.Property for a stand-in's own properties that aren't plain attributes, and its methods.
+// Returns 0 when it isn't one of them.
+int standInIndex(lua_State* L, SceneNode* n, const StandIns::Class* c, const char* k) {
+    if (const StandIns::Prop* p = StandIns::prop(c, k)) {
+        pushStandInProp(L, n, *p);
+        return 1;
+    }
+    // DataStoreSetOptions:SetMetadata(t) / GetMetadata(): kept on the object (our data stores don't keep metadata yet).
+    if (std::strcmp(c->name, "DataStoreSetOptions") == 0 && (is(k, "SetMetadata") || is(k, "GetMetadata"))) {
+        lua_pushcfunction(L, is(k, "SetMetadata") ? [](lua_State* L) -> int {
+            LuaApi::checkNode(L, 1);
+            luaL_checktype(L, 2, LUA_TTABLE);
+            lua_getfield(L, LUA_REGISTRYINDEX, "GB.StandInMeta");
+            if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_newtable(L); lua_pushvalue(L, -1); lua_setfield(L, LUA_REGISTRYINDEX, "GB.StandInMeta"); }
+            lua_pushinteger(L, (lua_Integer)LuaApi::checkNode(L, 1)->id);
+            lua_pushvalue(L, 2);
+            lua_settable(L, -3);
+            return 0;
+        } : [](lua_State* L) -> int {
+            const uint64_t id = LuaApi::checkNode(L, 1)->id;
+            lua_getfield(L, LUA_REGISTRYINDEX, "GB.StandInMeta");
+            if (lua_isnil(L, -1)) { lua_newtable(L); return 1; }
+            lua_pushinteger(L, (lua_Integer)id);
+            lua_gettable(L, -2);
+            if (lua_isnil(L, -1)) lua_newtable(L);
+            return 1;
+        });
+        return 1;
+    }
+    return 0;
+}
+
+// obj.Property = value for a stand-in's property: checks the type, keeps it, fires Changed.
+void standInSet(lua_State* L, SceneNode* n, const StandIns::Class* c, const StandIns::Prop& p) {
+    Attribute v;
+    v.name = p.name;
+    switch (p.type) {
+        case StandIns::Type::Bool:   v.type = Attribute::Bool;   v.b = lua_toboolean(L, 3); break;
+        case StandIns::Type::Number: v.type = Attribute::Number; v.n = luaL_checknumber(L, 3); break;
+        case StandIns::Type::String:
+            v.type = Attribute::String;
+            if (lua_type(L, 3) == LUA_TSTRING) v.s = lua_tostring(L, 3);
+            else { v.s = luaL_tolstring(L, 3, nullptr); lua_pop(L, 1); }   // (an Enum item or a BrickColor: its name)
+            break;
+        case StandIns::Type::Vector3: v.type = Attribute::Vector3; v.v = LuaApi::checkVector3(L, 3); break;
+        case StandIns::Type::Vector2: { glm::vec2 x = LuaApi::checkVector2(L, 3); v.type = Attribute::Vector3; v.v = {x.x, x.y, 0.0f}; break; }
+        case StandIns::Type::Color3:  v.type = Attribute::Color3;  v.v = LuaApi::checkColor3(L, 3); break;
+        case StandIns::Type::Instance:
+            v.type = Attribute::Number;
+            v.n = lua_isnil(L, 3) ? 0.0 : (double)LuaApi::checkNode(L, 3)->id;
+            break;
+        case StandIns::Type::CFrame: v.type = Attribute::String; v.s = cframeText(LuaApi::checkCFrame(L, 3)); break;
+    }
+    Attribute* a = findAttr(n, p.name);
+    if (a) {
+        const bool same = a->type == v.type && a->b == v.b && a->n == v.n && a->s == v.s && a->v == v.v;
+        *a = v;
+        if (same) return;
+    } else {
+        n->attributes.push_back(v);
+    }
+    const uint64_t id = n->id;
+    E(L)->fireAttributeChanged(id, p.name);   // (GetPropertyChangedSignal)
+    if (c->valueLike) {
+        ScriptEngine* eng = E(L);
+        const StandIns::Prop* prop = &p;
+        eng->fireChanged(id, [eng, id, prop](lua_State* co) {
+            if (SceneNode* x = eng->resolve(id)) pushStandInProp(co, x, *prop); else lua_pushnil(co);
+            return 1;
+        });
+    } else {
+        E(L)->firePropertyChanged(id, p.name);
+    }
+    refreshRobloxMeshProperty(L, n, p.name);   // (a MeshPart's MeshId loads the mesh)
+    applyStandIn(L, n, c);
+}
+
 int inst_index(lua_State* L) {
     auto* ref = static_cast<InstRef*>(luaL_checkudata(L, 1, kInst));
     const char* k = luaL_checkstring(L, 2);
@@ -2191,6 +2465,12 @@ int inst_index(lua_State* L) {
     lua_getfield(L, LUA_REGISTRYINDEX, "GB.InstanceMethods");
     if (lua_getfield(L, -1, k) != LUA_TNIL) return 1;
     lua_pop(L, 2);
+    // A stand-in's own properties (StandIns.h) come before the ones every object has
+    // (a Pose's CFrame, a BoxHandleAdornment's Size are its own, not the object's).
+    if (ref->id != Scene::kTerrainId)
+        if (SceneNode* sn = E(L)->resolve(ref->id))
+            if (const StandIns::Class* sc = standIn(sn))
+                if (int r = standInIndex(L, sn, sc, k)) return r;
     if (ref->id == Scene::kTerrainId) {   // workspace.Terrain: its own methods, and it lives in the Workspace
         lua_getfield(L, LUA_REGISTRYINDEX, "GB.TerrainMethods");
         if (lua_getfield(L, -1, k) != LUA_TNIL) return 1;
@@ -2221,6 +2501,12 @@ int inst_index(lua_State* L) {
     if (n->isAttachment()) {
         if (is(k, "Position"))      { LuaApi::pushVector3(L, n->transform.position); return 1; }
         if (is(k, "WorldPosition")) { LuaApi::pushVector3(L, worldPosition(n)); return 1; }
+        // Axis (its X) and SecondaryAxis (its Y), in its part.
+        if (is(k, "Axis") || is(k, "SecondaryAxis")) {
+            const glm::mat3 r = glm::mat3(n->transform.matrix());
+            LuaApi::pushVector3(L, glm::normalize(r[is(k, "Axis") ? 0 : 1]));
+            return 1;
+        }
     }
     if (n->isBone()) {   // what the bone does by itself (Guts&Bolts' own; see Skin.h)
         const BoneRig& r = n->rig;
@@ -2666,6 +2952,7 @@ int inst_index(lua_State* L) {
     }
     if (SceneNode* c = starterFallback(L, n, k, false)) { LuaApi::pushInstance(L, c->id); return 1; }
     if (n == E(L)->scene()->root() && is(k, "Terrain")) { LuaApi::pushInstance(L, Scene::kTerrainId); return 1; }
+    if (extraGet(L, k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of %s \"%s\"", k, className(L, n), n->name.c_str());
 }
 
@@ -2675,6 +2962,8 @@ int inst_set(lua_State* L) {
     SceneNode* n = E(L)->resolve(ref->id);
     if (!n) return luaL_error(L, "Tried to set '%s' of an object that has been destroyed", k);
     if (ref->id == Scene::kTerrainId) return luaL_error(L, "Terrain's %s can't be changed (use its methods, like FillBlock)", k);
+    if (const StandIns::Class* sc = standIn(n))
+        if (const StandIns::Prop* p = StandIns::prop(sc, k)) { standInSet(L, n, sc, *p); return 0; }
     bool part = n->kind == NodeKind::Part;
     Scene* scene = E(L)->scene();
 
@@ -2804,9 +3093,12 @@ int inst_set(lua_State* L) {
     }
     if (is(k, "Parent")) {
         SceneNode* p = lua_isnil(L, 3) ? nullptr : LuaApi::checkNode(L, 3);
+        // Roblox keeps Clouds in workspace.Terrain; ours live in Lighting with the other sky things.
+        if (p && p->id == Scene::kTerrainId && standIn(n)) p = scene->lightingFolder(true);
         std::string err;
         if (!E(L)->setParent(n, p, err)) return luaL_error(L, "%s", err.c_str());
         meshReshape(n, p);
+        applyStandIn(L, n, standIn(n));
         return 0;
     }
     if (is(k, "Position"))  { setWorldPosition(L, n, LuaApi::checkVector3(L, 3)); return 0; }
@@ -3251,6 +3543,7 @@ int inst_set(lua_State* L) {
             lua_call(L, 3, 0);
             return 0;
         }
+    if (extraSet(L, k)) return 0;
     return luaL_error(L, "'%s' can't be set on %s \"%s\"", k, className(L, n), n->name.c_str());
 }
 
@@ -3281,6 +3574,11 @@ int inst_new(lua_State* L) {
         Attribute col; col.name = "TeamColor"; col.type = Attribute::Color3; col.v = glm::vec3(1.0f);
         Attribute aa; aa.name = "AutoAssignable"; aa.type = Attribute::Bool; aa.b = true;
         n->attributes = {c, col, aa};
+    } else if (cls == "Actor") {   // Parallel Luau's Actor: a Model whose scripts get messages (LuauLibs.cpp)
+        n = std::make_unique<SceneNode>(cls, NodeKind::Model);
+        Attribute a;
+        a.name = "RobloxClass"; a.type = Attribute::String; a.s = "Actor";
+        n->attributes.push_back(a);
     } else if (cls == "WorldModel") {   // (a Model in a ViewportFrame; ours are all the same)
         n = std::make_unique<SceneNode>(cls, NodeKind::Model);
         Attribute a;
@@ -3421,6 +3719,8 @@ int inst_new(lua_State* L) {
         n->transform.position = {0.0f, 0.5f, 0.0f};
         if (cls == "SpawnLocation") n->tags.push_back("SpawnLocation");   // (still one when renamed)
         if (cls == "Seat" || cls == "VehicleSeat") { n->tags.push_back(cls); n->transform.scale = {2.0f, 0.5f, 2.0f}; }
+    } else if (const StandIns::Class* sc = StandIns::find(cls)) {
+        n = makeStandIn(*sc);
     } else {
         return luaL_error(L, "Instance.new: unknown class '%s' (try \"Part\", \"Ball\", "
                              "\"Cylinder\", \"Model\", \"Folder\" or \"PointLight\")", cls.c_str());
@@ -3428,8 +3728,11 @@ int inst_new(lua_State* L) {
     SceneNode* raw = E(L)->adopt(std::move(n));
     if (!lua_isnoneornil(L, 2)) {
         std::string err;
-        if (!E(L)->setParent(raw, LuaApi::checkNode(L, 2), err)) return luaL_error(L, "%s", err.c_str());
+        SceneNode* p = LuaApi::checkNode(L, 2);
+        if (p->id == Scene::kTerrainId && standIn(raw)) p = E(L)->scene()->lightingFolder(true);   // (Clouds, see inst_set)
+        if (!E(L)->setParent(raw, p, err)) return luaL_error(L, "%s", err.c_str());
         meshReshape(raw, LuaApi::checkNode(L, 2));
+        applyStandIn(L, raw, standIn(raw));
     }
     LuaApi::pushInstance(L, raw->id);
     return 1;
@@ -3464,6 +3767,7 @@ int sig_wait(lua_State* L) {
 int sig_index(lua_State* L) {
     const char* k = luaL_checkstring(L, 2);
     if (is(k, "Connect") || is(k, "connect")) { lua_pushcfunction(L, sig_connect); return 1; }
+    if (is(k, "ConnectParallel"))             { lua_pushcfunction(L, sig_connect); return 1; }   // (Parallel Luau: runs like Connect here)
     if (is(k, "Once"))                        { lua_pushcfunction(L, sig_once);    return 1; }
     if (is(k, "Wait"))                        { lua_pushcfunction(L, sig_wait);    return 1; }
     return luaL_error(L, "'%s' is not a valid member of an event (try :Connect)", k);
@@ -3649,6 +3953,8 @@ int track_eq(lua_State* L) {
 // model:LoadAnimation(anim) — any rig (a Model of parts), not just characters.
 int m_LoadAnimation(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
+    // An Animator / AnimationController (StandIns.h) plays on the rig it's in.
+    while (n && n->kind == NodeKind::Model && n->parent && standIn(n)) n = n->parent;
     if (n->kind != NodeKind::Model) return luaL_error(L, "LoadAnimation works on a Model (a rig) or a Humanoid");
     return loadOnto(L, n->id, 2);
 }
@@ -4183,6 +4489,7 @@ int hum_index(lua_State* L) {
     }
     if (is(k, "FindFirstChild") || is(k, "FindFirstChildOfClass") || is(k, "WaitForChild"))
         { lua_pushcfunction(L, hum_findChild); return 1; }
+    if (extraGet(L, k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of Humanoid", k);
 }
 
@@ -4216,6 +4523,7 @@ int hum_newindex(lua_State* L) {
         else if (Player* p = E(L)->scene()->player(); p && p->rootId() == humRoot(L) && lua_toboolean(L, 3)) p->scriptJump();
         return 0;
     }
+    else if (extraSet(L, k)) return 0;
     else return luaL_error(L, "'%s' can't be set on Humanoid", k);
     touched(L);
     return 0;
@@ -4358,6 +4666,7 @@ int cam_index(lua_State* L) {
     if (is(k, "ViewportPointToRay") || is(k, "ScreenPointToRay")) { lua_pushcfunction(L, cam_viewportToRay); return 1; }
     // Screen effects put in the camera: camera:GetChildren(), camera.Blur...
     if (proxyIndex(L, E(L)->scene()->cameraNode(), k)) return 1;
+    if (extraGet(L, k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of Camera", k);
 }
 
@@ -4408,6 +4717,7 @@ int cam_newindex(lua_State* L) {
         return 0;
     }
     if (is(k, "Name") || is(k, "Parent")) return 0;   // (there's only ever the one camera)
+    if (extraSet(L, k)) return 0;
     return luaL_error(L, "'%s' can't be set on Camera", k);
 }
 
@@ -4479,6 +4789,7 @@ int light_index(lua_State* L) {
     if (is(k, "IsA")) { lua_pushcfunction(L, light_isA); return 1; }
     // Its screen effects and Sky: Lighting:GetChildren(), Lighting.Sky...
     if (proxyIndex(L, E(L)->scene()->lightingFolder(true), k)) return 1;
+    if (extraGet(L, k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of Lighting", k);
 }
 
@@ -4533,6 +4844,7 @@ int light_newindex(lua_State* L) {
     if (is(k, "LightRays"))     { e.lightRays = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     if (is(k, "AutoExposure"))  { e.autoExposure = lua_toboolean(L, 3); return 0; }
     if (is(k, "MotionBlur"))    { e.motionBlur = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+    if (extraSet(L, k)) return 0;
     return luaL_error(L, "'%s' can't be set on Lighting", k);
 }
 
