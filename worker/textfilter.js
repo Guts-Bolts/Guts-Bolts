@@ -23,6 +23,10 @@ const ALLOWED_LINK = /^(?:https?:\/\/)?(?:www\.)?gutsandbolts\.net(?:[\/?#].*)?$
 // Lua code isn't a link: in workspace.Shop.Door or script.Parent.Top:Destroy() the "shop" and
 // "top" carry on into a Name with a capital letter, a :Method or a ( [, which a web address never
 // does. (Only for bare names: anything with http://, www. or a /path is still a link.)
+// A GIF or sticker from the chat/forum picker ([media:https://static.klipy.com/...gif]) isn't a
+// link people can click: it only shows the picture. Only KLIPY's picture server counts, and only
+// plain picture paths, so nothing can hide in one. (src/core/TextFilter.cpp has the same.)
+export const MEDIA_TOKEN = /\[media:https:\/\/(?:[a-z0-9-]+\.)*klipy\.com\/[a-z0-9._~\/%-]{1,400}\.(?:gif|png|jpe?g|webp)\]/gi;
 const isLuaCode = (match, after) => !/^(?:https?:\/\/|www\.)/.test(match) && !match.includes('/') && /^(?:\.[A-Z]|:[A-Za-z]|[([])/.test(after);
 
 // Lower-case A-Z only, so every position still lines up with the original text.
@@ -31,7 +35,8 @@ const lowerAscii = (s) => s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charC
 function coverText(text) {
   const s = String(text || '');
   if (!s) return s;
-  const low = lowerAscii(s);
+  // Picker pictures are blanked out first (same length, so every position still lines up).
+  const low = lowerAscii(s).replace(MEDIA_TOKEN, (m) => ' '.repeat(m.length));
   const mask = new Array(s.length).fill(false);
   const cover = (from, to) => { for (let i = from; i < to; i++) mask[i] = true; };
   for (const m of low.matchAll(EMAIL)) cover(m.index, m.index + m[0].length);

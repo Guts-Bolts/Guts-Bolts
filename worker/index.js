@@ -25,10 +25,12 @@ import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { handleAds, withAdsMeta } from './ads.js';
 import { handleLegal } from './legal.js';
+import { handleSeo, withSeoHead } from './seo.js';
 import { handleStripe } from './stripe.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
 import { checkSupabaseHealth, listSupabaseActivity, supabasePublicConfig } from './supabase.js';
 import { videoRange, VIDEO_MIME, kChunk as kVideoChunk } from './videos.js';
+import { kMostSegBytes } from './streams.js';
 export { GbServerObject, RemoteControlObject, InfrastructureObject };
 
 const MAX_REQUEST = 40 * 1024 * 1024;   // a whole game, base64
@@ -255,7 +257,7 @@ async function route(request, env, ctx) {
     const url = new URL(request.url);
     // The site lives at gutsandbolts.net. The old workers.dev address only keeps answering
     // older apps (the server and its pictures); people opening it in a browser get moved.
-    if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|artpic|pasteraw|download|avatar|vid|vidthumb|vidup)(\/|$)/.test(url.pathname))
+    if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|artpic|pasteraw|download|avatar|vid|vidthumb|vidup|live|liveup)(\/|$)/.test(url.pathname))
       return Response.redirect('https://gutsandbolts.net' + url.pathname + url.search, 301);
     // Share links (sharelinks.js): gutsandbolts.net/s/<code> opens the website's #/s/<code> page, which counts the click.
     const share = /^\/s\/([A-Za-z0-9]{4,16})\/?$/.exec(url.pathname);
@@ -263,6 +265,9 @@ async function route(request, env, ctx) {
     if (url.pathname.startsWith('/download/')) return handleDownload(request, env, url);
     const ads = handleAds(request, env, url);   // /ads.txt and /ads-config (ads.js)
     if (ads) return ads;
+    const seo = await handleSeo(request, env, url, env.GB_SERVER ? null
+      : (req) => env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main')).seoAsk(req), ctx);   // pages for search engines + sitemap.xml (seo.js)
+    if (seo) return seo;
     const legal = handleLegal(request, url);   // robots.txt, sitemap.xml, security.txt, gpc.json, /terms (legal.js)
     if (legal) return legal;
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
@@ -272,10 +277,12 @@ async function route(request, env, ctx) {
     const picture = /^\/(thumb|icon|shot|wear|decal|artpic|pasteraw|avatar)\//.test(url.pathname);
     // Videos (videos.js): /vid/<id> and /vidthumb/<id> count like pictures; /vidup/<id> (sending one) like a request.
     const video = /^\/(vid|vidthumb|vidup)\//.test(url.pathname);
+    // Live streams (streams.js): /live/<id>/<n> pieces count like pictures; /liveup/<id> (the streamer sending one) like a request.
+    const stream = /^\/(live|liveup)\//.test(url.pathname);
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
     const supabaseHealthPath = url.pathname === '/api/supabase/health' || url.pathname === '/api/supabase/live';
     const supabaseActivityPath = /^\/api\/activity\/(auctions|forum)$/.test(url.pathname);
-    const kind = picture || (video && !url.pathname.startsWith('/vidup/')) ? 'picture' : video ? 'api' : (url.pathname === '/ws' || url.pathname === '/ws/remote' || url.pathname === '/ws/infrastructure') ? 'ws' : url.pathname === '/api' || url.pathname === '/api/remote' || url.pathname === '/api/infrastructure' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath || stripePath ? 'api' : mcp ? 'mcp' : '';
+    const kind = picture || (video && !url.pathname.startsWith('/vidup/')) || (stream && url.pathname.startsWith('/live/')) ? 'picture' : video || stream ? 'api' : (url.pathname === '/ws' || url.pathname === '/ws/remote' || url.pathname === '/ws/infrastructure') ? 'ws' : url.pathname === '/api' || url.pathname === '/api/remote' || url.pathname === '/api/infrastructure' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath || stripePath ? 'api' : mcp ? 'mcp' : '';
     let info = null;
     if (kind) {
       info = await check(request, env, url, kind);
@@ -283,6 +290,7 @@ async function route(request, env, ctx) {
     }
     if (picture) return cachedPicture(request, ctx, () => pictureFor(request, env, url));
     if (video) return env.GB_SERVER ? videoOnComputer(request, env, url) : env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main')).fetch(tagged(request, info));
+    if (stream) return env.GB_SERVER ? streamOnComputer(request, env, url) : env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main')).fetch(tagged(request, info));
     if (url.pathname.startsWith('/api/oauth/')) return handleOauth(request, env, url);
     if (stripePath) return handleStripe(request, env, url);   // Boltworks Club payments (stripe.js)
     if (mcp) return handleMcp(request, env, url, serverAsk);
@@ -358,9 +366,9 @@ async function route(request, env, ctx) {
     if (productPage) {
       const pageUrl = new URL(productPage[1] ? '/products/' + productPage[1].toLowerCase() : '/products', url.origin);
       pageUrl.search = url.search;
-      return withAdsMeta(await env.ASSETS.fetch(new Request(pageUrl, request)), env);
+      return withSeoHead(withAdsMeta(await env.ASSETS.fetch(new Request(pageUrl, request)), env), url, env);
     }
-    return withAdsMeta(await env.ASSETS.fetch(request), env);
+    return withSeoHead(withAdsMeta(await env.ASSETS.fetch(request), env), url, env);
 }
 
 // Videos when the server runs on a computer (GB_SERVER): its requests are JSON over TCP, so the file
@@ -371,6 +379,35 @@ function bytesB64(bytes) {
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(s);
+}
+// Live streams when the server runs on a computer (GB_SERVER): each piece is small (at most
+// kMostSegBytes), so it goes over in one go (stream.push) and comes back the same way (stream.piece).
+async function streamOnComputer(request, env, url) {
+  const unpack = (x) => { try { return decodeURIComponent(x || ''); } catch { return ''; } };
+  const answer = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
+  const up = /^\/liveup\/([^/]+)$/.exec(url.pathname);
+  try {
+    if (up) {
+      if (request.method !== 'PUT') return answer({ ok: false, error: 'Use PUT.' }, 405);
+      if (Number(request.headers.get('content-length') || 0) > kMostSegBytes) return answer({ ok: false, error: 'That piece is too big. Lower the quality.' }, 413);
+      const data = new Uint8Array(await request.arrayBuffer());
+      if (data.length > kMostSegBytes) return answer({ ok: false, error: 'That piece is too big. Lower the quality.' }, 413);
+      const r = await serverAsk(env, { op: 'stream.push', args: { id: unpack(up[1]), t: url.searchParams.get('t') || '', n: Number(url.searchParams.get('n')), data: bytesB64(data) } });
+      return answer(r, r.ok ? 200 : 400);
+    }
+    const m = /^\/live\/([^/]+)\/(\d{1,7}|pic)$/.exec(url.pathname);
+    if (!m) return new Response('No stream.', { status: 404 });
+    if (m[2] === 'pic') {
+      const r = await serverAsk(env, { op: 'stream.picture', args: { id: unpack(m[1]) } });
+      if (!r.ok || !r.data) return new Response('No picture.', { status: 404 });
+      return new Response(b64Bytes(r.data), { headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=30', 'x-content-type-options': 'nosniff' } });
+    }
+    const r = await serverAsk(env, { op: 'stream.piece', args: { id: unpack(m[1]), n: Number(m[2]) } });
+    if (!r.ok || !r.data) return new Response('No piece.', { status: 404, headers: { 'cache-control': 'no-store' } });
+    return new Response(b64Bytes(r.data), { headers: { 'content-type': 'video/webm', 'cache-control': 'public, max-age=120', 'x-content-type-options': 'nosniff' } });
+  } catch (e) {
+    return answer({ ok: false, error: 'Couldn\'t reach the Guts&Bolts server (' + (e && e.message || 'error') + '). Is it running?' }, 502);
+  }
 }
 async function videoOnComputer(request, env, url) {
   const [, kind, raw] = /^\/(vidup|vid|vidthumb)\/(.*)$/.exec(url.pathname) || [];

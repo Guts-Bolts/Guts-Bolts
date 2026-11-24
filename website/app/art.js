@@ -203,7 +203,7 @@ export function artPages(ctx) {
       <form class="form" data-art-post>
         ${old ? html`<p class="art-preview-box">${pic(old, false)}</p>`
           : html`<p><input type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp" required></p>
-            <p><img class="art-preview" id="artPreview" alt="" hidden></p>`}
+            <p><img class="art-preview" id="artPreview" alt="Preview of your art" hidden></p>`}
         <p><label>Title<br><input type="text" name="title" maxlength="60" required value="${old ? old.title : ''}" style="width:100%"></label></p>
         <p><label>Category<br><select name="cat">${Object.entries(ART_CAT_NAMES).map(([k, n]) =>
           html`<option value="${k}" ${old && old.cat === k ? 'selected' : ''}>${n}</option>`)}</select></label></p>

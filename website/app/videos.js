@@ -4,6 +4,8 @@
 //   #/videoupload[?edit=<id>]               upload a video (or change its words)
 // app.js hands over its helpers with videoPages(ctx), and adds the pages it returns.
 
+import { gbPlayer } from './videoplayer.js';   // the YouTube-style player
+
 export const VIDEO_CAT_NAMES = { gaming: 'Gaming', music: 'Music', funny: 'Funny', howto: 'How-to', animation: 'Animation',
   vlog: 'Vlogs', sports: 'Sports', science: 'Science & tech', news: 'News', other: 'Other' };
 const SORTS = [['new', 'Newest'], ['week', 'Trending this week'], ['top', 'Most liked'], ['views', 'Most watched']];
@@ -80,11 +82,11 @@ export function videoPages(ctx) {
 
   const hero = html`<div class="portal-hero video-hero"><div><span class="portal-kicker">G&amp;B VIDEOS</span><h1>Videos</h1>
       <p>Watch videos about anything: games, music, how-tos, funny stuff. Upload your own for free, and follow people to hear about their new ones.</p>
-      <p><a class="btn green" href="#/videoupload">Upload a video</a></p></div></div>`;
+      <p><a class="btn green" href="#/videoupload">Upload a video</a> <a class="btn red" href="#/golive">&#9679; Go live</a> <a class="btn" href="#/live">Watch live</a></p></div></div>`;
 
   const flag = (v) => v.state === 'uploading' ? 'Upload didn\'t finish' : v.review === 'pending' ? 'Waiting for a check' : v.review ? 'Didn\'t pass' : '';
   const card = (v) => html`<a class="video-card" href="#/watch/${v.id}">
-      <span class="video-thumb">${v.poster ? html`<img loading="lazy" src="${v.poster}" alt="">` : html`<span class="video-nopic">&#9654;</span>`}
+      <span class="video-thumb">${v.poster ? html`<img loading="lazy" src="${v.poster}" alt="${v.title}">` : html`<span class="video-nopic">&#9654;</span>`}
         ${v.secs ? html`<span class="video-time">${videoTime(v.secs)}</span>` : ''}</span>
       <span class="video-card-text"><b>${v.title}</b><span class="small muted">${v.by.name}</span>
         <span class="small muted">${videoCount(v.views)} views &middot; ${ago(v.at)}${flag(v) ? html` &middot; <span class="video-flag">${flag(v)}</span>` : ''}</span></span></a>`;
@@ -122,7 +124,7 @@ export function videoPages(ctx) {
       html`<a class="${args.cat === k ? 'on' : ''}" href="${feedLink(q, { cat: k })}">${n}</a>`)}</div>`;
     const channel = by && r.videos[0] ? r.videos[0].by : null;
     const title = q.get('by') === 'me' ? 'My videos' : channel ? channel.name + '\'s videos' : args.tag ? 'Tagged #' + args.tag : args.q ? 'Search: ' + args.q : 'Home';
-    show(html`${hero}<div class="box"><h2 class="boxhead">${title} <span class="small muted">(${r.total})</span></h2>
+    show(html`${hero}<div id="videoLiveRow"></div><div class="box"><h2 class="boxhead">${title} <span class="small muted">(${r.total})</span></h2>
       ${channel && q.get('by') !== 'me' ? html`<p class="small">${videoCount(channel.followers)} follower${channel.followers === 1 ? '' : 's'} &middot; <a href="#/user/${channel.userId}">Profile</a></p>` : ''}
       <form class="row video-search" data-video-search><input type="search" name="q" value="${args.q}" placeholder="Search videos" style="flex:1">
         <button class="btn small">Search</button></form>
@@ -132,6 +134,7 @@ export function videoPages(ctx) {
         : html`<p class="muted">No videos here yet. <a href="#/videoupload">Be the first to upload one!</a></p>`}
       <p class="video-pages">${r.page > 1 ? html`<a class="btn small" href="${feedLink(q, { page: r.page - 1 })}">&laquo; Back</a> ` : ''}
         ${r.more ? html`<a class="btn small" href="${feedLink(q, { page: r.page + 1 })}">More &raquo;</a>` : ''}</p></div>`);
+    if (ctx.liveRow && !by && !args.q && !args.tag && args.page === 1) ctx.liveRow(document.getElementById('videoLiveRow'));   // (streams.js)
     document.querySelector('[data-video-search]').addEventListener('submit', (e) => {
       e.preventDefault();
       location.hash = feedLink(q, { q: e.currentTarget.q.value.trim() });
@@ -157,10 +160,10 @@ export function videoPages(ctx) {
     const followBtn = signedIn() && !v.mine
       ? html`<button class="btn small ${v.following ? '' : 'blue'}" data-act="follow" data-op="${v.following ? 'follow.remove' : 'follow.add'}" data-user="${v.by.id}">${v.following ? 'Following' : 'Follow'}</button>` : '';
     show(html`<p class="small"><a href="#/videos">&laquo; Videos</a></p>${reviewBox}
-      <div class="video-watch">
+      <div class="video-watch video-watch-areas" id="videoWatch">
+        <div class="video-stage video-player-stage">${v.src ? html`<video id="videoPlayer" playsinline preload="metadata" src="${v.src}" ${v.poster ? html`poster="${v.poster}"` : ''}></video>`
+          : html`<span class="video-nopic">&#9654;</span>`}</div>
         <div class="video-main">
-          <div class="video-stage">${v.src ? html`<video controls playsinline preload="metadata" src="${v.src}" ${v.poster ? html`poster="${v.poster}"` : ''}></video>`
-            : html`<span class="video-nopic">&#9654;</span>`}</div>
           <h1 class="video-title">${v.title}</h1>
           <div class="video-bar">
             <span class="video-channel">${person(v.by)} <span class="small muted">${videoCount(v.by.followers)} follower${v.by.followers === 1 ? '' : 's'}</span> ${followBtn}</span>
@@ -185,6 +188,11 @@ export function videoPages(ctx) {
         </div>
         <aside class="video-next box"><h2 class="boxhead">Up next</h2><div id="videoNext" class="small muted">Loading...</div></aside>
       </div>`);
+
+    // The player (videoplayer.js): its own controls, keys, theater mode, and picking up where you left off.
+    const playerVideo = document.getElementById('videoPlayer');
+    if (playerVideo) gbPlayer(playerVideo, { id: v.id, title: v.title, by: v.by.name, poster: v.poster,
+      onTheater: (on) => document.getElementById('videoWatch')?.classList.toggle('theater', on) });
 
     // Up next: more from the same person first, then what's popular.
     Promise.all([call('video.list', { by: v.by.userId }), call('video.list', { sort: 'week' }), call('video.list', { sort: 'top' })]).then((lists) => {
@@ -255,7 +263,7 @@ export function videoPages(ctx) {
         Only upload videos you made yourself (or have the right to share), and follow the <a href="#/terms">rules</a>.
         ${waits ? 'Staff check new videos from people who aren\'t Verified before everyone can watch them.' : ''}</p>`}
       <form class="form" data-video-upload>
-        ${old ? (old.poster ? html`<p><img class="video-preview" src="${old.poster}" alt=""></p>` : '')
+        ${old ? (old.poster ? html`<p><img class="video-preview" src="${old.poster}" alt="${old.title || 'Video picture'}"></p>` : '')
           : html`<p><input type="file" name="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.mov,.webm,.m4v" required></p>
             <p><video class="video-preview" id="videoPreview" controls muted playsinline hidden></video></p>`}
         <p><label>Title<br><input type="text" name="title" maxlength="100" required value="${old ? old.title : ''}" style="width:100%"></label></p>
@@ -314,7 +322,7 @@ export function videoPages(ctx) {
       if (!file || !picked) { say('Pick a video first.', true); return; }
       btn.disabled = true; say('Getting ready...');
       const thumb = pic || picked.thumb;
-      const start = await call('video.start', Object.assign(words, { size: file.size, secs: picked.secs || 0, w: picked.w || 0, h: picked.h || 0,
+      const start = await call('video.start', Object.assign(words, { size: file.size, secs: Math.round(picked.secs || 0), w: Math.round(picked.w || 0), h: Math.round(picked.h || 0),   // (whole numbers: gb.js signs numbers without their decimals)
         thumb: thumb ? await blobB64(thumb) : '' }));
       if (!start.ok) { btn.disabled = false; say(start.error, true); return; }
       const bar = document.getElementById('videoProgress');

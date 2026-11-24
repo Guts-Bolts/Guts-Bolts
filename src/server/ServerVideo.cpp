@@ -8,7 +8,7 @@
 //   - when one goes public, the uploader's followers are told
 //   - likes, comments (the uploader is told), views; edits by the uploader, deletes by the uploader or staff
 //   - kPerDay uploads a day (Verified: kPerDayVerified); all videos together fit in GB_VIDEO_STORAGE_GB (default kStorageGb)
-//   video.list {sort, cat, tag, by, q, page}  video.get {id}  video.start {...}  video.edit {...}  video.delete {id}
+//   video.list {sort, cat, tag, by, q, page}  video.get {id, quiet}  video.start {...}  video.edit {...}  video.delete {id}
 //   video.like {id, on}  video.comment {id, text}  video.uncomment {id, comment}  video.pending {}  video.review {id, ok, note}
 //   No account (worker/index.js asks): video.chunk {id, t, at, data, last}  video.bytes {id, k, from, size}  video.thumb {id, k}
 // Kept in videos.json ({videos: id -> video, made: account -> {day, n}}); files are files/video-<id> and files/vidthumb-<id>.
@@ -285,7 +285,7 @@ json GbServer::videoOp(const std::string& name, User* me, const json& args) {
 
     if (name == "video.get") {
         if (!v || !videoCanSee(*v, me)) return fail("That video isn't here (any more).");
-        if (sv(*v, "state") == "ready" && (!me || sv(*v, "by") != me->id)) { (*v)["views"] = v->value("views", 0LL) + 1; saveVideos(); }
+        if (!(args.contains("quiet") && args["quiet"] == true) && sv(*v, "state") == "ready" && (!me || sv(*v, "by") != me->id)) { (*v)["views"] = v->value("views", 0LL) + 1; saveVideos(); }
         json r = okay(); r["video"] = videoJson(*v, me, true); return r;
     }
 
