@@ -43,6 +43,7 @@ export const PRODUCTS = [
       ['Most liked', '#/videos?sort=top', 'videos-top'],
       ['My videos', '#/videos?by=me', 'videos-mine'],
       ['Upload', '#/videoupload', 'videoupload'],
+      ['Live', '#/live', ''],
     ],
   },
   {
@@ -79,15 +80,13 @@ export const PRODUCTS = [
     ],
   },
   {
-    id: 'live', name: 'Live', status: 'soon', href: '#/soon/live',
-    blurb: 'Go live and hang out in chat: games, art, talk shows, anything allowed.',
-    pages: [],
-    links: [],
-    plans: [
-      'Go live straight from your browser',
-      'Live chat with timeouts, slow mode and moderators',
-      'Follow streamers and get told when they go live',
-      'Categories, so games are one kind of stream among many',
+    id: 'live', name: 'Live', status: 'open', href: '#/live',
+    blurb: 'Go live from your browser and hang out in chat: games, art, talk shows, anything allowed.',
+    pages: ['live', 'golive'],
+    links: [
+      ['Live now', '#/live', 'live'],
+      ['Go live', '#/golive', 'golive'],
+      ['Videos', '#/videos', ''],
     ],
   },
   {

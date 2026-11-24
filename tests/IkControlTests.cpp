@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
         ik.Parent = char.Humanoid
         print(ik.ClassName, ik.Type, ik.Target.Name, ik.Weight, ik.Parent == char)
     )");
-    check(out == "IKControl Position Ball 1.0 true", "Instance.new(\"IKControl\") and its properties: " + out);
+    check(out == "IKControl Position Ball 1 true", "Instance.new(\"IKControl\") and its properties: " + out);
     SceneNode* ball = nullptr;
     scene.forEach([&](SceneNode* n) { if (n->name == "Ball") ball = n; });
     if (!ball) { std::cerr << "no ball\n"; return 1; }

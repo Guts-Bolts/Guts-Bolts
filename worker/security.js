@@ -7,6 +7,10 @@ const GOOGLE_ADS = 'https://pagead2.googlesyndication.com https://*.googlesyndic
 // Stripe's payment form (worker/stripe.js, website/checkout.html): Stripe.js and its frames.
 const STRIPE = 'https://js.stripe.com https://*.stripe.com';
 
+// KLIPY (website/app/media-picker.js): the GIF and sticker search in chats and the forum. Its
+// rules say the search runs from the visitor's browser, so the page talks to it straight.
+const KLIPY = 'https://api.klipy.com';
+
 const CSP = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -18,7 +22,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net wss://pfpzmmsosyetkcoymoct.supabase.co " + GOOGLE_ADS + ' ' + STRIPE,
+  "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net wss://pfpzmmsosyetkcoymoct.supabase.co " + KLIPY + ' ' + GOOGLE_ADS + ' ' + STRIPE,
   "frame-src https://challenges.cloudflare.com " + GOOGLE_ADS + ' ' + STRIPE,
   "media-src 'self' blob: https:",
   "worker-src 'self' blob:",
@@ -26,19 +30,25 @@ const CSP = [
   'upgrade-insecure-requests',
 ].join('; ');
 
+const EMBED_CSP = CSP.replace("frame-ancestors 'none'", 'frame-ancestors *');
+
 export function withSecurityHeaders(response, request) {
   // Cloudflare WebSocket upgrade responses (101) must be returned unchanged.
   if (response.status === 101) return response;
   const headers = new Headers(response.headers);
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  headers.set('X-Frame-Options', 'DENY');
-  headers.set('Permissions-Policy', 'camera=(), microphone=(self), geolocation=(), payment=(), usb=()');
+  // /embed/<id> (worker/seo.js) is just a video player that any site may put in a frame
+  // (X's player card, forums, blogs). Every other page stays unframeable.
+  const embed = /^\/embed\/[^/]+\/?$/.test(new URL(request.url).pathname);
+  if (!embed) headers.set('X-Frame-Options', 'DENY');
+  // (camera and screen sharing: going live in G&B Live, website/app/streams.js)
+  headers.set('Permissions-Policy', 'camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=(), usb=()');
   headers.set('Origin-Agent-Cluster', '?1');
   const url = new URL(request.url);
   if (url.protocol === 'https:' && (url.hostname === 'gutsandbolts.net' || url.hostname.endsWith('.gutsandbolts.net')))
     headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   const type = headers.get('content-type') || '';
-  if (type.toLowerCase().startsWith('text/html')) headers.set('Content-Security-Policy', CSP);
+  if (type.toLowerCase().startsWith('text/html')) headers.set('Content-Security-Policy', embed ? EMBED_CSP : CSP);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

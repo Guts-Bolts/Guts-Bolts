@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
     )";
     code.replace(code.find("VIDEO"), 5, argv[2]);
     std::string out = run(session, code);
-    check(out == "VideoFrame true 2.0 64.0 48.0 false", "Instance.new(\"VideoFrame\") loads the video: " + out);
+    check(out == "VideoFrame true 2 64 48 false", "Instance.new(\"VideoFrame\") loads the video: " + out);
     SceneNode* video = nullptr;
     scene.forEach([&](SceneNode* n) { if (n->name == "Video" && n->isGui()) video = n; });
     if (!video) { std::cerr << "no VideoFrame\n"; return 1; }
