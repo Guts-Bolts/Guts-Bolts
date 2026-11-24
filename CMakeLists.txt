@@ -1102,6 +1102,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     target_link_libraries(ServerArtTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerArtTests COMMAND ServerArtTests)
 
+    # GIFs, emoji reactions and forum votes (ServerForum.cpp, ServerSocial.cpp, TextFilter.cpp).
+    add_executable(ServerReactionsTests tests/ServerReactionsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerReactionsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerReactionsTests gb_version)
+    target_link_libraries(ServerReactionsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerReactionsTests COMMAND ServerReactionsTests)
+
     # G&B Paste: making, listing, running out, deleting, reporting (ServerPaste.cpp).
     add_executable(ServerPasteTests tests/ServerPasteTests.cpp ${GB_SERVER_TEST_SOURCES})
     target_include_directories(ServerPasteTests PRIVATE src/ ${GB_GENERATED})

@@ -7,6 +7,10 @@ const GOOGLE_ADS = 'https://pagead2.googlesyndication.com https://*.googlesyndic
 // Stripe's payment form (worker/stripe.js, website/checkout.html): Stripe.js and its frames.
 const STRIPE = 'https://js.stripe.com https://*.stripe.com';
 
+// KLIPY (website/app/media-picker.js): the GIF and sticker search in chats and the forum. Its
+// rules say the search runs from the visitor's browser, so the page talks to it straight.
+const KLIPY = 'https://api.klipy.com';
+
 const CSP = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -18,7 +22,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net wss://pfpzmmsosyetkcoymoct.supabase.co " + GOOGLE_ADS + ' ' + STRIPE,
+  "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net wss://pfpzmmsosyetkcoymoct.supabase.co " + KLIPY + ' ' + GOOGLE_ADS + ' ' + STRIPE,
   "frame-src https://challenges.cloudflare.com " + GOOGLE_ADS + ' ' + STRIPE,
   "media-src 'self' blob: https:",
   "worker-src 'self' blob:",

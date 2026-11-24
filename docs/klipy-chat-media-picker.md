@@ -1,20 +1,27 @@
-# KLIPY Chat Media Picker
+# KLIPY GIF and sticker picker (chats and forum)
 
-## Setup
-1. Create a KLIPY API app/key in the KLIPY Partner Panel.
-2. In `website/app/index.html`, set `window.GB_KLIPY_APP_KEY` to the public app key.
-3. Keep the key in the browser configuration only. KLIPY requires standard API requests and media loading to originate from the end-user browser; do not proxy the API, cache, mirror, or re-host its media.
-4. Test with the key's testing tier (100 API requests/hour), then request production access from KLIPY as needed.
+## How it fits together
+- The picker is `website/app/media-picker.js`. It is used by the chat dock (`chatdock.js`) and
+  the forum composer and comment boxes (`app.js`).
+- The app key is a public browser key (not a secret). It is `DEFAULT_KLIPY_KEY` in
+  `media-picker.js`; a page can override it with `window.GB_KLIPY_APP_KEY`. It is not in an
+  inline `<script>` in `index.html`, because the site's security rules don't run inline scripts.
+- The site's security rules (`worker/security.js`, `connect-src`) allow `https://api.klipy.com`,
+  so the visitor's own browser does the search. KLIPY requires that: never proxy the API, cache,
+  mirror or re-host its pictures.
+- A picked picture goes into the message as `[media:https://static.klipy.com/...gif]`.
+  `website/app/embeds.js` shows it as the picture. Only KLIPY's servers, over https, with a
+  picture file ending (gif, png, jpg, webp) count (`safeMediaUrl`).
+- Both servers' text filters let these tokens through and still block every other link:
+  `MEDIA_TOKEN` in `worker/textfilter.js` and the `media` rule in `src/core/TextFilter.cpp`.
 
 ## Picker
-- Trending GIFs, GIF search, and sticker browsing are included.
-- Search input placeholder is `Search KLIPY`.
-- Visible attribution: `Powered by KLIPY`.
-- Content filter is set to `medium`; KLIPY content-filter and partner-dashboard keyword/block settings should also be configured.
-- Results use provider URLs as delivered and are attached through the existing validated media token flow.
-- Manual HTTPS media attachment remains available without a configured key.
+- GIFs and Stickers tabs, trending first, search as you type, quick search words, more on scroll.
+- Search placeholder is `Search KLIPY`, with visible `Powered by KLIPY`.
+- Content filter is `medium`; also set KLIPY's partner dashboard keyword/block settings.
+- The medium size (`md`) is sent; the small one (`sm`) is used for the grid.
+- There is no "paste any picture link" box any more: only KLIPY pictures can be sent.
 
 ## Limits
-- This integration only supports formats the existing chat media renderer can display (GIF, PNG, JPEG, WEBP).
-- It does not proxy requests, cache or retain media, or transform provider URLs.
-- API keys are client-side app keys; never use private credentials or server secrets here.
+- Test keys have 100 API requests an hour; ask KLIPY for production access.
+- A forum post or comment can carry up to 4 GIFs; a chat message carries one.

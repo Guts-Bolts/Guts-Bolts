@@ -3,7 +3,8 @@
 // linked to Lyreto. The server side is worker/chats.js (inbox, calls, gateway) and the
 // party.* requests in worker/server.js (the conversations themselves).
 //
-import { safeMediaUrl, openMediaPicker, composeChatMessage } from './media-picker.js';
+import { safeMediaUrl, openMediaPicker, composeChatMessage, REACTIONS } from './media-picker.js';
+import { renderInline, embedCards, fillEmbeds, previewText } from './embeds.js';
 
 // Calls use WebRTC: each browser sends its microphone straight to the others (or through
 // Cloudflare's relay when the server has one, so nobody sees anybody's internet address).
@@ -18,6 +19,10 @@ const ICON = {
   mic: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12z"/></svg>',
   chev: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
   more: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>',
+  smile: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="10" r="1.3" fill="currentColor"/><circle cx="15" cy="10" r="1.3" fill="currentColor"/><path d="M8 14.5c1 1.5 2.4 2.2 4 2.2s3-.7 4-2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  gif: '<svg viewBox="0 0 28 20" width="24" height="18" aria-hidden="true"><rect x="1" y="1" width="26" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><text x="14" y="14.5" text-anchor="middle" font-size="9.5" font-weight="800" font-family="system-ui,sans-serif" fill="currentColor">GIF</text></svg>',
+  code: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  send: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 20.5 21 12 3 3.5 5.5 12zM5.5 12H12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg>',
 };
 const COLORS = ['#e8833a', '#3a8ee8', '#4bb46b', '#b45bd6', '#d6455b', '#2fb5b0', '#c9a227', '#6b7bd6'];
 const colorOf = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
@@ -34,17 +39,8 @@ function richChatBody(value) {
   const source = String(value ?? '');
   const fence = /```([a-zA-Z0-9_+-]{0,24})[ \t]*\n([\s\S]*?)```/g;
   let out = '', last = 0, match;
-  const plain = (text) => {
-    const media = /\[media:(https:\/\/[^\s\]]+)\]/g;
-    let rendered = '', at = 0, m;
-    while ((m = media.exec(text))) {
-      rendered += esc(text.slice(at, m.index)).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
-      const url = safeMediaUrl(m[1]);
-      rendered += url ? '<img class="cd-media-embed" src="' + esc(url) + '" alt="Attached media" loading="lazy" referrerpolicy="no-referrer">' : esc(m[0]);
-      at = media.lastIndex;
-    }
-    return rendered + esc(text.slice(at)).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
-  };
+  const cards = [];
+  const plain = (text) => renderInline(text, { media: 'cd-media-embed' }, cards);
   while ((match = fence.exec(source))) {
     out += plain(source.slice(last, match.index));
     const language = match[1].toLowerCase(), code = match[2].replace(/\n$/, '');
@@ -53,7 +49,19 @@ function richChatBody(value) {
       '">Copy code</button></div><pre><code>' + esc(code) + '</code></pre></div>';
     last = fence.lastIndex;
   }
-  return out + plain(source.slice(last));
+  out += plain(source.slice(last));
+  // A message that's only a GIF shows without a bubble around it, like other chat apps.
+  return /^\s*\[media:[^\]]+\]\s*$/.test(source) ? out : out + embedCards(cards);
+}
+// Is this message only a picture? (Then it gets no bubble.)
+const onlyMedia = (body) => /^\s*\[media:https:\/\/[^\s\]]+\]\s*$/.test(String(body || ''));
+// The emoji under a message, and the button to add one.
+function reactRow(m, meId) {
+  const list = REACTIONS.map((e) => { const who = (m.reacts && m.reacts[e]) || []; return { e, n: who.length, mine: who.includes(meId) }; }).filter((x) => x.n);
+  return '<div class="cd-reacts">' + list.map((x) => '<button type="button" class="cd-react' + (x.mine ? ' mine' : '') + '" data-react="' + esc(m.id) + '" data-emoji="' + esc(x.e) + '" title="' +
+      (x.mine ? 'Take your ' + esc(x.e) + ' back' : 'React ' + esc(x.e)) + '">' + x.e + '<span>' + x.n + '</span></button>').join('') +
+    '<span class="cd-react-add"><button type="button" class="cd-react-open" data-react-open="' + esc(m.id) + '" title="Add a reaction" aria-label="Add a reaction">' + ICON.smile + '</button>' +
+    '<span class="cd-react-pick" hidden>' + REACTIONS.map((e) => '<button type="button" data-react="' + esc(m.id) + '" data-emoji="' + esc(e) + '" aria-label="React ' + esc(e) + '">' + e + '</button>').join('') + '</span></span></div>';
 }
 function insertChatCode(textarea, language = 'lua') {
   if (!textarea) return;
@@ -154,7 +162,18 @@ class Panel {
     panels.add(this);
     root.addEventListener('click', (e) => this.click(e));
     root.addEventListener('submit', (e) => this.submit(e));
-    root.addEventListener('input', (e) => { if (e.target.name === 'q') { this.query = e.target.value; this.drawList(true); } });
+    root.addEventListener('input', (e) => {
+      if (e.target.name === 'q') { this.query = e.target.value; this.drawList(true); }
+      if (e.target.name === 'body') { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px'; }
+    });
+    // Enter sends, Shift+Enter makes a new line (inside a code block, Enter is a new line too).
+    root.addEventListener('keydown', (e) => {
+      if (e.target.name !== 'body' || e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+      const before = e.target.value.slice(0, e.target.selectionStart);
+      if ((before.match(/```/g) || []).length % 2 === 1) return;
+      e.preventDefault();
+      e.target.form.requestSubmit();
+    });
     this.draw();
     if (this.chatId) this.loadChat();
   }
@@ -180,7 +199,7 @@ class Panel {
     const newOnes = q ? friends.filter((f) => !withChat.has(f.id) && (f.username || f.name || '').toLowerCase().includes(q)).slice(0, 5) : [];
     const rows = chats.map((c) => {
       const last = c.last;
-      const preview = !last ? 'Say hi!' : last.system ? last.body : (last.mine ? 'You: ' : c.members.length > 2 || last.via ? last.name + ': ' : '') + last.body;
+      const preview = !last ? 'Say hi!' : last.system ? last.body : (last.mine ? 'You: ' : c.members.length > 2 || last.via ? last.name + ': ' : '') + previewText(last.body);
       return '<button type="button" class="cd-row' + (c.unread ? ' unread' : '') + '" data-open="' + esc(c.id) + '">' + avatar(c) +
         '<span class="cd-copy"><span class="cd-line"><b>' + esc(titleOf(c)) + '</b>' + (c.call ? '<span class="cd-live" title="Call going on">' + ICON.phone + '</span>' : '') +
         '<small>' + esc(when(c.last ? c.last.at : c.updated)) + '</small></span><span class="cd-line"><span class="cd-prev">' + esc(preview) + '</span>' +
@@ -228,10 +247,20 @@ class Panel {
     const c = this.chat, sum = inbox.chats.find((x) => x.id === this.chatId) || c;
     if (!c) { this.root.innerHTML = this.head('...', '<button type="button" class="cd-icon" data-back aria-label="Back">' + ICON.back + '</button>') + '<p class="cd-none">Loading...</p>'; return; }
     const meId = api.me().id;
-    const msgs = (c.messages || []).map((m) => m.system ? '<div class="cd-sys">' + richChatBody(m.body) + ' · ' + esc(when(m.at)) + '</div>'
-      : '<div class="cd-msg' + (m.from === meId ? ' mine' : '') + '"><div class="cd-meta">' + (m.from === meId ? '' : '<b>' + esc(m.name || 'Player') + '</b>') +
-        (m.via === 'lyreto' ? '<span class="cd-via" title="Sent from Lyreto">Lyreto</span>' : '') + '<span>' + esc(when(m.at)) + '</span></div><div class="cd-bubble">' + richChatBody(m.body) +
-        (m.game ? ' <a class="btn small blue" href="#/game/' + encodeURIComponent(m.game) + '">View game</a>' : '') + '</div></div>').join('');
+    // Messages in a row from the same person (within 5 minutes) share one name line.
+    let prev = null;
+    const msgs = (c.messages || []).map((m) => {
+      if (m.system) { prev = null; return '<div class="cd-sys">' + richChatBody(m.body) + ' · ' + esc(when(m.at)) + '</div>'; }
+      const grouped = prev && prev.from === m.from && m.at - prev.at < 300;
+      prev = m;
+      const mine = m.from === meId, bare = onlyMedia(m.body) && !m.game;
+      return '<div class="cd-msg' + (mine ? ' mine' : '') + (grouped ? ' grouped' : '') + '">' +
+        (grouped ? '' : '<div class="cd-meta">' + (mine ? '' : '<b>' + esc(m.name || 'Player') + '</b>') +
+          (m.via === 'lyreto' ? '<span class="cd-via" title="Sent from Lyreto">Lyreto</span>' : '') + '<span>' + esc(when(m.at)) + '</span></div>') +
+        '<div class="cd-bubble' + (bare ? ' bare' : '') + '" title="' + esc(when(m.at)) + '">' + richChatBody(m.body) +
+        (m.game ? ' <a class="btn small blue" href="#/game/' + encodeURIComponent(m.game) + '">View game</a>' : '') + '</div>' +
+        (inbox.old ? '' : reactRow(m, meId)) + '</div>';
+    }).join('');
     const call = sum && sum.call, inThis = session && session.chat === c.id;
     let banner = '';
     if (inThis) banner = callBar();
@@ -242,9 +271,24 @@ class Panel {
         '<button type="button" class="cd-icon" data-info title="Chat details" aria-label="Chat details">' + ICON.more + '</button>') + banner +
       (c.bridge ? '<div class="cd-bridge">Linked to Lyreto: messages here are shared with the channel "' + esc(c.bridge.name) + '".</div>' : '') +
       '<div class="cd-msgs">' + (msgs || '<p class="cd-none">No messages yet. Say hi!</p>') + '</div>' +
-      '<form class="cd-compose" data-send><textarea name="body" maxlength="1000" rows="1" placeholder="Message..."></textarea><div class="cd-attachment-preview">' + (this.attachment ? '<img src="' + esc(this.attachment.url) + '" alt="Attachment preview"><button type="button" class="btn small" data-remove-media>Remove</button>' : '') + '</div><div class="cd-compose-actions"><button type="button" class="btn small" data-media>Media</button><button type="button" class="btn small" data-code-insert="lua">Code</button><button class="btn blue">Send</button></div></form>';
+      '<form class="cd-compose" data-send>' + (this.attachment ? '<div class="cd-attachment-preview"><img src="' + esc(this.attachment.url) + '" alt="The GIF you picked" referrerpolicy="no-referrer"><button type="button" class="cd-attach-x" data-remove-media title="Take the GIF off" aria-label="Take the GIF off">×</button></div>' : '') +
+        '<div class="cd-compose-row"><button type="button" class="cd-tool" data-media title="Add a GIF or sticker" aria-label="Add a GIF or sticker">' + ICON.gif + '</button>' +
+        '<textarea name="body" maxlength="1000" rows="1" placeholder="Message ' + esc(titleOf(sum || c)) + '"></textarea>' +
+        '<button type="button" class="cd-tool" data-code-insert="lua" title="Add a code block" aria-label="Add a code block">' + ICON.code + '</button>' +
+        '<button class="cd-send" title="Send" aria-label="Send">' + ICON.send + '</button></div></form>';
     const b = this.root.querySelector('.cd-msgs');
     if (b) b.scrollTop = b.scrollHeight;
+    fillEmbeds(this.root, api.call);
+    // Pictures load after the scroll: keep the newest message in view while they do.
+    this.root.querySelectorAll('.cd-msgs img').forEach((img) => { if (!img.complete) img.addEventListener('load', () => { const box = this.root.querySelector('.cd-msgs'); if (box && box.scrollHeight - box.scrollTop - box.clientHeight < 400) box.scrollTop = box.scrollHeight; }, { once: true }); });
+  }
+  // Redraw the open chat without losing what you were typing.
+  redrawChat() {
+    const draft = this.root.querySelector('textarea[name=body]');
+    const text = draft ? draft.value : '';
+    this.drawChat();
+    const t = this.root.querySelector('textarea[name=body]');
+    if (t) { t.value = text; t.focus(); }
   }
   drawInfo() {
     const c = this.chat;
@@ -274,8 +318,22 @@ class Panel {
       catch { api.toast('Clipboard access is unavailable in this browser.'); }
       return;
     }
-    if ('removeMedia' in d) { this.attachment = null; this.drawChat(); return; }
-    if ('media' in d) { openMediaPicker({ onSelect: item => { const url = safeMediaUrl(item.url); if (url) { this.attachment = { url }; this.drawChat(); } } }); return; }
+    if ('removeMedia' in d) { this.attachment = null; this.redrawChat(); return; }
+    if ('media' in d) { openMediaPicker({ onSelect: (item) => { const url = safeMediaUrl(item.url); if (url) { this.attachment = { url }; this.redrawChat(); } } }); return; }
+    if ('reactOpen' in d) {
+      const pickRow = el.parentElement.querySelector('.cd-react-pick');
+      this.root.querySelectorAll('.cd-react-pick').forEach((x) => { if (x !== pickRow) x.hidden = true; });
+      pickRow.hidden = !pickRow.hidden;
+      return;
+    }
+    if ('react' in d) {
+      const r = await api.call('party.react', { id: this.chatId, message: d.react, emoji: d.emoji });
+      if (!r.ok) { api.toast(r.error); return; }
+      const box = this.root.querySelector('.cd-msgs'), keep = box ? box.scrollTop : 0;
+      this.chat = r.chat; this.redrawChat();
+      const nb = this.root.querySelector('.cd-msgs'); if (nb) nb.scrollTop = keep;
+      return;
+    }
     if ('codeInsert' in d) { insertChatCode(this.root.querySelector('.cd-compose textarea[name="body"]'), d.codeInsert || 'lua'); return; }
     if ('collapse' in d) { setDockOpen(false); return; }
     if ('dnd' in d) { const r = await api.call('presence.set', { dnd: !inbox.dnd }); if (r.ok) { inbox.dnd = !inbox.dnd; api.toast(inbox.dnd ? 'Do Not Disturb is on: calls won\'t ring.' : 'You\'re available again.'); refresh(); } else api.toast(r.error); return; }

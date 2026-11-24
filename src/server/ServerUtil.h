@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include "../online/Protocol.h"
 #include "../core/TextFilter.h"
@@ -30,6 +31,45 @@ inline bool isHex(const std::string& s, size_t minLen, size_t maxLen) {
 // What people write for others to read goes through the text filter (core/TextFilter).
 inline std::string say(const std::string& s, size_t maxLen, bool allowNewlines = false) {
     return TextFilter::filter(Online::cleanText(s, maxLen, allowNewlines));
+}
+// Emoji reactions on forum posts and chat messages (REACTIONS in worker/server.js is the same).
+inline const std::vector<std::string>& reactions() {
+    static const std::vector<std::string> list = {"\xF0\x9F\x91\x8D", "\xE2\x9D\xA4\xEF\xB8\x8F", "\xF0\x9F\x98\x82", "\xF0\x9F\x98\xAE",
+                                                  "\xF0\x9F\x98\xA2", "\xF0\x9F\x94\xA5", "\xF0\x9F\x8E\x89", "\xF0\x9F\x91\x80"};
+    return list;
+}
+// {emoji: [account ids]} -> [{emoji, count, mine}] in reactions() order (like reactionList).
+inline json reactionList(const json& holder, const std::string& meId) {
+    json out = json::array();
+    if (!holder.is_object() || !holder.contains("reacts") || !holder["reacts"].is_object()) return out;
+    const json& reacts = holder["reacts"];
+    for (const std::string& e : reactions()) {
+        if (!reacts.contains(e) || !reacts[e].is_array() || reacts[e].empty()) continue;
+        bool mine = false;
+        for (const json& id : reacts[e]) if (id.is_string() && id.get<std::string>() == meId) mine = true;
+        out.push_back({{"emoji", e}, {"count", reacts[e].size()}, {"mine", mine && !meId.empty()}});
+    }
+    return out;
+}
+// Turns `emoji` on or off for meId in holder["reacts"] (like toggleReaction). "" when it worked.
+inline std::string toggleReaction(json& holder, const std::string& emoji, const std::string& meId) {
+    bool known = false;
+    for (const std::string& e : reactions()) if (e == emoji) known = true;
+    if (!known) return "Pick one of the reactions.";
+    if (!holder.contains("reacts") || !holder["reacts"].is_object()) holder["reacts"] = json::object();
+    json& reacts = holder["reacts"];
+    if (!reacts.contains(emoji) || !reacts[emoji].is_array()) reacts[emoji] = json::array();
+    json& who = reacts[emoji];
+    bool removed = false;
+    for (size_t i = 0; i < who.size(); ++i)
+        if (who[i].is_string() && who[i].get<std::string>() == meId) { who.erase(who.begin() + (long)i); removed = true; break; }
+    if (!removed) {
+        if (who.size() >= 500) return "That reaction is full.";
+        who.push_back(meId);
+    }
+    if (who.empty()) reacts.erase(emoji);
+    if (reacts.empty()) holder.erase("reacts");
+    return "";
 }
 // Lyreto (lyreto.com) is the chat app Guts&Bolts partners with: games and groups can link their
 // Lyreto server. A link cleaned up to https://lyreto.com/... ("" for no link), or false when it
