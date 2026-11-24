@@ -27,6 +27,7 @@ import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshCh
 import { getAuctionBidSummary } from '../auction-data.mjs';
 import { GROUPS, APPS, productOf, productById, activeLink } from './products.js';
 import { placeAds } from './ads.js';
+import { loadFront, frontPage } from './frontpage.js';   // the busy front page's shelves
 
 // --- small helpers ------------------------------------------------------------
 
@@ -830,14 +831,16 @@ const gamesHome = async () => {
 // the left; on the right, a card for every product (from products.js), your feed, the
 // latest update and one small shelf from each open product.
 pages.home = async () => {
-  const [games, fr, feedR, upd, mine, recent] = await Promise.all([
+  const [games, fr, feedR, upd, mine, recent, front] = await Promise.all([
     pageCall('list', { kind: 'game', sort: 'popular', limit: 4 }),
     signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
     signedIn() ? pageCall('feed.list', {}) : Promise.resolve({ ok: false }),
     pageCall('updates.list', { limit: 1 }),
     signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
     signedIn() ? pageCall('games.mine', { which: 'recent', limit: 4 }) : Promise.resolve({ ok: false }),
+    loadFront(pageCall),   // what's happening across the site (frontpage.js)
   ]);
+  const frontBox = frontPage({ html, ago, gameCard }, front);
   const productCard = (p) => html`<a class="product-card product-${p.id} is-${p.status}" href="${p.href}">
       <span class="product-icon" aria-hidden="true">${p.name.slice(0, 1)}</span>
       <span class="product-text"><b>${p.name}</b>${p.status === 'soon' ? html` <span class="soon-tag">Soon</span>` : p.status === 'studio' ? html` <span class="soon-tag">In Studio</span>` : ''}
@@ -845,17 +848,16 @@ pages.home = async () => {
   // Products in their groups (products.js GROUPS); groups with nothing built yet are listed as "on the way".
   const built = GROUPS.filter((g) => g.products.some((id) => productById(id)));
   const coming = GROUPS.filter((g) => !g.products.some((id) => productById(id)) && g.later.length);
-  const productsBox = html`<div class="box products-box"><h2 class="boxhead">Everything on Guts&amp;Bolts</h2>
+  // One tight grid of every product (not a row per group), so it doesn't take over the page.
+  const productsBox = html`<div class="box products-box products-compact"><h2 class="boxhead">Everything on Guts&amp;Bolts</h2>
       <p class="small muted">One account for all of it: your friends, Bolts and Boltworks Club work everywhere.</p>
-      ${built.map((g) => html`<h3 class="product-group">${g.name}${g.later.length ? html` <span class="small muted">· on the way: ${g.later.join(', ')}</span>` : ''}</h3>
-        <div class="product-grid">${g.products.map(productById).filter(Boolean).map(productCard)}</div>`)}
-      <h3 class="product-group">Apps to download <a class="small" href="/products">All products &raquo;</a></h3>
-      <div class="product-grid">${APPS.map((a) => html`<a class="product-card product-${a.id} is-app" href="${a.href}">
+      <div class="product-grid">${built.map((g) => g.products.map(productById).filter(Boolean).map(productCard))}
+      ${APPS.map((a) => html`<a class="product-card product-${a.id} is-app" href="${a.href}">
         <span class="product-icon" aria-hidden="true">${a.name.slice(0, 1)}</span>
         <span class="product-text"><b>${a.name}</b> <span class="soon-tag">${a.platform}</span>${a.stage === 'test' ? html` <span class="soon-tag">Test</span>` : ''}
           <span>${a.blurb}</span></span></a>`)}</div>
-      ${coming.length ? html`<h3 class="product-group">On the way</h3><ul class="product-later">${coming.map((g) =>
-        html`<li><b>${g.name}</b>: ${g.later.join(', ')}</li>`)}</ul>` : ''}</div>`;
+      ${coming.length || built.some((g) => g.later.length) ? html`<p class="small muted product-later-line">On the way: ${[...built, ...coming].flatMap((g) => g.later).join(', ')}.
+        <a href="/products">All products &raquo;</a></p>` : ''}</div>`;
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
@@ -872,12 +874,12 @@ pages.home = async () => {
   if (!signedIn()) {
     show(html`<div class="welcome portal-hero">
         <div><span class="portal-kicker">ONE ACCOUNT. EVERYTHING ON IT.</span><h1>Welcome to Guts&amp;Bolts!</h1>
-          <p>Play and build games, hang out in the forums and chat, and soon share videos and go live.
+          <p>Play and build games, watch and upload videos, go live, post art, take free courses and hang out in the forums.
             Sign up to get <b>100 Bolts</b>, dress up your character and make friends.</p>
           <p><a class="btn green big" href="#/signup">Sign Up</a>
             <a class="btn" href="#/login">Login</a></p></div>
         <div class="welcome-guy" id="homeAvatar">${avatarSvg(defaultAvatar(), 150)}</div></div>
-      ${productsBox}${updateBox}${gamesShelf}`);
+      ${frontBox}${productsBox}${updateBox}`);
     mountAvatar($('#homeAvatar'), defaultAvatar(), [], { width: 170 }).catch(() => {});
     return;
   }
@@ -902,7 +904,7 @@ pages.home = async () => {
               <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
-      <div class="home-right">${productsBox}${updateBox}${feedBox}${gamesShelf}</div>
+      <div class="home-right">${gamesShelf}${frontBox}${feedBox}${productsBox}${updateBox}</div>
     </div>`);
   // Dressed in what you're wearing (the server says which items those are).
   const worn = mine.ok ? mine.wearing || [] : [];
