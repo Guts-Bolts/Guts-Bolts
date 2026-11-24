@@ -66,8 +66,9 @@
     // It can't read or change any Guts&Bolts table (they all deny it).
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_azLT1eBnEekgVwHvyUg-oA_6jj2nGyU",
     // Google AdSense publisher ID (public: it's in every page's ad code anyway). See worker/ads.js.
-    // ADSENSE_SLOT (the ad unit's number) can go here too, or in the Cloudflare dashboard.
-    "ADSENSE_CLIENT": "ca-pub-9280614939930921"
+    // ADSENSE_SLOT is the "Guts&Bolts Ads" Display ad unit's number (also public, in the ad code).
+    "ADSENSE_CLIENT": "ca-pub-9280614939930921",
+    "ADSENSE_SLOT": "3917580079"
   },
   "assets": {
     "directory": "./website",
