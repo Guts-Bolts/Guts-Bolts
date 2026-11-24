@@ -10,6 +10,8 @@
 //   /paste         /paste/<id>       a paste               (#/pasteview/<id>)
 //   /academy       /academy/<id>     a course              (#/course/<id>)
 //   /groups        /groups/<id>      a group               (#/group/<id>)
+//   /press         /press/<id>       a Press post: news, creator spotlights (#/pressview/<id>)
+//   /calendar      /calendar/<id>    an event on the calendar: jams, contests, shows (#/calevent/<id>)
 //   /users/<number>                  someone's profile     (#/user/<number>)
 //   /embed/<id>                      just the video player, for other sites to put in a frame
 //   /sitemap.xml                     every page above, plus the fixed pages in legal.js
@@ -34,8 +36,8 @@ const NAME = 'Guts&Bolts';
 const LOGO = SITE + '/img/logo.png';
 const DEFAULT_PIC = SITE + '/img/engine-boom.jpg';
 // The sections that have a list page, in the order the menu shows them.
-export const SECTIONS = ['games', 'videos', 'art', 'paste', 'academy', 'groups'];
-const SECTION_NAMES = { games: 'Games', videos: 'Videos', art: 'Art', paste: 'Paste', academy: 'Academy', groups: 'Groups' };
+export const SECTIONS = ['games', 'videos', 'art', 'paste', 'academy', 'groups', 'press', 'calendar'];
+const SECTION_NAMES = { games: 'Games', videos: 'Videos', art: 'Art', paste: 'Paste', academy: 'Academy', groups: 'Groups', press: 'Press', calendar: 'Calendar' };
 const SECTION_BLURBS = {
   games: 'Free games made by the Guts&Bolts community: obbies, shooters, horror, roleplay, tycoons and more. Play them on PC, Mac, Linux, Android, VR or in your browser.',
   videos: 'Videos from the Guts&Bolts community: gameplay, Studio tutorials, showcases and more.',
@@ -43,7 +45,12 @@ const SECTION_BLURBS = {
   paste: 'Code and text shared by the Guts&Bolts community: Lua scripts, snippets and notes.',
   academy: 'Free courses from G&B Academy: learn Lua scripting, Studio, game design and more, one short lesson at a time.',
   groups: 'Groups on Guts&Bolts: communities of players and game makers.',
+  press: 'News from the Guts&Bolts team, creator spotlights on the people making games and art, and stories from behind the scenes.',
+  calendar: 'What\'s coming up on Guts&Bolts: game jams, art contests, live shows, meetups and game launches. Free to join.',
 };
+const PRESS_KIND_NAMES = { news: 'News', spotlight: 'Creator spotlight', devlog: 'Behind the scenes' };   // (press.js PRESS_KINDS)
+// "Sat, 6 Dec 2026, 18:00 UTC": search engines and visitors without scripts see times in UTC.
+const when = (sec) => new Date(sec * 1000).toUTCString().replace(/:\d\d GMT$/, ' UTC');
 // Kinds that live in the Library (Create) rather than the catalog: the app opens them at #/library/<n>.
 const LIBRARY_KINDS = new Set(['model', 'audio', 'decal', 'plugin', 'animation']);
 const PLATFORMS = ['Windows', 'macOS', 'Linux', 'Android', 'Meta Quest', 'Web browser'];
@@ -405,6 +412,66 @@ const BUILDERS = {
     };
   },
 
+  async press(ask, id) {
+    if (!id) {
+      const r = await ask({ op: 'press.list', args: {} });
+      const list = r.ok ? r.posts || [] : [];
+      const tiles = list.map((p) => '<li><a href="/press/' + encodeURIComponent(p.id) + '">' +
+        (p.picture ? '<img src="/thumb/' + encodeURIComponent(p.picture) + '" alt="' + esc(p.title) + '" loading="lazy" width="320" height="180">' : '<span class="nopic" role="img" aria-label="' + esc(p.title) + '"></span>') +
+        '<b>' + esc(p.title) + '</b><small>' + esc(p.kindName + ' · ' + day(p.at)) + '</small><small>' + esc(blurb(p.summary, 140)) + '</small></a></li>');
+      return listPage('press', tiles, list.map((p) => '/press/' + encodeURIComponent(p.id)));
+    }
+    const r = await ask({ op: 'press.get', args: { id, quiet: true } });
+    if (!r.ok || !r.post || !r.post.published) return null;
+    const p = r.post;
+    const path = '/press/' + encodeURIComponent(p.id);
+    const games = (p.games || []).slice(0, 6);
+    const pic = games[0] ? gamePic(games[0]) : '';
+    return {
+      title: p.title, description: blurb(p.summary || p.text), path, type: 'article', image: pic, imageAlt: games[0] ? games[0].name + ' thumbnail' : p.title,
+      crumbs: [['Press', '/press'], [p.title, path]],
+      data: [{ '@context': 'https://schema.org', '@type': 'NewsArticle', headline: p.title.slice(0, 110), description: p.summary, url: SITE + path,
+        image: [abs(pic) || DEFAULT_PIC], datePublished: iso(p.at), dateModified: iso(p.edited || p.at), articleSection: PRESS_KIND_NAMES[p.kind] || 'News',
+        author: { '@type': 'Organization', name: NAME, url: SITE }, publisher: { '@type': 'Organization', name: NAME, url: SITE, logo: { '@type': 'ImageObject', url: LOGO } },
+        about: p.creator ? person(p.creator) : undefined, wordCount: String(p.text || '').split(/\s+/).filter(Boolean).length }],
+      body: '<article><p class="by">' + esc(PRESS_KIND_NAMES[p.kind] || 'News') + ' · ' + day(p.at) + ' · ' + p.minutes + ' min read</p><h1>' + esc(p.title) + '</h1>' +
+        (p.summary ? '<p class="lead"><b>' + esc(p.summary) + '</b></p>' : '') +
+        (p.blocks || []).map((b) => (b.h ? '<h2>' + esc(b.h) + '</h2>' : '<p class="lead">' + esc(b.p) + '</p>')).join('') +
+        (p.creator ? '<p>More from <a href="/users/' + p.creator.userId + '">' + esc(p.creator.name) + '</a>.</p>' : '') +
+        (games.length ? '<h2>Games in this post</h2><ul class="grid">' + games.map((x) => tile('/games/' + encodeURIComponent(x.id), x.name, count(x.plays, 'visit'), gamePic(x), x.name + ' thumbnail')).join('') + '</ul>' : '') +
+        openBtn('#/pressview/' + encodeURIComponent(p.id), 'Read it on Guts&Bolts') + '</article>',
+    };
+  },
+
+  async calendar(ask, id) {
+    if (!id) {
+      const r = await ask({ op: 'calendar.list', args: {} });
+      const list = r.ok ? r.events || [] : [];
+      return listPage('calendar', list.map((e) => tile('/calendar/' + encodeURIComponent(e.id), e.title, e.kindName + ' · ' + when(e.start), '', e.title)),
+        list.map((e) => '/calendar/' + encodeURIComponent(e.id)));
+    }
+    const r = await ask({ op: 'calendar.get', args: { id } });
+    if (!r.ok || !r.event) return null;
+    const e = r.event;
+    const path = '/calendar/' + encodeURIComponent(e.id);
+    const host = e.group ? { '@type': 'Organization', name: e.group.name, url: SITE + '/groups/' + encodeURIComponent(e.group.id) } : person(e.by);
+    const description = blurb(e.text) || e.kindName + ' on Guts&Bolts, ' + when(e.start) + '.';
+    return {
+      title: e.title, description, path, crumbs: [['Calendar', '/calendar'], [e.title, path]],
+      data: [{ '@context': 'https://schema.org', '@type': 'Event', name: e.title, description, url: SITE + path, startDate: iso(e.start), endDate: iso(e.end),
+        eventAttendanceMode: 'https://schema.org/OnlineEventAttendanceMode', eventStatus: 'https://schema.org/EventScheduled',
+        location: { '@type': 'VirtualLocation', url: SITE + '/app/' + (e.link || '#/calevent/' + encodeURIComponent(e.id)) },
+        organizer: host, isAccessibleForFree: true, offers: { '@type': 'Offer', price: 0, priceCurrency: 'USD', availability: 'https://schema.org/InStock', url: SITE + path } }],
+      body: '<article><p class="by">' + esc(e.kindName) + (e.official ? ' · Official' : '') + '</p><h1>' + esc(e.title) + '</h1>' +
+        '<div class="hero"><div>' + (e.text ? '<p class="lead">' + esc(e.text) + '</p>' : '') + '</div><div class="card">' +
+        openBtn('#/calevent/' + encodeURIComponent(e.id), 'See it on the calendar') +
+        '<dl><dt>Starts</dt><dd>' + esc(when(e.start)) + '</dd><dt>Ends</dt><dd>' + esc(when(e.end)) + '</dd>' +
+        '<dt>Hosted by</dt><dd>' + (e.group ? '<a href="/groups/' + encodeURIComponent(e.group.id) + '">' + esc(e.group.name) + '</a>'
+          : e.by.userId ? '<a href="/users/' + e.by.userId + '">' + esc(e.by.name) + '</a>' : esc(e.by.name)) + '</dd>' +
+        '<dt>Going</dt><dd>' + Number(e.going || 0).toLocaleString('en-US') + '</dd></dl></div></div></article>',
+    };
+  },
+
   async users(ask, id) {
     if (!id || !/^\d{1,11}$/.test(id)) return null;
     const r = await ask({ op: 'profile', args: { id } });
@@ -470,6 +537,9 @@ export async function sitemap(ask) {
   for (const p of await pages(ask, 'art.list', { sort: 'new' }, 'pieces')) { add('/art/' + encodeURIComponent(p.id), p.at); if (p.by && p.by.userId) people.add(p.by.userId); }
   for (const p of await pages(ask, 'paste.list', {}, 'pastes')) { if (p.visibility === 'public') add('/paste/' + encodeURIComponent(p.id), p.at); }
   for (const c of await pages(ask, 'academy.list', { sort: 'new' }, 'courses')) { add('/academy/' + encodeURIComponent(c.id), c.edited || c.at); if (c.by && c.by.userId) people.add(c.by.userId); }
+  for (const p of await pages(ask, 'press.list', {}, 'posts')) add('/press/' + encodeURIComponent(p.id), p.edited || p.at);
+  const cal = await ask({ op: 'calendar.list', args: {} });
+  for (const e of (cal.ok ? cal.events || [] : [])) add('/calendar/' + encodeURIComponent(e.id), e.at);
   const g = await ask({ op: 'groups.list', args: {} });
   for (const x of (g.ok ? g.groups || [] : [])) add('/groups/' + encodeURIComponent(x.id), x.created);
   // People who made something people can find (creator ids on games are account ids, not numbers,
@@ -482,7 +552,7 @@ export async function sitemap(ask) {
 // ---------- asking the server ----------
 // The read-only ops the pages may use (all of them are open to guests in the app too).
 export const SEO_OPS = new Set(['list', 'asset.info', 'profile', 'groups.list', 'groups.get', 'video.list', 'video.get',
-  'art.list', 'art.get', 'paste.list', 'paste.get', 'academy.list', 'academy.get']);
+  'art.list', 'art.get', 'paste.list', 'paste.get', 'academy.list', 'academy.get', 'press.list', 'press.get', 'calendar.list', 'calendar.get']);
 // A visitor who isn't signed in, like a first-time guest on the website, but never saved.
 function visitor() {
   return { id: '0'.repeat(64), name: 'Player', created: 0, lastSeen: 0, ledger: [], grants: {}, owned: [], banned: false,
@@ -508,7 +578,7 @@ export function installSeo(Cls) {
 }
 
 // ---------- routing ----------
-const ROUTE = /^\/(games|items|videos|art|paste|academy|groups|users)(?:\/([^/]{1,80}))?\/?$/;
+const ROUTE = /^\/(games|items|videos|art|paste|academy|groups|users|press|calendar)(?:\/([^/]{1,80}))?\/?$/;
 const EMBED = /^\/embed\/([^/]{1,80})\/?$/;
 export const isSeoPath = (path) => path === '/sitemap.xml' || ROUTE.test(path) || EMBED.test(path);
 
@@ -541,7 +611,7 @@ export function appAddress(path) {
   if (!m) return '/app/';
   const id = m[2] || '';
   const hash = { games: '#/game/', items: '#/item/', videos: '#/watch/', art: '#/artpiece/', paste: '#/pasteview/', academy: '#/course/',
-    groups: '#/group/', users: '#/user/' }[m[1]];
+    groups: '#/group/', users: '#/user/', press: '#/pressview/', calendar: '#/calevent/' }[m[1]];
   return '/app/' + (id ? hash + id : '#/' + m[1]);
 }
 

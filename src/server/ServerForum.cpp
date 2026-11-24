@@ -117,6 +117,7 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
         j["preview"] = forumPreview(sv(first, "text"));
         j["image"] = forumImage(sv(first, "text"));
         j["reactions"] = reactionList(first, me.id);
+        j["hasPoll"] = th.contains("poll") && th["poll"].is_object();
         return j;
     };
     // One page of a thread (page -1 = the last page).
@@ -138,6 +139,7 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
         json t = card(th);
         t["board"] = sv(th, "board");
         t["boardName"] = b ? b->name : "?";
+        t["poll"] = th.contains("poll") ? pollJson(th["poll"], me.userId != 0 ? me.id : std::string(), now) : json(nullptr);
         json r = okay();
         r["thread"] = t; r["posts"] = out; r["page"] = p; r["pages"] = pages;
         r["canReply"] = me.userId != 0 && (!th.value("locked", false) || staff);
@@ -258,7 +260,9 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
         if (b->staffOnly && !staff) return fail(std::string("Only Guts&Bolts staff post in ") + b->name + ".");
         const std::string title = say(str("title"), kForumTitle), text = say(str("text"), kForumText, true);
         if (title.empty()) return fail("Give your thread a title.");
-        if (text.empty()) return fail("Write something first.");
+        json poll;   // a poll on the thread (ServerUtil.h makePoll)
+        if (const std::string bad = makePoll(args, now, poll); !bad.empty()) return fail(bad);
+        if (text.empty() && poll.is_null()) return fail("Write something first.");
         long long& last = m_lastPost["ft:" + me.id];
         if (now - last < kThreadCooldown) return fail("Slow down a little - wait a minute between new threads.");
         last = now;
@@ -266,6 +270,7 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
         m_forum[id] = {{"id", id}, {"board", b->id}, {"title", title}, {"by", me.id}, {"at", now}, {"last", now}, {"lastBy", me.id},
                        {"views", 0}, {"pinned", false}, {"locked", false},
                        {"posts", json::array({{{"id", Account::randomHex(6)}, {"by", me.id}, {"text", text}, {"at", now}}})}};
+        if (!poll.is_null()) m_forum[id]["poll"] = poll;
         // A full board: the threads quiet the longest go (pinned ones stay).
         std::vector<std::string> drop;
         size_t kept = 0;
@@ -299,6 +304,18 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
         saveForum();
         json r = okay();
         r["thread"] = card(th);
+        return r;
+    }
+    if (name == "forum.pollVote") {   // option: an answer's number (from 0), or -1 to take your vote back
+        if (me.userId == 0) return fail("Sign up to vote in polls.");
+        User* starter = findUser(sv(th, "by"));
+        if (starter && (blocks(me, *starter) || blocks(*starter, me))) return fail("You can't vote in this poll.");
+        if (!th.contains("poll")) return fail("There's no poll there.");
+        const std::string bad = pollVote(th["poll"], me.id, args.contains("option") ? args["option"] : json(nullptr), now);
+        if (!bad.empty()) return fail(bad);
+        saveForum();
+        json r = okay();
+        r["poll"] = pollJson(th["poll"], me.id, now);
         return r;
     }
     if (name == "forum.react") {   // emoji on one post, on or off
