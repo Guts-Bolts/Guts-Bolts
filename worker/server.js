@@ -35,7 +35,8 @@ import { installSeo } from './seo.js';   // pages search engines can read (seoAs
 import { installVideos, VIDEO_LOOK_ONLY, VIDEO_COSTLY } from './videos.js';   // G&B Videos: upload and watch videos
 import { installStreams, STREAM_LOOK_ONLY, STREAM_COSTLY } from './streams.js';   // G&B Live: live streams in Videos
 import { installAcademy, ACADEMY_LOOK_ONLY, ACADEMY_COSTLY } from './academy.js';   // G&B Academy: courses anyone can write
-import { installFyxaCloud } from './fyxa-cloud.js';   // Fyxa answered by Cloudflare's AI, with daily limits
+import { installFyxaCloud } from './fyxa-cloud.js';
+import { installClubPay } from './club-pay.js';   // paid Boltworks Club tiers + Bolts packs (Stripe)   // Fyxa answered by Cloudflare's AI, with daily limits
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
   kLogTitle, kLogText, kEventName, kEventText } from './extras.js';   // achievements, game update logs, events
@@ -1554,10 +1555,10 @@ export class GbServerObject extends DurableObject {
   isVerified(u) { return this.isOfficial(u) || grantValid(this.official, 'verified', u.id, (u.grants || {}).verified); }
   isPartner(u) { return grantValid(this.official, 'partner', u.id, (u.grants || {}).partner); }
   // Boltworks Club tier shown next to their name: 'obc', 'tbc', 'bwc' or '' (the best one they have).
-  // A tier is a signed badge like the others; only the official account gives them out (for now: free, no payments).
+  // A tier is a signed badge the official account gives out, or a membership they pay for (club-pay.js).
   clubOf(u) {
-    const g = u.grants || {};
-    for (const k of CLUB_TIERS) if (g[k] && grantValid(this.official, k, u.id, g[k])) return k;
+    const g = u.grants || {}, paid = this.paidTierOf(u);
+    for (const k of CLUB_TIERS) if ((g[k] && grantValid(this.official, k, u.id, g[k])) || paid === k) return k;
     return '';
   }
   claimOfficial(u) {
@@ -4177,8 +4178,10 @@ export class GbServerObject extends DurableObject {
     }
     if (name === 'boltworks.status') {
       const registrations = this.getMeta('boltworksWaitlist', []);
-      return okay({ registered: registrations.some((entry) => entry.id === me.id), total: registrations.length });
+      return okay({ registered: registrations.some((entry) => entry.id === me.id), total: registrations.length,
+        paid: this.paidTierOf(me), canManage: !!me.stripeCustomer });
     }
+    if (name === 'club.manage') return this.clubManageOp(me, args);   // club-pay.js
     if (name === 'boltworks.register') {
       const registrations = this.getMeta('boltworksWaitlist', []);
       if (registrations.some((entry) => entry.id === me.id))
@@ -7040,7 +7043,7 @@ export class GbServerObject extends DurableObject {
         this.scanModerationSubmission(req, reply.moderationActor, reply),
         'Fyxa WebSocket moderation scan');
     }
-    if (reply.webJob || reply.iceJob || reply.fyxaCloud) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
+    if (reply.webJob || reply.iceJob || reply.fyxaCloud || reply.stripePortal) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
     if ('id' in req) reply.id = req.id;
     this.sendTo(c, reply);
   }
@@ -7049,6 +7052,14 @@ export class GbServerObject extends DurableObject {
     const url = new URL(request.url);
     // worker/mcp.js asking a Studio something (an internal address: requests from the internet never get here).
     if (url.hostname === 'gb.internal' && url.pathname === '/mcp-call' && request.method === 'POST') return this.mcpFetch(request);
+    // worker/stripe.js passing on a paid membership or Bolts pack (also internal-only; club-pay.js).
+    if (url.hostname === 'gb.internal' && url.pathname === '/stripe-event' && request.method === 'POST') {
+      let job = null;
+      try { job = JSON.parse(await request.text()); } catch { job = null; }
+      let r;
+      try { r = this.stripeEvent(job); } catch (e) { r = { ok: false, error: String(e && e.message || e), retry: true }; }
+      return new Response(JSON.stringify(r), { headers: { 'content-type': 'application/json' } });
+    }
     if (url.pathname === '/ws') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket.', { status: 426 });
       const pair = new WebSocketPair();
@@ -7216,6 +7227,7 @@ export class GbServerObject extends DurableObject {
     if (answer.ok && answer.supabase) answer = await this.supabaseFollowUp(answer);
     if (answer.ok && answer.translate) answer = await this.translate(answer);
     if (answer.ok && answer.fyxaCloud) answer = await this.fyxaCloudAnswer(answer);
+    if (answer.ok && answer.stripePortal) answer = await this.clubPortalAnswer(answer);
     if (answer.ok && answer.fyxaHome) answer = await this.fyxaHomeAnswer(answer);
     if (answer.ok && answer.webJob) answer = await this.webFetch(answer);
     if (answer.ok && answer.iceJob) answer = await this.iceFetch(answer);
@@ -7254,6 +7266,7 @@ installChats(GbServerObject);
 installBanLists(GbServerObject);
 installTesters(GbServerObject);
 installFyxaCloud(GbServerObject);
+installClubPay(GbServerObject);
 installRatings(GbServerObject);
 installLaunchpad(GbServerObject);
 installBackgrounds(GbServerObject);
