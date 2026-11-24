@@ -81,3 +81,13 @@ test('Videos and Live both use the player, and its looks are loaded', () => {
     for (const one of sel.split(',')) assert.match(one.trim(), /\.gbp/, 'selector outside the player: ' + one.trim());
   }
 });
+
+test('the big play button is a plain circle, centred however the page styles buttons', () => {
+  const css = read('website/app/videoplayer.css');
+  const rule = /\.gbp \.gbp-big \{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'the big button rule is strong enough to beat ".gbp button"');
+  assert.match(rule[1], /inset: 0; margin: auto/);
+  assert.match(rule[1], /border-radius: 50%/);
+  // Not a red rounded rectangle (too close to another site's logo).
+  assert.doesNotMatch(css, /\.gbp-big[^{]*\{[^}]*background: var\(--gbp-red\)/);
+});
