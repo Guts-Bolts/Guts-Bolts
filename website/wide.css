@@ -1,0 +1,59 @@
+/* Room to Breathe: the website uses the whole screen.
+
+   Before this, every page sat in a 1060px column in the middle, so a big monitor
+   showed a narrow strip with empty space on both sides. Now the bars, the page and
+   the footer stretch with the window, up to --gb-page-width (so lines don't get
+   silly long on ultra-wide screens), with side gaps that grow with the screen.
+
+   This file is loaded LAST, by both the site (app/index.html) and the front page
+   (index.html), so it wins over the older width rules in app.css, platform.css,
+   polish.css and home-polish.css. Phones and tablets are not changed: below
+   1100px everything already fills the screen. Colours come from the old tokens,
+   so dark mode and themes keep working. To go back to the narrow look, remove the
+   two <link>s to this file. */
+
+:root {
+  --gb-page-width: 2200px;
+  --gb-gutter: clamp(12px, 2.2vw, 44px);
+}
+
+/* --- The frame: bars, page, footer -------------------------------------------- */
+.wrap, .page, .foot,
+.topbar .wrap, .nav .wrap, .section-bar .wrap, .subnav .wrap {
+  max-width: var(--gb-page-width);
+  padding-left: var(--gb-gutter);
+  padding-right: var(--gb-gutter);
+  box-sizing: border-box;
+}
+.page { width: 100%; }
+
+/* The front page (index.html) has its own main/footer. */
+@media (min-width: 821px) {
+  body > main:not(.content), body > footer:not(.foot) { width: calc(100% - 2 * var(--gb-gutter)); max-width: calc(var(--gb-page-width) - 2 * var(--gb-gutter));
+    margin-left: auto; margin-right: auto; box-sizing: border-box; }
+}
+
+/* --- Bigger cards on big screens, so a row isn't 14 tiny pictures --------------- */
+@media (min-width: 1500px) {
+  .grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .bgrid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .video-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
+  .art-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  .product-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .browse { grid-template-columns: 190px 1fr; }
+}
+
+/* --- Watching a video ---------------------------------------------------------- */
+/* The player takes the big column and "Up next" gets a wider side column. The
+   player never gets taller than the window, so the title stays in view (the
+   picture keeps its shape: the black bars just grow on the sides). */
+@media (min-width: 861px) {
+  .video-watch { grid-template-columns: minmax(0, 1fr) clamp(320px, 24vw, 420px); gap: 24px; }
+  .video-watch .video-stage { max-height: calc(100vh - 230px); min-height: 280px; }
+}
+@media (min-width: 1500px) {
+  .video-next-list .video-card { grid-template-columns: 168px minmax(0, 1fr); }
+}
+
+/* --- Pages that are mostly reading keep a comfy line length ----------------------- */
+.terms, .settings, .configure, .form { margin-right: auto; }
