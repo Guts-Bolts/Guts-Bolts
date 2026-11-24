@@ -4178,6 +4178,10 @@ void ScriptEngine::fireGui(SignalKind kind, uint64_t id) { fire(kind, id, nullpt
 void ScriptEngine::fireFocusLost(uint64_t id, bool enter) {
     fire(SignalKind::GuiFocusLost, id, [enter](lua_State* co) { lua_pushboolean(co, enter); return 1; });
 }
+void ScriptEngine::fireChanged(uint64_t id, const std::function<int(lua_State*)>& pushArgs) {
+    fire(SignalKind::Changed, id, pushArgs);
+}
+
 void ScriptEngine::firePropertyChanged(uint64_t id, const char* property) {
     std::string name = property;
     fire(SignalKind::Changed, id, [name](lua_State* co) { lua_pushstring(co, name.c_str()); return 1; });

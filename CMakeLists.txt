@@ -584,6 +584,7 @@ add_library(gb_engine STATIC
     src/scripting/SpatialQueries.cpp
     src/scripting/Shapecasts.cpp
     src/scripting/LuauLibs.cpp
+    src/scripting/StandIns.cpp
     src/scripting/Experiments.cpp
     src/scripting/Drawings.cpp
     src/scripting/LuaRealism.cpp
@@ -1497,6 +1498,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(LuauLibraryTests tests/LuauLibraryTests.cpp)
     target_link_libraries(LuauLibraryTests PRIVATE gb_engine)
     add_test(NAME LuauLibraryTests COMMAND LuauLibraryTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Roblox classes kept as stand-ins: ObjectValue, Configuration, MeshPart, Atmosphere... (StandIns.h)
+    add_executable(StandInClassesTests tests/StandInClassesTests.cpp)
+    target_link_libraries(StandInClassesTests PRIVATE gb_engine)
+    add_test(NAME StandInClassesTests COMMAND StandInClassesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Weld / Motor6D / character joints, hinge limits, mesh stand-ins, fast bullets, the Blaster gun.
