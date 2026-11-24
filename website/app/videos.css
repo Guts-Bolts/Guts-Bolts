@@ -19,6 +19,14 @@
 .video-watch { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
 .video-stage { background: #000; border: 2px solid var(--line); aspect-ratio: 16 / 9; display: grid; place-items: center; }
 .video-stage video { width: 100%; height: 100%; display: block; background: #000; }
+/* The watch page: player on top-left, Up next on the right. Theater mode (videoplayer.js) makes the player full width. */
+.video-watch-areas { grid-template-areas: "stage next" "main next"; row-gap: 0; }
+.video-watch-areas > .video-player-stage { grid-area: stage; }
+.video-watch-areas > .video-main { grid-area: main; min-width: 0; }
+.video-watch-areas > .video-next { grid-area: next; }
+.video-watch-areas.theater { grid-template-areas: "stage stage" "main next"; }
+.video-watch-areas.theater > .video-player-stage { max-height: calc(100vh - 150px); border-color: #000; }
+.video-watch-areas.theater > .video-next { margin-top: 10px; }
 .video-title { margin: 10px 0 6px; font-size: 21px; overflow-wrap: anywhere; }
 .video-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
 .video-channel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: bold; }
@@ -38,6 +46,7 @@
 .video-progress span { display: block; height: 100%; width: 0; background: var(--gb-red, #d4202a); transition: width .2s; }
 @media (max-width: 860px) {
   .video-watch { grid-template-columns: 1fr; }
+  .video-watch-areas, .video-watch-areas.theater { grid-template-areas: "stage" "main" "next"; }
 }
 @media (max-width: 700px) {
   .video-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
