@@ -25,6 +25,8 @@
 //                (default gutsandbolts.net).
 //   SUPABASE_URL  the Supabase project URL (public configuration, not a credential).
 //   SUPABASE_SECRET_KEY  a Secret from Supabase Settings > API Keys; server-only, never commit it.
+//   GOOGLE_SITE_VERIFICATION  the code from Google Search Console's "HTML tag" check (just the
+//                content="..." part); every page then carries it (worker/seo.js, docs/google-search.md).
 //   ADSENSE_CLIENT / ADSENSE_SLOT / ADS_GOOGLE_CONSENT  banner ads (Google AdSense); see worker/ads.js.
 //   STRIPE_SECRET_KEY (Secret), STRIPE_PUBLISHABLE_KEY, STRIPE_PRICE_ID, STRIPE_WEBHOOK_SECRET (Secret)
 //                Boltworks Club card payments; see worker/stripe.js and STRIPE_INTEGRATION_TODO.md.
@@ -74,6 +76,9 @@
     "run_worker_first": ["/api", "/api/*", "/ws", "/ws/remote", "/ws/infrastructure", "/thumb/*", "/icon/*", "/avatar/*", "/download/*", "/", "/index.html", "/app", "/app/", "/app/index.html",
       "/ads.txt", "/ads-config", "/privacy", "/privacy.html", "/cookies", "/cookies.html", "/copyright", "/copyright.html",
       "/contact", "/contact.html", "/terms", "/terms/", "/robots.txt", "/sitemap.xml", "/security.txt", "/.well-known/security.txt", "/.well-known/gpc.json", "/checkout", "/checkout.html",
+      // Pages for search engines (worker/seo.js), and the fixed pages it tidies.
+      "/games", "/games/*", "/items/*", "/videos", "/videos/*", "/art", "/art/*", "/paste", "/paste/*", "/academy", "/academy/*",
+      "/groups", "/groups/*", "/users/*", "/server", "/server/", "/server/index.html",
       "/products", "/products/*", "/mcp", "/mcp/*", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*", "/.well-known/oauth-authorization-server"]
   },
   "durable_objects": {

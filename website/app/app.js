@@ -258,7 +258,7 @@ function gamePic(g, cls = 'pic') {
 
 // A game's icon (a small square picture), or its first letter on its colours.
 function gameIcon(g, size = 48) {
-  if (g.icon) return html`<img class="game-icon" src="/icon/${encodeURIComponent(g.id)}?v=${g.icon}" alt="" width="${size}" height="${size}">`;
+  if (g.icon) return html`<img class="game-icon" src="/icon/${encodeURIComponent(g.id)}?v=${g.icon}" alt="${(g.name || 'Game') + ' icon'}" width="${size}" height="${size}">`;
   return html`<span class="game-icon" style="width:${size}px;height:${size}px;background:${raw(gameColors(g.id))}">${(g.name || '?').slice(0, 1)}</span>`;
 }
 const ACCESS_NAMES = { public: 'Public', friends: 'Friends only', testers: 'Testers only', private: 'Private' };
@@ -444,7 +444,7 @@ const PASS_SVG = '<svg viewBox="0 0 64 64" width="100%" height="100%" aria-hidde
   + '<circle cx="6" cy="32" r="6" fill="#fff"/><circle cx="58" cy="32" r="6" fill="#fff"/><path d="M22 16v32" stroke="#fff" stroke-width="2" stroke-dasharray="3 3"/>'
   + '<path d="M38 24l2.4 5 5.4.6-4 3.7 1.1 5.4-4.9-2.8-4.9 2.8 1.1-5.4-4-3.7 5.4-.6z" fill="#ffd34d"/></svg>';
 function passPic(p) {
-  return p.thumb ? html`<img class="lib-thumb" data-thumb="${p.id}" data-v="${p.thumb}" alt="">` : raw(PASS_SVG);
+  return p.thumb ? html`<img class="lib-thumb" data-thumb="${p.id}" data-v="${p.thumb}" alt="${p.name || 'Game pass'}">` : raw(PASS_SVG);
 }
 // A pass on a game's page: picture, name, price and Buy (or Owned).
 function passCard(p) {
@@ -509,7 +509,7 @@ function guestPicker(id, name) {
   for (const g of ['boy', 'girl'])
     avatarPicture(GUEST_LOOKS[g], [], 150).then((url) => {
       const el = document.querySelector(`[data-guest-pic="${g}"]`);
-      if (url && el) el.innerHTML = html`<img src="${url}" alt="" width="150" height="188">`.s;
+      if (url && el) el.innerHTML = html`<img src="${url}" alt="${g === 'boy' ? 'Boy character' : 'Girl character'}" width="150" height="188">`.s;
     }).catch(() => {});
 }
 // Open the app on this game (if it's installed), with a way to get it if not.
@@ -965,7 +965,7 @@ function feedPictures(feedR, where) {
     if (seen.has(p.user.id)) continue;
     seen.add(p.user.id);
     avatarPicture(p.user.avatar, p.user.wearing || [], 40).then((url) => {
-      if (url) where.querySelectorAll(`[data-feed-avatar="${p.user.id}"]`).forEach((el) => { el.innerHTML = html`<img src="${url}" alt="" width="40" height="50">`.s; });
+      if (url) where.querySelectorAll(`[data-feed-avatar="${p.user.id}"]`).forEach((el) => { el.innerHTML = html`<img src="${url}" alt="${(p.user.name || 'Player') + '\'s avatar'}" width="40" height="50">`.s; });
     }).catch(() => {});
   }
 }
@@ -1136,7 +1136,7 @@ const forumCard = (t, showBoard) => html`<article class="fx-card${t.pinned ? ' p
       <span class="fx-av">${forumAvatar(t.by, 28)}</span>${forumWho(t.by)}<span class="fx-dot">•</span><span title="${new Date(t.at * 1000).toLocaleString()}">${ago(t.at)}</span>
       ${t.pinned ? html`<span class="fx-tag pin">📌 Pinned</span>` : ''}${t.locked ? html`<span class="fx-tag lock">🔒 Locked</span>` : ''}</div>
     <a class="fx-title" href="#/forum/t/${t.id}">${t.title}</a>
-    ${t.image ? html`<a class="fx-card-media" href="#/forum/t/${t.id}"><img src="${t.image}" alt="" loading="lazy" referrerpolicy="no-referrer"></a>` : ''}
+    ${t.image ? html`<a class="fx-card-media" href="#/forum/t/${t.id}"><img src="${t.image}" alt="${t.title}" loading="lazy" referrerpolicy="no-referrer"></a>` : ''}
     ${t.preview ? html`<a class="fx-preview" href="#/forum/t/${t.id}">${t.preview}</a>` : ''}
     <div class="fx-actions">
       <a class="fx-pill" href="#/forum/t/${t.id}/9999">💬 ${plural(t.replies, 'comment', 'comments')}</a>
@@ -1431,8 +1431,8 @@ const lower = (s) => String(s || '').toLowerCase();
 // A tile: picture, blue name, price; pointing at it shows who made it, when, and how many sold.
 function browseCard(a, href, price) {
   return html`<div class="card square bcard">
-    <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="" style="width:100%;height:100%;object-fit:contain;border:0">`
-      : (a.kind === 'model' || a.kind === 'plugin') && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
+    <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="${a.name}" style="width:100%;height:100%;object-fit:contain;border:0">`
+      : (a.kind === 'model' || a.kind === 'plugin') && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="${a.name}">`
       : a.kind === 'audio' || a.kind === 'plugin' || a.kind === 'model' || a.kind === 'animation' ? html`<span class="lib-kind">${a.kind === 'audio' ? raw(SPEAKER_SVG) : ''}${KINDS[a.kind] || a.kind}</span>`
       : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">${a.limitedType === 'limited' ? 'LIMITED' : 'LIMITED U'}</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsale ? html`<span class="timed-tag">OFF SALE</span>` : a.offsaleAt ? html`<span class="timed-tag">TIMED</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
@@ -1563,7 +1563,7 @@ pages.library = async (id = '') => {
       <div class="item-cols asset-cols">
         <div class="item-pic">
           <div class="pic" id="assetPic">${a.kind === 'decal' ? html`<span class="muted">Loading...</span>`
-            : (a.kind === 'model' || a.kind === 'plugin') && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
+            : (a.kind === 'model' || a.kind === 'plugin') && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="${a.name}">`
             : a.kind === 'audio' ? html`<span class="lib-kind audio-big">${raw(SPEAKER_SVG)}Audio</span>`
             : html`<span class="lib-kind">${KINDS[a.kind] || a.kind}</span>`}</div>
           ${officialBadge(a)}
@@ -1612,7 +1612,7 @@ pages.library = async (id = '') => {
   call('profile', { id: a.creator }).then((p) => {
     const el = $('#creatorPic');
     if (!p.ok || !el) return;
-    avatarPicture(p.user.avatar, p.wearing || [], 48).then((url) => { if (url && el.isConnected) el.innerHTML = html`<img src="${url}" alt="">`.s; });
+    avatarPicture(p.user.avatar, p.wearing || [], 48).then((url) => { if (url && el.isConnected) el.innerHTML = html`<img src="${url}" alt="${(p.user.name || 'Creator') + '\'s avatar'}">`.s; });
   }).catch(() => {});
 };
 
@@ -1675,7 +1675,7 @@ let serverPage = 1;   // which page of a game's server cards
 function lyretoCard(l, whose) {
   if (!l || !l.link) return '';
   return html`<div class="lyreto-card">
-    ${l.image ? html`<img class="lyreto-pic" src="${l.image}" alt="" loading="lazy" referrerpolicy="no-referrer">` : html`<div class="lyreto-pic lyreto-mark">L</div>`}
+    ${l.image ? html`<img class="lyreto-pic" src="${l.image}" alt="${l.title || 'Lyreto server'}" loading="lazy" referrerpolicy="no-referrer">` : html`<div class="lyreto-pic lyreto-mark">L</div>`}
     <div class="grow"><div class="lyreto-kicker">Lyreto server</div>
       <b>${l.title || 'Chat with ' + whose + ' on Lyreto'}</b>
       ${l.description ? html`<p>${l.description}</p>` : html`<p>Chat, voice and hang out with other players.</p>`}</div>
@@ -1721,7 +1721,7 @@ function gameGallery(g) {
         <button type="button" class="gallery-arrow next" data-act="galleryStep" data-step="1" aria-label="Next picture">&rsaquo;</button>
         <span class="gallery-count" id="galleryCount">1 / ${pics.length}</span>` : ''}</div>
     ${pics.length > 1 ? html`<div class="gallery-strip">${pics.map((p, i) => html`<button type="button" class="gallery-thumb ${i ? '' : 'on'}"
-        data-act="galleryShow" data-i="${i}" aria-label="Picture ${i + 1} of ${pics.length}"><img src="${p.src}" alt="" loading="lazy"></button>`)}</div>` : ''}</div>`;
+        data-act="galleryShow" data-i="${i}" aria-label="Picture ${i + 1} of ${pics.length}"><img src="${p.src}" alt="${p.alt}" loading="lazy"></button>`)}</div>` : ''}</div>`;
 }
 function galleryGo(i) {
   const n = gallery.pics.length;
@@ -2187,7 +2187,7 @@ pages.item = async (id) => {
   call('profile', { id: a.creator }).then((p) => {
     const el = $('#creatorPic');
     if (!p.ok || !el) return;
-    avatarPicture(p.user.avatar, p.wearing || [], 48).then((url) => { if (url && el.isConnected) el.innerHTML = html`<img src="${url}" alt="">`.s; });
+    avatarPicture(p.user.avatar, p.wearing || [], 48).then((url) => { if (url && el.isConnected) el.innerHTML = html`<img src="${url}" alt="${(p.user.name || 'Creator') + '\'s avatar'}">`.s; });
   }).catch(() => {});
 };
 
@@ -2569,7 +2569,7 @@ pages.create = async (tab = 'games') => {
       <b>Avatar &gt; Accessories</b> to place it on the head and upload it from there.</p>` : form;
   const row = (a) => html`<div>
       ${a.kind === 'game' ? gameIcon(a, 48) : ''}
-      ${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="">` : ''}
+      ${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="${a.name}">` : ''}
       ${clothing || face || bundle || kind === 'hat' || kind === 'gear' ? html`<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#fff">${itemIcon(a)}</div>` : ''}
       <div class="grow"><b>${a.kind === 'decal' || a.kind === 'audio' || a.kind === 'plugin' ? html`<a href="#/library/${assetNum(a)}">${a.name}</a>` : a.name}</b><br><span class="small muted">
         ${a.kind === 'game' ? html`${a.plays} plays · ${ACCESS_NAMES[a.access || 'public']}` : html`${a.price > 0 ? bolts(a.price) : 'free'} · ${a.sales} sold`}
@@ -2822,7 +2822,7 @@ pages.configure = async (id) => {
     const file = inp.files[0];
     if (!file) return;
     const box = view.querySelector(inp.dataset.preview === 'icon' ? '.icon-prev' : '.thumb-prev');
-    box.innerHTML = html`<img src="${URL.createObjectURL(file)}" alt="">`.s;
+    box.innerHTML = html`<img src="${URL.createObjectURL(file)}" alt="The picture you picked">`.s;
   }));
 };
 
@@ -2950,7 +2950,7 @@ function inventoryCard(a) {   // an item card, plus which numbered copies of a L
   if (INVENTORY_LINK[a.kind]) {   // a game or Library thing: its picture (or an icon) and a link to its page
     return html`<div class="inv-item"><a class="card square" href="${INVENTORY_LINK[a.kind](a)}">
       <div class="pic-wrap"><div class="pic">${a.kind === 'game' ? gameIcon(a, 150)
-        : a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="">` : html`<span style="font-size:48px">${raw(INVENTORY_ICON[a.kind])}</span>`}</div></div>
+        : a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="${a.name}">` : html`<span style="font-size:48px">${raw(INVENTORY_ICON[a.kind])}</span>`}</div></div>
       ${a.access === 'private' ? html`<span class="timed-tag">PRIVATE</span>` : ''}
       <div class="name">${a.name}</div><div class="by">${KINDS[a.kind] || a.kind} · by ${a.creatorName}${verified(a.creatorVerified)}</div></a></div>`;
   }
@@ -3097,7 +3097,7 @@ pages.user = async (id, tab, page, more) => {
   for (const p of friends) {
     avatarPicture(p.avatar, p.wearing || [], 60).then((url) => {
       const box = view.querySelector(`[data-friend-avatar="${p.id}"]`);
-      if (url && box) box.innerHTML = html`<img src="${url}" alt="" width="60" height="75">`.s;
+      if (url && box) box.innerHTML = html`<img src="${url}" alt="${(p.name || 'Friend') + '\'s avatar'}" width="60" height="75">`.s;
     }).catch(() => {});
   }
 };
@@ -3713,7 +3713,7 @@ function connectBox(ca) {
 function uploadsBox(up) {
   if (!up.ok) return html`<div class="box"><h2 class="boxhead">Uploads to check</h2><p class="error">${up.error}</p></div>`;
   const row = (a) => html`<div class="report">
-      <div class="row"><div class="review-preview" data-preview="${a.id}" data-kind="${a.kind}"><span class="muted small">Loading...</span></div>
+      <div class="row"><div class="review-preview" data-preview="${a.id}" data-kind="${a.kind}" data-name="${a.name}"><span class="muted small">Loading...</span></div>
         <div class="grow"><p><b>${a.name}</b> <span class="small muted">(${KINDS[a.kind] || a.kind}) by
           <a href="#/user/${a.creator}">${a.creatorName}</a> · ${ago(a.updated || a.created)}</span></p>
           ${a.description ? html`<p class="small">${a.description}</p>` : ''}
@@ -3729,7 +3729,7 @@ function loadReviewPreviews() {
     assetUrl(el.dataset.preview).then((f) => {
       if (!f.url) { el.innerHTML = html`<span class="small error">${f.error}</span>`.s; return; }
       el.innerHTML = (el.dataset.kind === 'audio' ? html`<audio controls preload="none" src="${f.url}"></audio>`
-        : html`<a href="${f.url}" target="_blank" rel="noopener"><img src="${f.url}" alt=""></a>`).s;
+        : html`<a href="${f.url}" target="_blank" rel="noopener"><img src="${f.url}" alt="${el.dataset.name || 'Preview'}"></a>`).s;
     });
   }
 }

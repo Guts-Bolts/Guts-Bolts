@@ -6,7 +6,7 @@
 //   - the text is kept as typed (no word filter: it would break code), the title is filtered
 //   - only the person who made it (or staff) can delete it; pastes can't be changed
 //   - kPerDay pastes a day (Verified: kPerDayVerified), at most kMostEach kept each
-//   paste.make {title, text, lang, visibility, expires}  paste.get {id}  paste.list {page, lang, by}
+//   paste.make {title, text, lang, visibility, expires}  paste.get {id, quiet}  paste.list {page, lang, by}
 //   paste.mine {}  paste.delete {id}  paste.raw {id} (no account: worker/index.js asks for /pasteraw/)
 // Kept in pastes.json ({pastes: id -> paste, made: account -> {day, n}}).
 #include "Server.h"
@@ -133,7 +133,7 @@ json GbServer::pasteOp(const std::string& name, User* me, const json& args) {
     if (name == "paste.get") {
         json* p = pasteLive(sv(args, "id"));
         if (!p) return fail("That paste isn't here. It may have run out or been deleted.");
-        if (!me || sv(*p, "by") != me->id) { (*p)["views"] = p->value("views", 0LL) + 1; savePastes(); }
+        if (!(args.contains("quiet") && args["quiet"] == true) && (!me || sv(*p, "by") != me->id)) { (*p)["views"] = p->value("views", 0LL) + 1; savePastes(); }
         json r = okay(); r["paste"] = pasteJson(*p, me, true); return r;
     }
 
