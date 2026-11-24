@@ -92,11 +92,12 @@ export const PRODUCTS = [
   {
     id: 'communities', name: 'Communities', status: 'open', href: '#/forum',
     blurb: 'Forums, groups and people to meet.',
-    pages: ['forum', 'forumsearch', 'groups', 'group', 'people'],
+    pages: ['forum', 'forumsearch', 'groups', 'group', 'people', 'leaderboards'],
     links: [
       ['Forum', '#/forum', 'forum'],
       ['Groups', '#/groups', 'groups'],
       ['People', '#/people', 'people'],
+      ['Leaderboards', '#/leaderboards', 'leaderboards'],
     ],
   },
   {

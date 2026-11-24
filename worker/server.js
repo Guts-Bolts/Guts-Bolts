@@ -31,6 +31,7 @@ import { installPromoText } from './promotext.js';   // Promotional text on game
 import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js';   // share links that count clicks, plays and buys
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
+import { installLeaderboards, LEADER_LOOK_ONLY } from './leaderboards.js';   // site-wide top lists (#/leaderboards)
 import { installSeo } from './seo.js';   // pages search engines can read (seoAsk)
 import { installVideos, VIDEO_LOOK_ONLY, VIDEO_COSTLY } from './videos.js';   // G&B Videos: upload and watch videos
 import { installStreams, STREAM_LOOK_ONLY, STREAM_COSTLY } from './streams.js';   // G&B Live: live streams in Videos
@@ -603,7 +604,7 @@ const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this mu
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'servers.private', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
-for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...LEADER_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
 for (const op of SHARE_GUEST_OK) GUEST_OK.add(op);   // sharelinks.js (anyone can open a link)
 
@@ -3511,7 +3512,7 @@ export class GbServerObject extends DurableObject {
         isFollowing: (me.following || []).includes(u.id), blocked: (me.blocked || []).includes(u.id),
         online: this.presence(me, u).online, playing: this.presence(me, u).playing, placeVisits, gameBadges,
         blurb: u.blurb || '', status: (u.posts || [])[0] || null, playerBadges: this.playerBadgesOf(u), allPlayerBadges: PLAYER_BADGES,
-        achievements: achievementsOf(achievementStats(u, [...this.assets.values()].filter((a) => a.creator === u.id), t)) });
+        achievements: achievementsOf(achievementStats(u, [...this.assets.values()].filter((a) => a.creator === u.id), t, this.uploadCounts(u.id))) });   // (uploadCounts: leaderboards.js)
     }
     if (name === 'profile.inventory') {
       // Everything someone owns (catalog items, games, audio, models...), a page at a time, in one group (INVENTORY_CATS).
@@ -3574,6 +3575,7 @@ export class GbServerObject extends DurableObject {
     if (['game.testers', 'game.addTester', 'game.removeTester', 'game.testerNote', 'game.amTester'].includes(name)) return this.testerOp(name, me, args);   // testers.js
     if (name.startsWith('art.')) return this.artOp(name, me, args);   // art.js
     if (name.startsWith('paste.')) return this.pasteOp(name, me, args);   // paste.js
+    if (name.startsWith('leaders.')) return this.leadersOp(name, me, args);   // leaderboards.js
     if (name.startsWith('video.')) return this.videoOp(name, me, args);   // videos.js
     if (name.startsWith('stream.')) return this.streamOp(name, me, args);   // streams.js
     if (name.startsWith('academy.')) return this.academyOp(name, me, args);   // academy.js
@@ -7276,6 +7278,7 @@ installPromoText(GbServerObject);
 installShareLinks(GbServerObject);
 installArt(GbServerObject);
 installPaste(GbServerObject);
+installLeaderboards(GbServerObject);
 installSeo(GbServerObject);
 installVideos(GbServerObject);
 installStreams(GbServerObject);
