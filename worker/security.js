@@ -33,7 +33,8 @@ export function withSecurityHeaders(response, request) {
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   headers.set('X-Frame-Options', 'DENY');
-  headers.set('Permissions-Policy', 'camera=(), microphone=(self), geolocation=(), payment=(), usb=()');
+  // (camera and screen sharing: going live in G&B Live, website/app/streams.js)
+  headers.set('Permissions-Policy', 'camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=(), usb=()');
   headers.set('Origin-Agent-Cluster', '?1');
   const url = new URL(request.url);
   if (url.protocol === 'https:' && (url.hostname === 'gutsandbolts.net' || url.hostname.endsWith('.gutsandbolts.net')))

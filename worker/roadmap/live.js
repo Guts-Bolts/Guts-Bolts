@@ -1,4 +1,4 @@
 export default {
-  id: 'live', title: 'Live: go live and chat with viewers', status: 'planned', version: '', pr: 0, time: 1794270244,
-  text: 'Livestreams for anything allowed, not only games: go live from the browser, live chat with moderation, follows and "is live" alerts. Games will be one category among many.',
+  id: 'live', title: 'Live: go live and chat with viewers', status: 'done', version: '', pr: 414, time: 1794270244,
+  text: 'Livestreams for anything allowed, not only games: go live from the browser (camera or screen), live chat with time outs, slow mode and deleting lines, follows and "is live" alerts. Part of G&B Videos, and free: the stream goes through Cloudflare R2 in small pieces. Verified people go live first. Later: saving a stream as a video, and replays.',
 };

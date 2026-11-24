@@ -20,6 +20,7 @@ import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
 import { pastePages } from './paste.js';   // G&B Paste's pages
 import { videoPages } from './videos.js';   // G&B Videos' pages
+import { streamPages } from './streams.js';   // G&B Live's pages (inside Videos)
 import { academyPages } from './academy.js';   // G&B Academy's pages
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
@@ -940,7 +941,10 @@ Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago
 // G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
 Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // G&B Videos (#/videos, #/watch/<id>, #/videoupload): its pages live in videos.js.
-Object.assign(pages, videoPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// G&B Live (#/live, #/live/<id>, #/golive): its pages live in streams.js.
+const liveParts = streamPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me });
+Object.assign(pages, liveParts.pages);
+Object.assign(pages, videoPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me, liveRow: liveParts.liveRow }));
 // G&B Academy (#/academy, #/course/<id>, #/lesson/<course>/<lesson>, #/coursewrite): its pages live in academy.js.
 Object.assign(pages, academyPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, richText, me: () => me }));
 
@@ -3494,6 +3498,7 @@ function reportsBox(rep, closed) {
     if (x.kind === 'art') return html`${x.target.includes(':') ? 'a comment' : 'art'} by ${person(x.about)} on <a href="#/artpiece/${x.piece}">${x.name}</a>`;
     if (x.kind === 'course') return html`the course <a href="#/course/${x.target}">${x.name}</a> by ${person(x.about)}`;
     if (x.kind === 'video') return html`${x.target.includes(':') ? 'a comment' : 'the video'} by ${person(x.about)} on <a href="#/watch/${x.video}">${x.name}</a>`;   // videos.js
+    if (x.kind === 'stream') return html`${x.target.includes(':') ? 'a chat line' : 'the live stream'} by ${person(x.about)} on <a href="#/live/${x.stream}">${x.name}</a>`;   // streams.js
     if (x.kind === 'paste') return html`the paste <a href="#/pasteview/${x.target}">${x.name}</a> by ${person(x.about)}`;
     const href = isCatalogItem(x.assetKind) ? '#/item/' + x.target : '#/library/' + x.target;
     return html`<a href="${href}">${x.name}</a> (${KINDS[x.assetKind] || 'item'}) by ${person(x.about)}`;
@@ -3862,6 +3867,7 @@ function noteLink(n) {
   if (n.kind === 'testers') return '#/game/' + n.about;   // testers.js
   if (n.kind === 'art') return '#/artpiece/' + n.about;   // art.js
   if (n.kind === 'video') return '#/watch/' + n.about;   // videos.js
+  if (n.kind === 'stream') return '#/live/' + n.about;   // streams.js
   if (n.kind === 'academy') return '#/course/' + n.about;   // academy.js
   if (n.kind === 'group') return '#/group/' + n.about;
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;

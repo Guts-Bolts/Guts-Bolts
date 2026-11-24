@@ -37,6 +37,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerArt.cpp
     src/server/ServerPaste.cpp
     src/server/ServerVideo.cpp
+    src/server/ServerStream.cpp
     src/server/ServerAcademy.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
@@ -1114,6 +1115,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerVideoTests gb_version)
     target_link_libraries(ServerVideoTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerVideoTests COMMAND ServerVideoTests)
+    # G&B Live: going live, pieces in and out, chat with time outs and slow mode, followers, reports (ServerStream.cpp).
+    add_executable(ServerStreamTests tests/ServerStreamTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerStreamTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerStreamTests gb_version)
+    target_link_libraries(ServerStreamTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerStreamTests COMMAND ServerStreamTests)
 
     # G&B Academy: writing, publishing, lessons, progress, likes, reports (ServerAcademy.cpp).
     add_executable(ServerAcademyTests tests/ServerAcademyTests.cpp ${GB_SERVER_TEST_SOURCES})
