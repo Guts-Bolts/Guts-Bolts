@@ -94,6 +94,7 @@ private:
         std::string ratingLimit;                             // the highest content level they want to see, '' = all (ServerRatings.cpp)
         std::string privacyInventory = "everyone";           // who can see what you own (and trade with you)
         std::string blurb;                                   // "About me"
+        nlohmann::json levels = nlohmann::json::object();   // XP, daily streak, wall, showcase (ServerLevels.cpp)
         nlohmann::json posts = nlohmann::json::array();     // "Right now I'm..." {text, at}, newest first
         std::string statusDay; int statusesToday = 0;
         // ServerSafety.cpp: people you blocked, and how many reports you sent today.
@@ -311,6 +312,15 @@ private:
     std::string videoReportName(const std::string& target) const;
     void saveVideos();
     void loadVideos();
+    // ServerLevels.cpp: levels and XP, daily streaks, profile walls, showcases (worker/levels.js).
+    nlohmann::json levelsOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json levelsJson(const User& u) const;
+    nlohmann::json levelsProfile(const User& u, const User& me) const;
+    nlohmann::json dailyClaim(User& me, const std::string& today);
+    nlohmann::json wallPostJson(const nlohmann::json& p, const User& owner, const User& me) const;
+    bool wallCanPost(const User& me, const User& owner) const;
+    void levelsEarn(const std::string& name, User& me);   // XP after a request worked
+    long long giveXp(User& u, long long amount);
     // ServerPaste.cpp: G&B Paste (pastes.json), same rules as worker/paste.js.
     nlohmann::json pasteOp(const std::string& name, User* me, const nlohmann::json& args);
     nlohmann::json* pasteLive(const std::string& id);

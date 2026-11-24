@@ -31,6 +31,7 @@ import { installPromoText } from './promotext.js';   // Promotional text on game
 import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js';   // share links that count clicks, plays and buys
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
+import { installLevels, LEVELS_LOOK_ONLY, LEVELS_COSTLY } from './levels.js';   // levels, XP, daily streaks, profile walls
 import { installVideos, VIDEO_LOOK_ONLY, VIDEO_COSTLY } from './videos.js';   // G&B Videos: upload and watch videos
 import { installAcademy, ACADEMY_LOOK_ONLY, ACADEMY_COSTLY } from './academy.js';   // G&B Academy: courses anyone can write
 import { installFyxaCloud } from './fyxa-cloud.js';   // Fyxa answered by Cloudflare's AI, with daily limits
@@ -513,6 +514,7 @@ const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 
 const kStaffName = 'Guts';
 Object.assign(COSTLY, ART_COSTLY);   // art.js
 Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
+Object.assign(COSTLY, LEVELS_COSTLY);   // levels.js
 Object.assign(COSTLY, VIDEO_COSTLY);   // videos.js
 Object.assign(COSTLY, ACADEMY_COSTLY);   // academy.js
 Object.assign(COSTLY, EXPERIMENTS_COSTLY);   // experiments.js
@@ -561,6 +563,7 @@ const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this mu
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'servers.private', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
+for (const op of LEVELS_LOOK_ONLY) GUEST_OK.add(op);   // guests can read profile walls (levels.js)
 for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
 for (const op of SHARE_GUEST_OK) GUEST_OK.add(op);   // sharelinks.js (anyone can open a link)
@@ -2680,6 +2683,7 @@ export class GbServerObject extends DurableObject {
       }
     } else if (op === 'game.settings') { sourceType = 'asset'; sourceId = String(args.id || ''); fields.push(['game name', args.name], ['game description', args.description]);
     } else if (op === 'gamebadge.create') { sourceType = 'asset'; sourceId = String(args.game || ''); fields.push(['game badge name', args.name], ['game badge description', args.description]);
+    } else if (op === 'wall.post') { sourceType = 'profile'; sourceId = String(args.id || ''); fields.push(['profile wall post', args.text]);
     } else if (op === 'comments.post') { sourceType = 'comment'; sourceId = String(args.game || ''); fields.push(['comment', args.text]);
     } else if (op === 'forum.post') { sourceType = 'forum_thread'; sourceId = String(answer.thread && answer.thread.id || ''); fields.push(['thread title', args.title], ['forum post', args.text]);
     } else if (op === 'forum.reply') { sourceType = 'forum_reply'; sourceId = String(args.thread || ''); fields.push(['forum reply', args.text]);
@@ -3532,6 +3536,7 @@ export class GbServerObject extends DurableObject {
     if (['game.testers', 'game.addTester', 'game.removeTester', 'game.testerNote', 'game.amTester'].includes(name)) return this.testerOp(name, me, args);   // testers.js
     if (name.startsWith('art.')) return this.artOp(name, me, args);   // art.js
     if (name.startsWith('paste.')) return this.pasteOp(name, me, args);   // paste.js
+    if (name.startsWith('wall.') || name === 'levels.me' || name === 'showcase.set') return this.levelsOp(name, me, args);   // levels.js
     if (name.startsWith('video.')) return this.videoOp(name, me, args);   // videos.js
     if (name.startsWith('academy.')) return this.academyOp(name, me, args);   // academy.js
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
@@ -4143,9 +4148,7 @@ export class GbServerObject extends DurableObject {
       return okay({ history: h, me: this.meJson(me) });
     }
     if (name === 'bolts.daily') {
-      if (this.hasRef(me, 'daily:' + today)) return fail('You already got today\'s Bolts. Come back tomorrow!');
-      this.add(me, 25, 'Daily reward', 'daily:' + today);
-      return okay({ me: this.meJson(me), got: 25 });
+      return this.dailyClaim(me, today);   // 25 Bolts and more for a streak (levels.js)
     }
     if (name === 'bolts.play') {
       if (t - me.lastPlay < 280) return fail('Keep playing!');
@@ -7178,3 +7181,4 @@ installArt(GbServerObject);
 installPaste(GbServerObject);
 installVideos(GbServerObject);
 installAcademy(GbServerObject);
+installLevels(GbServerObject);   // levels.js (wraps op() and meJson(): keep it last)
