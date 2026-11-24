@@ -273,6 +273,10 @@ private:
     void loadRoadmap();
     // ServerExtras.cpp: achievements on profiles, game update logs, timed events (events.json).
     nlohmann::json achievementsOf(const User& u) const;
+    // ServerLeaderboards.cpp: site-wide top lists (worker/leaderboards.js), and what someone posted outside the catalog.
+    nlohmann::json leadersOp(const std::string& name, const nlohmann::json& args);
+    nlohmann::json leadersBuild(bool week, long long t) const;
+    nlohmann::json uploadCounts(const std::string& id) const;
     nlohmann::json gameLogFeed(const User& me) const;
     nlohmann::json gameLogOp(const std::string& name, User& me, const nlohmann::json& args);
     nlohmann::json eventsView(const User& me) const;
@@ -519,6 +523,7 @@ private:
     nlohmann::json m_experiments = {{"games", nlohmann::json::object()}, {"data", nlohmann::json::object()}, {"journeys", nlohmann::json::object()}, {"jdata", nlohmann::json::object()}};   // ServerExperiments.cpp
     nlohmann::json m_shareLinks = {{"links", nlohmann::json::object()}, {"seen", nlohmann::json::object()}};   // ServerShareLinks.cpp
     nlohmann::json m_pastes = {{"pastes", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerPaste.cpp
+    nlohmann::json m_leadersCache = nlohmann::json::object();   // ServerLeaderboards.cpp: "week" / "all" -> the last answer
     nlohmann::json m_academy = {{"courses", nlohmann::json::object()}, {"progress", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerAcademy.cpp
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;

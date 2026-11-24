@@ -20,7 +20,7 @@ test('profiles show achievements, earned ones first', () => {
   s.saveUser(bob);
   r = s.call(bob, 'profile', { id: String(bob.userId) });
   const earned = r.achievements.filter((x) => x.earned).map((x) => x.id);
-  assert.deepEqual(earned.sort(), ['first-play', 'game-maker']);
+  assert.deepEqual(earned.sort(), ['first-play', 'first-upload', 'game-maker']);
   assert.equal(r.achievements[0].earned, true, 'earned ones come first');
   const explorer = r.achievements.find((x) => x.id === 'explorer');
   assert.equal(explorer.have, 1);

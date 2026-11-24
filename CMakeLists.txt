@@ -36,6 +36,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerBackgrounds.cpp
     src/server/ServerArt.cpp
     src/server/ServerPaste.cpp
+    src/server/ServerLeaderboards.cpp
     src/server/ServerVideo.cpp
     src/server/ServerAcademy.cpp
     src/server/ServerConnect.cpp
@@ -1093,6 +1094,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerAssetVersionsTests gb_version)
     target_link_libraries(ServerAssetVersionsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerAssetVersionsTests COMMAND ServerAssetVersionsTests)
+
+    # Leaderboards and upload achievements (ServerLeaderboards.cpp).
+    add_executable(ServerLeaderboardsTests tests/ServerLeaderboardsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerLeaderboardsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerLeaderboardsTests gb_version)
+    target_link_libraries(ServerLeaderboardsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerLeaderboardsTests COMMAND ServerLeaderboardsTests)
 
     # The Art portal: posting, staff check, faves, comments (ServerArt.cpp).
     add_executable(ServerArtTests tests/ServerArtTests.cpp ${GB_SERVER_TEST_SOURCES})

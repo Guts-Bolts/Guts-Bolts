@@ -19,6 +19,7 @@ import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // 
 import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
 import { pastePages } from './paste.js';   // G&B Paste's pages
+import { leaderboardPages } from './leaderboards.js';   // the Leaderboards page
 import { videoPages } from './videos.js';   // G&B Videos' pages
 import { academyPages } from './academy.js';   // G&B Academy's pages
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
@@ -939,6 +940,8 @@ pages.soon = async (id) => {
 Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
 Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// Leaderboards (#/leaderboards): its page lives in leaderboards.js.
+Object.assign(pages, leaderboardPages({ html, raw, show, pageCall, signedIn, verified, avatarSvg, gameIcon, me: () => me }));
 // G&B Videos (#/videos, #/watch/<id>, #/videoupload): its pages live in videos.js.
 Object.assign(pages, videoPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // G&B Academy (#/academy, #/course/<id>, #/lesson/<course>/<lesson>, #/coursewrite): its pages live in academy.js.

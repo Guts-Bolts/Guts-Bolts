@@ -158,7 +158,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards", "gamelog.list", "events.list",
-                                                    "art.list", "art.get", "art.picture", "video.list", "video.get", "paste.list", "paste.get", "academy.list", "academy.get", "academy.lesson",
+                                                    "art.list", "art.get", "art.picture", "leaders.get", "video.list", "video.get", "paste.list", "paste.get", "academy.list", "academy.get", "academy.lesson",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate", "http.request",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove",
@@ -730,6 +730,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name == "game.rating" || name == "game.rate" || name == "rating.limit") return ratingOp(name, me, args);   // ServerRatings.cpp
     if (name.rfind("art.", 0) == 0) return artOp(name, &me, args);   // ServerArt.cpp
     if (name.rfind("paste.", 0) == 0) return pasteOp(name, &me, args);   // ServerPaste.cpp
+    if (name.rfind("leaders.", 0) == 0) return leadersOp(name, args);   // ServerLeaderboards.cpp
     if (name.rfind("video.", 0) == 0) return videoOp(name, &me, args);   // ServerVideo.cpp
     if (name.rfind("academy.", 0) == 0) return academyOp(name, &me, args);   // ServerAcademy.cpp
     if (name == "game.testers" || name == "game.addTester" || name == "game.removeTester" || name == "game.testerNote" || name == "game.amTester")
