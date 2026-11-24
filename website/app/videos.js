@@ -214,7 +214,9 @@ export function videoPages(ctx) {
         if (!done.ok) { toast(done.error); return; }
         again();
       } else if (what === 'share') {
-        const link = location.origin + '/app/#/watch/' + encodeURIComponent(id);
+        // The /videos/<id> address (worker/seo.js), not #/watch/: chat apps and search engines never
+        // see what's after "#", so only this one shows the video right in Discord, Telegram, X...
+        const link = location.origin + '/videos/' + encodeURIComponent(id);
         try { await navigator.clipboard.writeText(link); toast('Link copied!'); } catch { prompt('Copy this link:', link); }
       } else if (what === 'delete') {
         if (!confirm('Delete "' + v.title + '" for good?')) return;

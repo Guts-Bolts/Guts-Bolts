@@ -78,7 +78,7 @@
       "/contact", "/contact.html", "/terms", "/terms/", "/robots.txt", "/sitemap.xml", "/security.txt", "/.well-known/security.txt", "/.well-known/gpc.json", "/checkout", "/checkout.html",
       // Pages for search engines (worker/seo.js), and the fixed pages it tidies.
       "/games", "/games/*", "/items/*", "/videos", "/videos/*", "/art", "/art/*", "/paste", "/paste/*", "/academy", "/academy/*",
-      "/groups", "/groups/*", "/users/*", "/server", "/server/", "/server/index.html",
+      "/groups", "/groups/*", "/users/*", "/embed/*", "/server", "/server/", "/server/index.html",
       "/products", "/products/*", "/mcp", "/mcp/*", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*", "/.well-known/oauth-authorization-server"]
   },
   "durable_objects": {
