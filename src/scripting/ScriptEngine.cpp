@@ -8,6 +8,7 @@
 #include "Drawings.h"
 #include "LuaRealism.h"
 #include "LuauLibs.h"
+#include "RobloxMembers.h"
 #include "LuaDisasters.h"
 #include "ServerMemory.h"
 #include "../core/Pad.h"
@@ -3992,6 +3993,7 @@ void ScriptEngine::start(bool runScripts) {
     Drawings::install(L);         // AssetService: EditableImages, publishing drawings
     LuaRealism::install(L);       // workspace:FireBullet
     LuauLibs::install(L);         // bit32, buffer, vector, table.clone, debug.traceback, Actors...
+    RobloxMembers::install(L);    // Model:MoveTo, Lighting.TimeOfDay, BindToRenderStep, TextBounds...
     LuaDisasters::install(L, m_runMode != RunMode::Client);   // game:GetService("Disasters"): lightning, tornadoes, tsunamis, earthquakes
     ServerMemory::install(L, m_runMode != RunMode::Client);   // game.ServerLowMemoryWarning, Stats' memory numbers
     // For Studio's AI tools: an object by its id number (they refer to objects that way).

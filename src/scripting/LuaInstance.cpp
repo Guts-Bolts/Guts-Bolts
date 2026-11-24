@@ -56,6 +56,36 @@ struct ConnRef   { int index; };
 
 bool is(const char* a, const char* b) { return std::strcmp(a, b) == 0; }
 
+// Roblox members written in Lua (RobloxMembers.cpp): GB.ExtraGet[k](self) gives back
+// (true, value) when it knows k for this object; GB.ExtraSet[k](self, value) gives back true.
+// They're asked last, just before "not a valid member", so our own members always win.
+bool extraGet(lua_State* L, const char* k) {
+    const int top = lua_gettop(L);
+    if (lua_getfield(L, LUA_REGISTRYINDEX, "GB.ExtraGet") != LUA_TTABLE || lua_getfield(L, -1, k) != LUA_TFUNCTION) {
+        lua_settop(L, top);
+        return false;
+    }
+    lua_pushvalue(L, 1);
+    lua_call(L, 1, 2);
+    if (!lua_toboolean(L, -2)) { lua_settop(L, top); return false; }
+    lua_replace(L, top + 1);   // (the value, where the table was)
+    lua_settop(L, top + 1);
+    return true;
+}
+bool extraSet(lua_State* L, const char* k) {
+    const int top = lua_gettop(L);
+    if (lua_getfield(L, LUA_REGISTRYINDEX, "GB.ExtraSet") != LUA_TTABLE || lua_getfield(L, -1, k) != LUA_TFUNCTION) {
+        lua_settop(L, top);
+        return false;
+    }
+    lua_pushvalue(L, 1);
+    lua_pushvalue(L, 3);
+    lua_call(L, 2, 1);
+    const bool done = lua_toboolean(L, -1);
+    lua_settop(L, top);
+    return done;
+}
+
 bool parseMaterial(const std::string& s, Material& out) { return materialFromName(s, out); }
 
 // A CylinderMesh (or a SpecialMesh set to Cylinder / Sphere) put in a part reshapes that part.
@@ -1956,7 +1986,6 @@ bool guiNewIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "Image"))             { g.image = Online::assetRef(luaL_checkstring(L, 3)); return true; }
         if (is(k, "ImageColor3"))       { g.imageColor = LuaApi::checkColor3(L, 3); return true; }
         if (is(k, "ImageTransparency")) { g.imageTransparency = t01(); return true; }
-        if (is(k, "ScaleType")) return true;
     }
     if (n->isGuiButton() && is(k, "AutoButtonColor")) { g.autoButtonColor = lua_toboolean(L, 3); return true; }
     return false;
@@ -2472,6 +2501,12 @@ int inst_index(lua_State* L) {
     if (n->isAttachment()) {
         if (is(k, "Position"))      { LuaApi::pushVector3(L, n->transform.position); return 1; }
         if (is(k, "WorldPosition")) { LuaApi::pushVector3(L, worldPosition(n)); return 1; }
+        // Axis (its X) and SecondaryAxis (its Y), in its part.
+        if (is(k, "Axis") || is(k, "SecondaryAxis")) {
+            const glm::mat3 r = glm::mat3(n->transform.matrix());
+            LuaApi::pushVector3(L, glm::normalize(r[is(k, "Axis") ? 0 : 1]));
+            return 1;
+        }
     }
     if (n->isBone()) {   // what the bone does by itself (Guts&Bolts' own; see Skin.h)
         const BoneRig& r = n->rig;
@@ -2917,6 +2952,7 @@ int inst_index(lua_State* L) {
     }
     if (SceneNode* c = starterFallback(L, n, k, false)) { LuaApi::pushInstance(L, c->id); return 1; }
     if (n == E(L)->scene()->root() && is(k, "Terrain")) { LuaApi::pushInstance(L, Scene::kTerrainId); return 1; }
+    if (extraGet(L, k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of %s \"%s\"", k, className(L, n), n->name.c_str());
 }
 
@@ -3507,6 +3543,7 @@ int inst_set(lua_State* L) {
             lua_call(L, 3, 0);
             return 0;
         }
+    if (extraSet(L, k)) return 0;
     return luaL_error(L, "'%s' can't be set on %s \"%s\"", k, className(L, n), n->name.c_str());
 }
 
@@ -4452,6 +4489,7 @@ int hum_index(lua_State* L) {
     }
     if (is(k, "FindFirstChild") || is(k, "FindFirstChildOfClass") || is(k, "WaitForChild"))
         { lua_pushcfunction(L, hum_findChild); return 1; }
+    if (extraGet(L, k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of Humanoid", k);
 }
 
@@ -4485,6 +4523,7 @@ int hum_newindex(lua_State* L) {
         else if (Player* p = E(L)->scene()->player(); p && p->rootId() == humRoot(L) && lua_toboolean(L, 3)) p->scriptJump();
         return 0;
     }
+    else if (extraSet(L, k)) return 0;
     else return luaL_error(L, "'%s' can't be set on Humanoid", k);
     touched(L);
     return 0;
@@ -4627,6 +4666,7 @@ int cam_index(lua_State* L) {
     if (is(k, "ViewportPointToRay") || is(k, "ScreenPointToRay")) { lua_pushcfunction(L, cam_viewportToRay); return 1; }
     // Screen effects put in the camera: camera:GetChildren(), camera.Blur...
     if (proxyIndex(L, E(L)->scene()->cameraNode(), k)) return 1;
+    if (extraGet(L, k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of Camera", k);
 }
 
@@ -4677,6 +4717,7 @@ int cam_newindex(lua_State* L) {
         return 0;
     }
     if (is(k, "Name") || is(k, "Parent")) return 0;   // (there's only ever the one camera)
+    if (extraSet(L, k)) return 0;
     return luaL_error(L, "'%s' can't be set on Camera", k);
 }
 
@@ -4748,6 +4789,7 @@ int light_index(lua_State* L) {
     if (is(k, "IsA")) { lua_pushcfunction(L, light_isA); return 1; }
     // Its screen effects and Sky: Lighting:GetChildren(), Lighting.Sky...
     if (proxyIndex(L, E(L)->scene()->lightingFolder(true), k)) return 1;
+    if (extraGet(L, k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of Lighting", k);
 }
 
@@ -4802,6 +4844,7 @@ int light_newindex(lua_State* L) {
     if (is(k, "LightRays"))     { e.lightRays = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     if (is(k, "AutoExposure"))  { e.autoExposure = lua_toboolean(L, 3); return 0; }
     if (is(k, "MotionBlur"))    { e.motionBlur = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+    if (extraSet(L, k)) return 0;
     return luaL_error(L, "'%s' can't be set on Lighting", k);
 }
 

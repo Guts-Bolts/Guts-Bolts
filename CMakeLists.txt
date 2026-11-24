@@ -585,6 +585,7 @@ add_library(gb_engine STATIC
     src/scripting/Shapecasts.cpp
     src/scripting/LuauLibs.cpp
     src/scripting/StandIns.cpp
+    src/scripting/RobloxMembers.cpp
     src/scripting/Experiments.cpp
     src/scripting/Drawings.cpp
     src/scripting/LuaRealism.cpp
@@ -1498,6 +1499,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(LuauLibraryTests tests/LuauLibraryTests.cpp)
     target_link_libraries(LuauLibraryTests PRIVATE gb_engine)
     add_test(NAME LuauLibraryTests COMMAND LuauLibraryTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Roblox members written in Lua: Model:MoveTo, Lighting.TimeOfDay, BindToRenderStep... (RobloxMembers.cpp)
+    add_executable(RobloxMembersTests tests/RobloxMembersTests.cpp)
+    target_link_libraries(RobloxMembersTests PRIVATE gb_engine)
+    add_test(NAME RobloxMembersTests COMMAND RobloxMembersTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Roblox classes kept as stand-ins: ObjectValue, Configuration, MeshPart, Atmosphere... (StandIns.h)
