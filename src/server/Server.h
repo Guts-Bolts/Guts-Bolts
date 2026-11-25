@@ -512,6 +512,10 @@ private:
     // what's wrong), and handing out what's in one to someone who just got it.
     std::string bundleItems(const nlohmann::json& list, std::vector<std::string>& out) const;
     void giveBundle(User& u, const Asset& a);
+    // Boltworks Club items (worker/club-pay.js giveClubItems): items staff mark meta.clubGift = "bwc"/"tbc"/"obc"
+    // are free for members of that tier or higher, and handed out by themselves. Only = just that item.
+    int giveClubItems(User& u, Asset* only = nullptr);
+    std::string clubItemNote(const Asset& a) const;   // why someone can't buy one
     // Bundle pieces (worker/server.js bundlePiece / canWear / wearableJson): one part of a body
     // bundle worn on its own, like a single body part. Its id is "<bundle id>-<part>" ("137-leftarm").
     const Asset* bundlePiece(const std::string& id, std::string& part) const;   // the bundle, and the part's rig name

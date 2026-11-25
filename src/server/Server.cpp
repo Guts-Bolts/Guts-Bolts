@@ -246,7 +246,35 @@ bool GbServer::isPartner(const User& u) const {
 }
 
 // Boltworks Club tier shown next to their name: "obc", "tbc", "bwc" or "" (the best one they have).
-// Only the official account gives tiers out for now (free, no payments). Same as clubOf in worker/server.js.
+// Here only the official account gives tiers out: paid memberships (Stripe) are only on the
+// Cloudflare server (worker/club-pay.js), since this server doesn't serve the payment pages.
+static int clubRank(const std::string& t) { return t == "obc" ? 3 : t == "tbc" ? 2 : t == "bwc" ? 1 : 0; }
+
+int GbServer::giveClubItems(User& u, Asset* only) {
+    const std::string tier = clubOf(u);
+    if (tier.empty() || u.userId <= 0 || u.banned) return 0;
+    int n = 0;
+    auto give = [&](Asset& a) {
+        const std::string need = a.meta.is_object() ? a.meta.value("clubGift", std::string()) : std::string();
+        if (need.empty() || clubRank(tier) < clubRank(need) || a.limited || u.owned.count(a.id)) return;
+        u.owned.insert(a.id);
+        giveBundle(u, a);
+        a.sales++;
+        notify(&u, "gift", "Boltworks Club gave you " + a.name + "!", a.id, false);
+        n++;
+    };
+    if (only) give(*only);
+    else for (auto& [id, a] : m_assets) give(a);
+    if (n) { saveAssets(); saveUsers(); }
+    return n;
+}
+
+std::string GbServer::clubItemNote(const Asset& a) const {
+    const std::string t = a.meta.value("clubGift", std::string());
+    const std::string name = t == "obc" ? "Overclocked Boltworks Club" : t == "tbc" ? "Turbo Boltworks Club" : "Boltworks Club";
+    return "This is a Boltworks Club item: members of " + name + (t == "obc" ? "" : " or higher") + " get it for free. Join on the Bolts page!";
+}
+
 std::string GbServer::clubOf(const User& u) const {
     for (const char* k : {"obc", "tbc", "bwc"}) {
         auto it = u.grants.find(k);
@@ -413,6 +441,7 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
     }
     // Exclusive items aren't in the catalog; a gift box hands out another item (ServerItems.cpp).
     if (a.meta.is_object() && a.meta.value("exclusive", false)) j["exclusive"] = true;
+    if (a.meta.is_object() && !a.meta.value("clubGift", std::string()).empty()) j["clubGift"] = a.meta.value("clubGift", std::string());
     if (json au = auctionJson(a, me); !au.is_null()) j["auction"] = au;
     if (const std::string gift = a.meta.is_object() ? a.meta.value("giftItem", std::string()) : std::string(); !gift.empty()) {
         j["gift"] = true;
@@ -849,13 +878,26 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         json r = okay();
         r["registered"] = registered;
         r["total"] = m_boltworks.size();
+        r["listClosed"] = Online::unixNow() >= 1795564380;
         return r;
+    }
+    if (name == "club.claim") {
+        // "Get it free" on a Boltworks Club item (worker/server.js has the same).
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end() || !it->second.meta.is_object() || it->second.meta.value("clubGift", std::string()).empty())
+            return fail("That isn't a Boltworks Club item.");
+        if (me.owned.count(it->second.id)) { json r = okay(); r["me"] = meJson(me); r["already"] = true; return r; }
+        if (me.banned) return fail("Banned accounts can't get items.");
+        if (!giveClubItems(me, &it->second)) return fail(clubItemNote(it->second));
+        json r = okay(); r["me"] = meJson(me); return r;
     }
     if (name == "boltworks.register") {
         json r = okay();
         r["registered"] = true;
         for (const json& x : m_boltworks)
             if (x.value("id", std::string()) == me.id) { r["already"] = true; return r; }
+        // The early list closed when paid memberships launched (EARLY_LIST_CLOSED in worker/club-pay.js).
+        if (Online::unixNow() >= 1795564380) return fail("The early list closed when memberships launched.");
         m_boltworks.push_back({{"id", me.id}, {"username", me.name}, {"at", Online::unixNow()}});
         writeFile(m_opts.data / "boltworks.json", m_boltworks.dump(1));
         r["already"] = false;
@@ -1010,6 +1052,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             if (key == "bwc" || key == "tbc" || key == "obc")   // one Boltworks Club tier at a time
                 for (const char* k : {"bwc", "tbc", "obc"}) to->grants.erase(k);
             to->grants[key] = sig;
+            if (key == "bwc" || key == "tbc" || key == "obc") giveClubItems(*to);   // their tier's Boltworks Club items
             saveUsers();
             staffDid(me, "badge", "Gave " + to->name + " the " + key + " badge", to->id);
             json r = okay(); r["user"] = publicUser(*to); return r;
@@ -1734,6 +1777,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             return fail("This item is only available through a promo code.");
         if (a.meta.is_object() && a.meta.value("exclusive", false))
             return fail("This is an Exclusive item: it can't be bought. It comes from events and gift boxes.");
+        if (a.meta.is_object() && !a.meta.value("clubGift", std::string()).empty()) return fail(clubItemNote(a));
         const bool resellableLimited = !a.limited || !a.meta.is_object() || a.meta.value("limitedType", std::string("limited_u")) == "limited_u";
         if ((a.meta.is_object() && a.meta.value("staffOffsale", false)) || (a.meta.is_object() && a.meta.value("offsaleAt", 0LL) > 0 && now >= a.meta.value("offsaleAt", 0LL)))
             return fail(std::string("This item is off sale: it was only for sale for a limited time.") +
@@ -1771,6 +1815,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (a.limited) return fail("Limited items can't be gifts. Trade one with your friend instead.");
         if (a.meta.is_object() && a.meta.value("exclusive", false))
             return fail("This is an Exclusive item: it can't be bought or gifted. It comes from events and gift boxes.");
+        if (a.meta.is_object() && !a.meta.value("clubGift", std::string()).empty())
+            return fail("Boltworks Club items can't be gifts: members get them for free.");
         if ((a.meta.is_object() && a.meta.value("staffOffsale", false)) || (a.meta.is_object() && a.meta.value("offsaleAt", 0LL) > 0 && now >= a.meta.value("offsaleAt", 0LL)))
             return fail("This item is off sale: it was only for sale for a limited time.");
         if (a.price <= 0) return fail("This item is free, so your friend can just get it themselves.");

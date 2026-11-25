@@ -67,6 +67,25 @@ Bolts in each pack is set in `worker/stripe.js` (`ITEMS`), not by the product's 
 | `STRIPE_PRICE_BOLTS_2400` | 2400 Bolts | one-time |
 | `STRIPE_PRICE_BOLTS_6500` | 6500 Bolts | one-time |
 
+### The early-list discount
+
+People who pressed "Let me know" on the Bolts page before memberships launched (2026-11-24 23:53 UTC)
+get a discount for good: on every membership they start, renewals included. The list is closed now,
+so nobody new can join it. To turn it on:
+
+1. Stripe Dashboard > Product catalog > **Coupons** > Create coupon, with duration **Forever**
+   (it stays on every renewal). Leave "Customer-facing code" off: nobody types it in.
+2. Copy the coupon's ID and put it in Cloudflare as a plain variable named `STRIPE_COUPON_EARLY`.
+
+The server checks who is on the early list and adds the coupon at checkout. Remove the setting to
+stop adding it to new memberships (ones that already have it keep it). Bolts packs never get it.
+
+### Bans and deleted accounts
+
+A ban for good, or someone deleting their account, cancels their Stripe membership by itself (no
+more charges, no refund for the rest of the month). A ban for some days doesn't. If
+`STRIPE_SECRET_KEY` isn't set, the server logs which subscription needs cancelling by hand.
+
 ### The "Manage membership" page
 
 Stripe Dashboard > Settings > Billing > **Customer portal**: turn it on, allow cancelling and
@@ -123,10 +142,7 @@ Use any future date, any 3-digit CVC and any postcode. More: https://docs.stripe
 
 ## Next steps (before charging real people)
 
-- **Terms of Service.** They still say there are no paid subscriptions and that Bolts can't be bought
-  with real money. Update them (prices, renewals, cancelling, refunds) before going live.
-- **Early-list discount.** The Bolts page promised people on the early list a launch discount. Not
-  built yet: it could be a Stripe coupon.
+- **Early-list coupon.** Make it and set `STRIPE_COUPON_EARLY` (see above).
 - **Taxes.** `automatic_tax` is off. Turn on Stripe Tax once there are real sales.
 - **Switch to live keys** (`sk_live_`, `pk_live_`, a live webhook) once everything works in test mode.
 

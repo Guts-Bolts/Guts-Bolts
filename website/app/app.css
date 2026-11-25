@@ -1227,3 +1227,4 @@ h1 .club-icon{vertical-align:-4px}
 .bolts-pack{display:flex;flex-direction:column;align-items:center;gap:2px;padding:14px 8px;border:1px solid var(--line,#d6d6d6);border-radius:4px;background:var(--panel,#fff);text-decoration:none;color:inherit}
 .bolts-pack:hover{border-color:#d4202a}.bolts-pack strong{font-size:22px}.bolts-pack span{color:#888;font-size:12px}.bolts-pack b{margin-top:6px;color:#d4202a}
 @media(max-width:620px){.club-tiers{grid-template-columns:1fr}}
+.timed-tag.club-tag{background:#2478e6}.club-item-note{display:flex;align-items:center;gap:6px}
