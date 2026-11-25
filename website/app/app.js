@@ -22,6 +22,8 @@ import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
 import { audioPages } from './audio.js';   // the Audio portal's pages (and its player bar)
 import { pastePages } from './paste.js';   // G&B Paste's pages
+import { imagePages } from './image.js';   // G&B Image's pages (and its picture editor)
+import { boardPages } from './boards.js';   // G&B Boards' pages
 import { leaderboardPages } from './leaderboards.js';   // the Leaderboards page
 import { videoPages } from './videos.js';   // G&B Videos' pages
 import { streamPages } from './streams.js';   // G&B Live's pages (inside Videos)
@@ -941,6 +943,10 @@ Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago
 Object.assign(pages, audioPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me, fileBase64: (f) => gb.fileBase64(f) }));
 // G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
 Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// G&B Image (#/image, #/imageview/<id>, #/imagenew): its pages live in image.js.
+Object.assign(pages, imagePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// G&B Boards (#/boards, #/board/<id>): its pages live in boards.js.
+Object.assign(pages, boardPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // Leaderboards (#/leaderboards): its page lives in leaderboards.js.
 Object.assign(pages, leaderboardPages({ html, raw, show, pageCall, signedIn, verified, avatarSvg, gameIcon, me: () => me }));
 // G&B Videos (#/videos, #/watch/<id>, #/videoupload): its pages live in videos.js.
@@ -3609,6 +3615,8 @@ function reportsBox(rep, closed) {
     if (x.kind === 'video') return html`${x.target.includes(':') ? 'a comment' : 'the video'} by ${person(x.about)} on <a href="#/watch/${x.video}">${x.name}</a>`;   // videos.js
     if (x.kind === 'stream') return html`${x.target.includes(':') ? 'a chat line' : 'the live stream'} by ${person(x.about)} on <a href="#/live/${x.stream}">${x.name}</a>`;   // streams.js
     if (x.kind === 'paste') return html`the paste <a href="#/pasteview/${x.target}">${x.name}</a> by ${person(x.about)}`;
+    if (x.kind === 'image') return html`the picture <a href="#/imageview/${x.target}">${x.name}</a> by ${person(x.about)}`;   // image.js
+    if (x.kind === 'board') return html`the board <a href="#/board/${x.target}">${x.name}</a> by ${person(x.about)}`;   // boards.js
     const href = isCatalogItem(x.assetKind) ? '#/item/' + x.target : '#/library/' + x.target;
     return html`<a href="${href}">${x.name}</a> (${KINDS[x.assetKind] || 'item'}) by ${person(x.about)}`;
   };
@@ -3975,6 +3983,8 @@ function noteLink(n) {
   if (n.kind === 'rating') return '#/configure/' + n.about;   // ratings.js
   if (n.kind === 'testers') return '#/game/' + n.about;   // testers.js
   if (n.kind === 'art') return '#/artpiece/' + n.about;   // art.js
+  if (n.kind === 'image') return '#/imageview/' + n.about;   // image.js
+  if (n.kind === 'board') return '#/board/' + n.about;   // boards.js
   if (n.kind === 'audio') return '#/track/' + n.about;   // audio.js
   if (n.kind === 'video') return '#/watch/' + n.about;   // videos.js
   if (n.kind === 'stream') return '#/live/' + n.about;   // streams.js

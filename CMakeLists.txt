@@ -37,6 +37,8 @@ set(GB_SERVER_SOURCES
     src/server/ServerArt.cpp
     src/server/ServerAudio.cpp
     src/server/ServerPaste.cpp
+    src/server/ServerImage.cpp
+    src/server/ServerBoards.cpp
     src/server/ServerLevels.cpp
     src/server/ServerLeaderboards.cpp
     src/server/ServerVideo.cpp
@@ -1149,6 +1151,18 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerPasteTests gb_version)
     target_link_libraries(ServerPasteTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerPasteTests COMMAND ServerPasteTests)
+    # G&B Image: uploads, the staff check, links, renaming, deleting, reports (ServerImage.cpp).
+    add_executable(ServerImageTests tests/ServerImageTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerImageTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerImageTests gb_version)
+    target_link_libraries(ServerImageTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerImageTests COMMAND ServerImageTests)
+    # G&B Boards: boards, columns, cards, people, who can look (ServerBoards.cpp).
+    add_executable(ServerBoardsTests tests/ServerBoardsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerBoardsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerBoardsTests gb_version)
+    target_link_libraries(ServerBoardsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerBoardsTests COMMAND ServerBoardsTests)
 
     # Levels and XP, daily streaks, profile walls, showcases (ServerLevels.cpp).
     add_executable(ServerLevelsTests tests/ServerLevelsTests.cpp ${GB_SERVER_TEST_SOURCES})

@@ -32,6 +32,8 @@ import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installAudio, AUDIO_LOOK_ONLY, AUDIO_COSTLY } from './audio.js';   // the Audio portal: music and sounds, usable in games
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
+import { installImage, IMAGE_LOOK_ONLY, IMAGE_COSTLY } from './image.js';   // G&B Image: put pictures online, share a link
+import { installBoards, BOARDS_LOOK_ONLY, BOARDS_COSTLY } from './boards.js';   // G&B Boards: plan with cards in columns
 import { installLevels, LEVELS_LOOK_ONLY, LEVELS_COSTLY } from './levels.js';   // levels, XP, daily streaks, profile walls
 import { installLeaderboards, LEADER_LOOK_ONLY } from './leaderboards.js';   // site-wide top lists (#/leaderboards)
 import { installSeo } from './seo.js';   // pages search engines can read (seoAsk)
@@ -341,6 +343,7 @@ const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 
 const TICKET_TOPICS = ['password', 'account', 'underage', 'privacy', 'copyright', 'other'];   // (underage: a parent or someone else says an account belongs to someone under 18; privacy: see/fix/delete/copy my data or opt out; copyright: a takedown notice, website/copyright.html)
 const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass: 'pass' })[a.kind] || a.kind;
 const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste', 'course', 'video', 'stream', 'audio'];   // audio: "sound" or "sound:comment" (audio.js); video: "video" or "video:comment" (videos.js); art: "piece" or "piece:comment" (art.js)
+REPORT_KINDS.push('image', 'board');   // image.js, boards.js
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.
 const kMaxComments = 500, kCommentLength = 200, kCommentCooldown = 15, kCommentsPage = 20;
 // Trades (ServerItems.cpp has the same): a trade nobody answers expires after kTradeExpiry.
@@ -558,6 +561,8 @@ const kStaffName = 'Guts';
 Object.assign(COSTLY, ART_COSTLY);   // art.js
 Object.assign(COSTLY, AUDIO_COSTLY);   // audio.js
 Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
+Object.assign(COSTLY, IMAGE_COSTLY);   // image.js
+Object.assign(COSTLY, BOARDS_COSTLY);   // boards.js
 Object.assign(COSTLY, LEVELS_COSTLY);   // levels.js
 Object.assign(COSTLY, VIDEO_COSTLY);   // videos.js
 Object.assign(COSTLY, STREAM_COSTLY);   // streams.js
@@ -608,6 +613,7 @@ const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this mu
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'servers.private', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
+for (const op of [...IMAGE_LOOK_ONLY, ...BOARDS_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at public pictures and boards (image.js, boards.js)
 for (const op of LEVELS_LOOK_ONLY) GUEST_OK.add(op);   // guests can read profile walls (levels.js)
 for (const op of [...ART_LOOK_ONLY, ...AUDIO_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...LEADER_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
@@ -2744,6 +2750,10 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'art.post') { sourceType = 'art'; sourceId = String(answer.piece && answer.piece.id || ''); fields.push(['art title', args.title], ['art description', args.text], ['art tags', Array.isArray(args.tags) ? args.tags.join(' ') : args.tags]);
     } else if (op === 'video.start' || op === 'video.edit') { sourceType = 'video'; sourceId = String(answer.video && answer.video.id || ''); fields.push(['video title', args.title], ['video description', args.text], ['video tags', Array.isArray(args.tags) ? args.tags.join(' ') : args.tags]);
     } else if (op === 'video.comment') { sourceType = 'video_comment'; sourceId = String(args.id || ''); fields.push(['video comment', args.text]);
+    } else if (op === 'image.upload') { sourceType = 'image'; sourceId = String(answer.image && answer.image.id || ''); fields.push(['image title', args.title || 'Untitled picture']);
+    } else if ((op === 'board.set' || op === 'board.card' || op === 'board.column') && answer.board && answer.board.visibility !== 'private') {
+      sourceType = 'board'; sourceId = String(answer.board.id || '');   // (boards.js: only boards other people can see)
+      fields.push(['board title', args.title], ['board text', args.text], ['board checklist', Array.isArray(args.checks) ? args.checks.map((x) => x && x.text).join('\n') : '']);
     } else if (op === 'paste.make') { sourceType = 'paste'; sourceId = String(answer.paste && answer.paste.id || ''); fields.push(['paste title', args.title], ['paste text', typeof args.text === 'string' ? args.text.slice(0, 6000) : '']);
     } else if ((op === 'academy.publish' && args.on !== false) || (op === 'academy.save' && answer.course && answer.course.published)) {
       const c = this.courses && this.courses.get(String(answer.course && answer.course.id || ''));
@@ -2820,12 +2830,15 @@ export class GbServerObject extends DurableObject {
       } else { categories.push('AUDIO_REVIEW_REQUIRED'); scanner += '+audio-manual-review'; unsafe = true; }
     }
     // Supported image uploads receive a vision-language screening pass; failures are sent to staff.
-    if ((assetWrite && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(assetKind)) || op === 'art.post') {
-      const meta = op === 'art.post' ? { ext: answer.piece && answer.piece.type } : args.meta && typeof args.meta === 'object' ? args.meta
+    if ((assetWrite && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(assetKind)) || op === 'art.post' || op === 'image.upload') {
+      // (image.js: big pictures are looked at through their small preview, which the website always makes as a JPEG)
+      const viaThumb = op === 'image.upload' && !!str(args, 'thumb') && str(args, 'data').length > 600000;
+      const meta = viaThumb ? { ext: 'jpg' } : op === 'image.upload' ? { ext: answer.image && answer.image.type }
+        : op === 'art.post' ? { ext: answer.piece && answer.piece.type } : args.meta && typeof args.meta === 'object' ? args.meta
         : sourceAsset && sourceAsset.meta && typeof sourceAsset.meta === 'object' ? sourceAsset.meta : {};
       const ext = String(meta.ext || '').toLowerCase();
       const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/png';
-      const encoded = str(args, 'data').replace(/^data:[^,]+,/, '');
+      const encoded = str(args, viaThumb ? 'thumb' : 'data').replace(/^data:[^,]+,/, '');
       if (encoded && encoded.length <= 600000) {
         try {
           const vision = await this.env.AI.run('@cf/moondream/moondream3.1-9B-A2B', {
@@ -3582,6 +3595,8 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('art.')) return this.artOp(name, me, args);   // art.js
     if (name.startsWith('audio.')) return this.audioOp(name, me, args);   // audio.js
     if (name.startsWith('paste.')) return this.pasteOp(name, me, args);   // paste.js
+    if (name.startsWith('image.')) return this.imageOp(name, me, args);   // image.js
+    if (name.startsWith('board.')) return this.boardOp(name, me, args);   // boards.js
     if (name.startsWith('wall.') || name === 'levels.me' || name === 'showcase.set') return this.levelsOp(name, me, args);   // levels.js
     if (name.startsWith('leaders.')) return this.leadersOp(name, me, args);   // leaderboards.js
     if (name.startsWith('video.')) return this.videoOp(name, me, args);   // videos.js
@@ -5732,6 +5747,10 @@ export class GbServerObject extends DurableObject {
         if (!p) return fail('That post isn\'t there any more.');
         if (p.by === me.id) return fail('You can\'t report yourself.');
         target = id; about = p.by; copy = { subject: 'Forum: ' + th.title, body: p.text, at: p.at };
+      } else if (kind === 'image' || kind === 'board') {
+        const r = kind === 'image' ? this.imageReportTarget(id, me) : this.boardReportTarget(id, me);   // image.js, boards.js
+        if (typeof r === 'string') return fail(r);
+        target = r.target; about = r.about; copy = r.copy;
       } else if (kind === 'art' || kind === 'paste' || kind === 'course' || kind === 'video' || kind === 'stream' || kind === 'audio') {
         const r = kind === 'art' ? this.artReportTarget(id, me) : kind === 'audio' ? this.audioReportTarget(id, me) : kind === 'paste' ? this.pasteReportTarget(id, me)
           : kind === 'video' ? this.videoReportTarget(id, me) : kind === 'stream' ? this.streamReportTarget(id, me)
@@ -6102,6 +6121,8 @@ export class GbServerObject extends DurableObject {
       if (x.kind === 'forum') { const th = this.forum.get(x.target.split(':')[0]); r.name = th ? th.title : '(deleted)'; r.thread = th ? th.id : ''; }
       if (x.kind === 'art') { r.name = this.artReportName(x.target); r.piece = x.target.split(':')[0]; }   // art.js
       if (x.kind === 'paste') r.name = this.pasteReportName(x.target);   // paste.js
+      if (x.kind === 'image') { r.name = this.imageReportName(x.target); r.image = x.target; }   // image.js
+      if (x.kind === 'board') { r.name = this.boardReportName(x.target); r.board = x.target; }   // boards.js
       if (x.kind === 'audio') { r.name = this.audioReportName(x.target); r.track = x.target.split(':')[0]; }   // audio.js
       if (x.kind === 'video') { r.name = this.videoReportName(x.target); r.video = x.target.split(':')[0]; }   // videos.js
       if (x.kind === 'stream') { r.name = this.streamReportName(x.target); r.stream = x.target.split(':')[0]; }   // streams.js
@@ -7138,6 +7159,8 @@ export class GbServerObject extends DurableObject {
     }
     // GET /artpic/<piece>[/thumb]: a piece of art's picture (art.js).
     if (url.pathname.startsWith('/artpic/')) return this.artPictureResponse(url.pathname.slice(8));
+    // GET /imgpic/<id>[/thumb]: a picture on G&B Image (image.js).
+    if (url.pathname.startsWith('/imgpic/')) return this.imagePictureResponse(url.pathname.slice(8));
     // GET /sound/<id>: a sound's file, for the Audio portal's player (audio.js).
     if (url.pathname.startsWith('/sound/')) return this.audioSoundResponse(request, url.pathname.slice(7));
     // PUT /vidup/<id>, GET /vid/<id> and /vidthumb/<id>: a video's file and picture (videos.js).
@@ -7288,6 +7311,8 @@ installShareLinks(GbServerObject);
 installArt(GbServerObject);
 installAudio(GbServerObject);
 installPaste(GbServerObject);
+installImage(GbServerObject);
+installBoards(GbServerObject);
 installLeaderboards(GbServerObject);
 installSeo(GbServerObject);
 installVideos(GbServerObject);

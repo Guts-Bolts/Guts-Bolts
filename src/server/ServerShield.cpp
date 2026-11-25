@@ -58,6 +58,11 @@ constexpr Rule kCostly[] = {
     {"stream.chat", 60, 180, 600},
     {"stream.snap", 120, 360, 3600},
     {"paste.make", 60, 180, 3600},   // ServerPaste.cpp (worker/paste.js PASTE_COSTLY)
+    {"image.upload", 30, 90, 3600},   // ServerImage.cpp (worker/image.js IMAGE_COSTLY)
+    {"board.make", 30, 90, 3600},   // ServerBoards.cpp (worker/boards.js BOARDS_COSTLY)
+    {"board.card", 600, 1800, 3600},
+    {"board.column", 200, 600, 3600},
+    {"board.member", 60, 180, 3600},
     {"wall.post", 20, 60, 600},   // ServerLevels.cpp (worker/levels.js LEVELS_COSTLY)
     {"academy.save", 60, 180, 3600},   // ServerAcademy.cpp (worker/academy.js ACADEMY_COSTLY)
     {"academy.like", 240, 720, 600},

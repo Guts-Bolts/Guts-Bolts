@@ -1,0 +1,64 @@
+/* G&B Boards (boards.js). Only uses app.css's colour tokens, so dark mode and themes keep working;
+   the board colours are the same in both. */
+.product-boards .product-icon { background: #0f766e; }
+.board-red { --bc: #d4202a; } .board-orange { --bc: #e8700f; } .board-yellow { --bc: #d4a20b; } .board-green { --bc: #2f9e44; }
+.board-blue { --bc: #1c6dd0; } .board-purple { --bc: #7c3aed; } .board-gray { --bc: #6b7280; }
+.board-new { gap: 6px; flex-wrap: wrap; }
+.board-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.board-tile { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; color: var(--text); background: var(--panel2);
+  border: 2px solid var(--line); border-top: 6px solid var(--bc); text-decoration: none; min-width: 0; }
+.board-tile:hover { border-color: var(--bc); text-decoration: none; }
+.board-tile b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: flex-start;
+  padding: 12px 14px; margin: 6px 0 10px; background: var(--panel); border: 1px solid var(--line); border-left: 8px solid var(--bc); }
+.board-head h1 { margin: 0 0 4px; font-size: 24px; overflow-wrap: anywhere; }
+.board-head p { margin: 2px 0; }
+.board-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.board-head-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.board-cols { display: flex; gap: 10px; align-items: flex-start; overflow-x: auto; padding-bottom: 10px; }
+.board-col { flex: 0 0 272px; background: var(--panel2); border: 1px solid var(--line); display: flex; flex-direction: column;
+  max-height: 78vh; }
+.board-col header { display: flex; gap: 4px; align-items: center; padding: 6px; border-bottom: 1px solid var(--line); }
+.board-col header b, .board-col-title { flex: 1; min-width: 0; font-weight: bold; }
+.board-col-title { border-color: transparent; background: transparent; padding: 2px 4px; }
+.board-col-title:hover, .board-col-title:focus { border-color: var(--line); background: var(--panel); }
+.board-col-tools { display: inline-flex; gap: 2px; }
+.btn.tiny { padding: 1px 5px; font-size: 11px; min-height: 0; line-height: 1.4; }
+.board-cards { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px; min-height: 40px; }
+.board-cards.over { outline: 2px dashed var(--bc, var(--gb-red, #d4202a)); outline-offset: -4px; }
+.board-card { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0,0,0,.12); display: flex; flex-direction: column; gap: 3px; }
+.board-card:hover, .board-card:focus { border-color: var(--gb-red, #d4202a); outline: none; }
+.board-card.dragging { opacity: .45; }
+.board-card.done .board-card-title { text-decoration: line-through; color: var(--muted); }
+.board-card-title { overflow-wrap: anywhere; }
+.board-tick { color: #2f9e44; font-weight: bold; }
+.board-labels { display: flex; gap: 3px; }
+.board-label { display: inline-block; width: 32px; height: 7px; border-radius: 4px; background: var(--bc); }
+.board-card-bits { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); }
+.board-due { padding: 0 4px; border-radius: 3px; background: var(--panel2); border: 1px solid var(--line); }
+.board-due.late { background: #d4202a; color: #fff; border-color: #d4202a; }
+.board-all { color: #2f9e44; font-weight: bold; }
+.board-face { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--gb-red, #d4202a);
+  color: #fff; font-size: 10px; font-weight: bold; }
+.board-add, .board-newcol { padding: 6px; }
+.board-add input, .board-newcol input { width: 100%; }
+.board-newcol { flex: 0 0 220px; background: transparent; border-style: dashed; }
+.board-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 40px); border: 1px solid var(--line); background: var(--panel);
+  color: var(--text); padding: 14px 16px; }
+.board-dialog::backdrop { background: rgba(0,0,0,.5); }
+.board-dialog textarea { width: 100%; }
+.board-card-name { width: 100%; font-size: 17px; font-weight: bold; }
+.board-card-row { gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.board-pick { display: inline-block; cursor: pointer; margin-right: 2px; }
+.board-pick input { position: absolute; opacity: 0; }
+.board-pick i { display: inline-block; width: 26px; height: 18px; border-radius: 3px; background: var(--bc); border: 2px solid transparent; opacity: .45; }
+.board-pick input:checked + i { opacity: 1; border-color: var(--text); }
+.board-pick input:focus-visible + i { outline: 2px solid var(--link, #1c6dd0); }
+.board-check { margin: 2px 0; display: flex; justify-content: space-between; gap: 6px; }
+.board-person { display: inline-block; margin-right: 10px; }
+.board-card-buttons { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.board-people { margin: 4px 0 8px; padding-left: 18px; }
+@media (max-width: 700px) {
+  .board-col { flex-basis: 82vw; max-height: none; }
+}

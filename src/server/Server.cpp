@@ -104,6 +104,8 @@ json GbServer::handle(const json& req, const From& from) {
         return videoOp(op, nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());   // (worker/index.js: /vidup, /vid, /vidthumb; the token or key is checked)
     if (const std::string op = req.value("op", std::string()); op == "stream.push" || op == "stream.piece" || op == "stream.picture")
         return streamOp(op, nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());   // (worker/index.js: /liveup, /live; the push token is checked)
+    if (req.value("op", std::string()) == "image.picture")   // (public pictures: worker/index.js asks for /imgpic/ without an account)
+        return imageOp("image.picture", nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     if (req.value("op", std::string()) == "paste.raw")   // (a paste's text alone: worker/index.js asks for /pasteraw/ without an account)
         return pasteOp("paste.raw", nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     if (isConnectOpen(req.value("op", std::string())))   // (ServerConnect.cpp: an app's server, not a person)
@@ -163,7 +165,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards", "gamelog.list", "events.list",
-                                                    "art.list", "art.get", "art.picture", "audio.list", "audio.get", "audio.listen", "audio.file", "leaders.get", "video.list", "video.get", "stream.list", "stream.get", "paste.list", "paste.get", "wall.list", "academy.list", "academy.get", "academy.lesson",
+                                                    "art.list", "art.get", "art.picture", "audio.list", "audio.get", "audio.listen", "audio.file", "leaders.get", "video.list", "video.get", "stream.list", "stream.get", "paste.list", "paste.get", "wall.list", "image.list", "image.get", "image.picture", "board.list", "board.get", "academy.list", "academy.get", "academy.lesson",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate", "http.request",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove",
@@ -738,6 +740,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("art.", 0) == 0) return artOp(name, &me, args);   // ServerArt.cpp
     if (name.rfind("audio.", 0) == 0) return audioOp(name, &me, args);   // ServerAudio.cpp
     if (name.rfind("paste.", 0) == 0) return pasteOp(name, &me, args);   // ServerPaste.cpp
+    if (name.rfind("image.", 0) == 0) return imageOp(name, &me, args);   // ServerImage.cpp
+    if (name.rfind("board.", 0) == 0) return kanbanOp(name, &me, args);   // ServerBoards.cpp
     if (name.rfind("wall.", 0) == 0 || name == "levels.me" || name == "showcase.set") return levelsOp(name, me, args);   // ServerLevels.cpp
     if (name.rfind("leaders.", 0) == 0) return leadersOp(name, args);   // ServerLeaderboards.cpp
     if (name.rfind("video.", 0) == 0) return videoOp(name, &me, args);   // ServerVideo.cpp
@@ -2323,6 +2327,8 @@ void GbServer::load() {
     loadExperiments();
     loadShareLinks();
     loadPastes();
+    loadImages();
+    loadKanban();
     loadVideos();
     loadStreams();
     loadAcademy();
