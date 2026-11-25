@@ -4021,11 +4021,11 @@ function clubShop(items, club) {
         <div class="club-tier-buy">${items[t + '_month'] ? html`<a class="btn gold" href="${buyLink(t + '_month')}">${money(items[t + '_month']) ? money(items[t + '_month']) + ' a month' : 'Monthly'}</a>` : ''}
           ${items[t + '_year'] ? html`<a class="btn" href="${buyLink(t + '_year')}">${money(items[t + '_year']) ? money(items[t + '_year']) + ' a year' : 'Yearly'}</a>` : ''}</div>
       </div>`)}</div>
-      <p class="small muted">Paid with a card through Stripe; Guts&amp;Bolts never sees your card number. If you're under 18, ask a parent or guardian first. Cancel any time.</p>
+      <p class="small muted">Paid with a card through Stripe; Guts&amp;Bolts never sees your card number. Cancel any time. See <a href="#/terms">the Terms</a>, section 4.</p>
     </section>` : ''}
     ${packs.length ? html`<section class="bolts-packs"><h2>Buy Bolts</h2>
       <div class="bolts-pack-grid">${packs.map((k) => html`<a class="bolts-pack" href="${buyLink(k)}"><strong>${items[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(items[k]) || 'Buy'}</b></a>`)}</div>
-      <p class="small muted">Paid once, through Stripe. If you're under 18, ask a parent or guardian first.</p></section>` : ''}`;
+      <p class="small muted">Paid once, through Stripe. See <a href="#/terms">the Terms</a>, section 4.</p></section>` : ''}`;
 }
 
 pages.bolts = async () => {
@@ -4379,15 +4379,16 @@ let authSetup = null;   // Settings: an authenticator app being set up ({secret,
 pages.terms = async () => {
   show(html`<div class="terms">
     <h1>Guts&amp;Bolts Terms of Service</h1>
-    <p class="muted small">Last updated November 2026. By making an account, playing or using Studio, you agree to these
+    <p class="muted small">Last updated November 25, 2026. By making an account, playing or using Studio, you agree to these
       terms. If you don't agree, please don't use Guts&amp;Bolts.</p>
     <p>"Guts&amp;Bolts", "we" and "us" mean the people who make and run Guts&amp;Bolts. "You" means you, the person
       using it. These terms cover the website, Studio, the Player and our game servers.</p>
 
     <h2>1. What Guts&amp;Bolts is</h2>
     <p>Guts&amp;Bolts is a free, independent game engine and platform: Studio to build games, the Player to play them,
-      and this website. It's a hobby project made for fun. There are no paid subscriptions, and Bolts (the money used
-      inside Guts&amp;Bolts) can't be bought with or turned into real money (see section 4).</p>
+      and this website. It's a hobby project made for fun. Playing, making games and uploading are free. You can
+      choose to pay for extras: a Boltworks Club membership or packs of Bolts (the money used inside Guts&amp;Bolts).
+      Bolts can never be turned back into real money (see section 4).</p>
     <p>Guts&amp;Bolts is <b>not affiliated with, endorsed by, or connected to Roblox Corporation</b>. "Roblox" is
       their trademark. We don't use their name or logos for our own branding, and we don't support or speak for them.
       Guts&amp;Bolts exists because its creator got fed up with update after update on that platform and decided to
@@ -4437,13 +4438,13 @@ pages.terms = async () => {
         and items on a deleted account are gone for good.</li>
     </ul>
 
-    <h2>4. Bolts and items are not real money</h2>
-    <p>This is the important bit about the in-game money and stuff, so please read it.</p>
+    <h2>4. Bolts, items and paying real money</h2>
+    <p>This is the important bit about the in-game money, memberships and stuff, so please read it.</p>
     <ul>
-      <li><b>Bolts have no real-money value.</b> You can't buy them with real money, and you can't cash them out,
-        sell them, or swap them for real money or anything outside Guts&amp;Bolts.</li>
-      <li>You get Bolts by playing: 100 when you sign up, a daily reward, some for playing games, from selling things
-        you made, from groups, and sometimes as gifts or codes from staff.</li>
+      <li><b>Bolts can't be cashed out.</b> You can buy Bolts with real money (see "Paying with a card" below), but
+        you can't cash them out, sell them, or swap them for real money or anything outside Guts&amp;Bolts.</li>
+      <li>You also get Bolts for free: 100 when you sign up, a daily reward, some for playing games, from selling
+        things you made, from groups, and sometimes as gifts or codes from staff.</li>
       <li>Bolts and items (hats, shirts, Limiteds, game passes and the rest) aren't your property. They're a
         <b>permission to use</b> them inside Guts&amp;Bolts, which we can change or take away (for example if you're
         banned, or Guts&amp;Bolts shuts down).</li>
@@ -4454,6 +4455,29 @@ pages.terms = async () => {
         back, and may take back what you bought with them.</li>
       <li><b>No real-money trading.</b> Selling or buying Bolts, items or accounts for real money (or gift cards,
         crypto, or anything else outside Guts&amp;Bolts) isn't allowed, and can get every account involved banned.</li>
+    </ul>
+    <h3>Paying with a card</h3>
+    <ul>
+      <li>You can buy a <b>Boltworks Club</b> membership (Boltworks Club, Turbo or Overclocked, paid monthly or
+        yearly) or <b>packs of Bolts</b> (paid once) on the <a href="#/bolts">Bolts</a> page. Prices are shown there
+        before you pay.</li>
+      <li>Payments are handled by <b>Stripe</b>. Guts&amp;Bolts never sees or keeps your card number.</li>
+      <li><b>Memberships renew by themselves</b> every month or year, at the price shown when you joined, until you
+        cancel. If the price changes, we'll say so on the <a href="#/updates">Updates</a> page before your next
+        renewal.</li>
+      <li><b>Cancel any time</b> with the Manage membership button on the Bolts page. You keep your perks until the
+        end of the time you already paid for, and you won't be charged again. We don't give back money for the part
+        of a month or year you didn't use.</li>
+      <li>A membership gives extras only (like a club badge, no ads, and more Fyxa cloud steps). We can change which
+        extras each tier has. Everything free stays free.</li>
+      <li><b>Bought Bolts are final.</b> Once they're in your wallet, they can't be refunded, except where the law
+        says they must be, or when staff fix a mistake (like being charged twice).</li>
+      <li>If a payment is reversed or charged back, we can take back the Bolts or membership it paid for, and may
+        suspend the account while we look into it.</li>
+      <li>If your account is banned for breaking these terms, you lose its Bolts and membership, and paid time isn't
+        refunded. Cancel the membership yourself so it stops renewing; staff can help on the
+        <a href="#/support">Support</a> page.</li>
+      <li>If Guts&amp;Bolts shuts down, we'll stop all renewals first.</li>
     </ul>
 
     <h2>5. Selling, trading, resale and auctions</h2>
@@ -4578,8 +4602,7 @@ pages.terms = async () => {
     <h2>15. Changes and the law</h2>
     <p>These terms can change as Guts&amp;Bolts grows. If they change in a big way, it'll be on the
       <a href="#/updates">Updates</a> page, and the date at the top of this page will change. Keeping on playing
-      after that means you accept the new version. If paid features are ever added, they'll come with their own terms
-      first.</p>
+      after that means you accept the new version.</p>
     <p>These terms follow the laws of the State of Florida, USA. If one part of them can't be enforced, the rest still
       counts.</p>
 
