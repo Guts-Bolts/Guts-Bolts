@@ -48,6 +48,9 @@ constexpr Rule kCostly[] = {
     {"art.post", 30, 90, 3600},   // ServerArt.cpp (worker/art.js ART_COSTLY)
     {"art.comment", 30, 90, 600},
     {"art.fave", 240, 720, 600},
+    {"audio.comment", 30, 90, 600},   // ServerAudio.cpp (worker/audio.js AUDIO_COSTLY)
+    {"audio.fave", 240, 720, 600},
+    {"audio.listen", 240, 1200, 3600},
     {"video.start", 10, 30, 3600},   // ServerVideo.cpp (worker/videos.js VIDEO_COSTLY)
     {"video.comment", 30, 90, 600},
     {"video.like", 240, 720, 600},
