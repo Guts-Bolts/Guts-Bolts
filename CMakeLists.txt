@@ -39,6 +39,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerPaste.cpp
     src/server/ServerImage.cpp
     src/server/ServerBoards.cpp
+    src/server/ServerLevels.cpp
     src/server/ServerLeaderboards.cpp
     src/server/ServerVideo.cpp
     src/server/ServerStream.cpp
@@ -1162,6 +1163,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerBoardsTests gb_version)
     target_link_libraries(ServerBoardsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerBoardsTests COMMAND ServerBoardsTests)
+
+    # Levels and XP, daily streaks, profile walls, showcases (ServerLevels.cpp).
+    add_executable(ServerLevelsTests tests/ServerLevelsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerLevelsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerLevelsTests gb_version)
+    target_link_libraries(ServerLevelsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerLevelsTests COMMAND ServerLevelsTests)
 
     # G&B Videos: upload in pieces, the staff check, likes, comments, followers, watching (ServerVideo.cpp).
     add_executable(ServerVideoTests tests/ServerVideoTests.cpp ${GB_SERVER_TEST_SOURCES})

@@ -17,6 +17,7 @@ import { openShareLink, checkShareLinks, addShareBox } from './sharelinks.js';
 import { ratingPill, mountGameRating, mountRatingWhy, mountRatingLimit } from './ratings.js';   // content levels (how intense a game is)
 import { mountLaunchpad, mountLaunchpadShelf, launchpadPill } from './launchpad.js';   // Launchpad creator program
 import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // profile backgrounds
+import { levelPill, levelBox, streakLine, mountShowcase, mountWall } from './levels.js';   // levels, streaks, walls, showcases
 import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
 import { audioPages } from './audio.js';   // the Audio portal's pages (and its player bar)
@@ -3031,7 +3032,7 @@ pages.user = async (id, tab, page, more) => {
   const badgeNames = { admin: 'Administrator', verified: 'Verified', staff: 'Staff', tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator', partner: 'Partner' };
   const online = r.online === undefined ? null : r.online;
   show(html`<div class="profile-head">
-      <h1>${u.username}${verified(u.verified)}${CLUB[u.club] ? raw(' ' + clubSvg(u.club, 26)) : ''}${partner(u)}</h1><span class="small muted user-number">#${u.userId}</span>
+      <h1>${u.username}${verified(u.verified)}${CLUB[u.club] ? raw(' ' + clubSvg(u.club, 26)) : ''}${partner(u)}${raw(levelPill(r.levels))}</h1><span class="small muted user-number">#${u.userId}</span>
       ${online === null ? '' : html`<span class="presence ${online ? 'on' : ''}">${online ? '[ Online ]' : '[ Offline ]'}</span>`}
       ${r.playing ? html`<span class="small playing-now">Playing <a href="#/game/${r.playing.game}">${r.playing.title}</a></span>
         ${r.playing.session && f !== 'self' ? html` <button class="btn green small" data-act="joinServer" data-id="${r.playing.game}"
@@ -3052,6 +3053,7 @@ pages.user = async (id, tab, page, more) => {
           ${worn.length ? html`<div class="wearing">${worn.map((it) => html`<a class="card square" href="#/item/${it.id}" title="${it.name}">
               <div class="pic">${itemIcon(it)}</div><div class="name small">${it.name}</div></a>`)}</div>`
             : html`<p class="muted small">Nothing from the catalog${u.avatar && u.avatar.hat ? ' (just a hat)' : ''}.</p>`}</div>
+        ${raw(levelBox(r.levels, f === 'self'))}
         <div class="box"><h2 class="boxhead">Statistics</h2>
           <table class="stats"><tr><td>Joined</td><td>${new Date(u.created * 1000).toLocaleDateString()} (${ago(u.created)})</td></tr>
             <tr><td>User number</td><td>#${u.userId}</td></tr>
@@ -3087,6 +3089,8 @@ pages.user = async (id, tab, page, more) => {
               <div class="row"><input type="text" name="status" maxlength="140" placeholder="building a castle"><button class="btn blue small">Update</button></div></form>
             <form class="form" data-form="blurbSet"><label>About me</label><textarea name="blurb" maxlength="1000" rows="4">${r.blurb}</textarea>
               <p><button class="btn green small">Save</button></p></form></details>` : ''}</div>
+        <div id="showcaseBox"></div>
+        <div id="wallBox"></div>
         <div class="box"><h2 class="boxhead">Friends (${r.friendCount}) <a class="small" href="#/user/${u.userId}/friends" style="float:right">See all</a></h2>
           ${friends.length ? html`<div class="friends-grid">${friends.map((p) => html`<a class="friend" href="#/user/${p.userId}">
               <div class="friend-pic" data-friend-avatar="${p.id}">${avatarSvg(p.avatar, 60)}</div>
@@ -3108,6 +3112,12 @@ pages.user = async (id, tab, page, more) => {
   mountAvatar($('#profileAvatar'), u.avatar, worn, { width: 220 }).catch(() => {});
   if (f === 'self' && signedIn()) addShareBox(view, 'profile', u.id, call, toast);   // share links to your profile (sharelinks.js)
   if (f === 'self') mountBackgroundPicker($('#backgroundPicker'), r.background, call, toast);   // backgrounds.js
+  if (r.levels) {   // levels.js (older servers don't send it)
+    mountShowcase($('#showcaseBox'), u, r.levels, { self: f === 'self', call, toast,
+      things: [...r.creations, ...(r.inventory && r.inventory.items || [])].filter((a, i, all) => all.findIndex((b) => b.id === a.id) === i),
+      card: (a) => (a.kind === 'game' ? gameCard(a) : itemCard(a)).s });
+    mountWall($('#wallBox'), u, r.levels, { self: f === 'self', signedIn: signedIn(), call, toast });
+  }
   for (const p of friends) {
     avatarPicture(p.avatar, p.wearing || [], 60).then((url) => {
       const box = view.querySelector(`[data-friend-avatar="${p.id}"]`);
@@ -4056,9 +4066,10 @@ pages.bolts = async () => {
     <section class="bolts-hero">
       <div class="bolts-hero-copy"><span class="bolts-eyebrow">YOUR GUTS &amp; BOLTS WALLET</span><h2>Make every Bolt count.</h2><p>Earn Bolts by playing, create things worth buying, and spend them across the platform.</p></div>
       <div class="bolts-balance"><span>YOUR BALANCE</span><strong>${bolts(signedIn() ? me.bolts : 0)}</strong>
-        ${!signedIn() || me.canDaily ? html`<button class="btn green" data-act="daily">Claim today's 25 Bolts</button>` : html`<span class="muted">Daily reward claimed. Come back tomorrow.</span>`}</div>
+        ${!signedIn() || me.canDaily ? html`<button class="btn green" data-act="daily">Claim today's ${me.levels ? me.levels.nextDaily : 25} Bolts</button>` : html`<span class="muted">Daily reward claimed. Come back tomorrow.</span>`}
+        ${signedIn() ? raw(streakLine(me.levels)) : ''}</div>
     </section>
-    <div class="bolts-earn-grid"><div class="bolts-earn-card"><span class="bolts-earn-icon">⚡</span><strong>Show up daily</strong><p>Claim 25 Bolts every day.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🎮</span><strong>Play games</strong><p>Earn 5 Bolts every 5 minutes, up to 50 a day.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🛠️</span><strong>Make stuff</strong><p>Earn Bolts when people buy your creations.</p></div></div>
+    <div class="bolts-earn-grid"><div class="bolts-earn-card"><span class="bolts-earn-icon">⚡</span><strong>Show up daily</strong><p>Claim 25 Bolts every day, and up to 60 when you come back days in a row.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🎮</span><strong>Play games</strong><p>Earn 5 Bolts every 5 minutes, up to 50 a day.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🛠️</span><strong>Make stuff</strong><p>Earn Bolts when people buy your creations.</p></div></div>
     ${onSale ? clubShop(items, club) : html`<section class="boltworks-teaser">
       <div class="boltworks-topline"><span class="boltworks-stamp">COMING LATER</span><span class="boltworks-mini">G&amp;B MEMBERSHIP</span></div>
       <div class="boltworks-content"><div class="boltworks-emblem" aria-hidden="true"><span>✦</span><b>B</b><i></i></div><div class="boltworks-copy">
@@ -4799,7 +4810,7 @@ const actions = {
   },
   async daily() {
     const r = await call('bolts.daily', {});
-    toast(r.ok ? 'You got 25 Bolts!' : r.error);
+    toast(r.ok ? 'You got ' + (r.got || 25) + ' Bolts!' + (r.streak > 1 ? ' ' + r.streak + ' days in a row!' : '') : r.error);
     render();
   },
   // Play: games run in the Guts&Bolts app, so the website opens it with a
