@@ -30,6 +30,7 @@ import { installJourneys, JOURNEYS_COSTLY } from './journeys.js';   // Journeys:
 import { installPromoText } from './promotext.js';   // Promotional text on game listings (events, updates, limited modes)
 import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js';   // share links that count clicks, plays and buys
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
+import { installAudio, AUDIO_LOOK_ONLY, AUDIO_COSTLY } from './audio.js';   // the Audio portal: music and sounds, usable in games
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
 import { installImage, IMAGE_LOOK_ONLY, IMAGE_COSTLY } from './image.js';   // G&B Image: put pictures online, share a link
 import { installBoards, BOARDS_LOOK_ONLY, BOARDS_COSTLY } from './boards.js';   // G&B Boards: plan with cards in columns
@@ -340,7 +341,7 @@ const kDeletedName = 'Deleted user';
 const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 1000, kResetHours = 24;
 const TICKET_TOPICS = ['password', 'account', 'underage', 'privacy', 'copyright', 'other'];   // (underage: a parent or someone else says an account belongs to someone under 18; privacy: see/fix/delete/copy my data or opt out; copyright: a takedown notice, website/copyright.html)
 const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass: 'pass' })[a.kind] || a.kind;
-const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste', 'course', 'video', 'stream'];   // video: "video" or "video:comment" (videos.js); art: "piece" or "piece:comment" (art.js)
+const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste', 'course', 'video', 'stream', 'audio'];   // audio: "sound" or "sound:comment" (audio.js); video: "video" or "video:comment" (videos.js); art: "piece" or "piece:comment" (art.js)
 REPORT_KINDS.push('image', 'board');   // image.js, boards.js
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.
 const kMaxComments = 500, kCommentLength = 200, kCommentCooldown = 15, kCommentsPage = 20;
@@ -557,6 +558,7 @@ const kMsgPerPoll = 200;         // handed out per msg.poll
 const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
 Object.assign(COSTLY, ART_COSTLY);   // art.js
+Object.assign(COSTLY, AUDIO_COSTLY);   // audio.js
 Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
 Object.assign(COSTLY, IMAGE_COSTLY);   // image.js
 Object.assign(COSTLY, BOARDS_COSTLY);   // boards.js
@@ -610,7 +612,7 @@ export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.m
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
 for (const op of [...IMAGE_LOOK_ONLY, ...BOARDS_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at public pictures and boards (image.js, boards.js)
-for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...LEADER_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of [...ART_LOOK_ONLY, ...AUDIO_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...LEADER_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
 for (const op of SHARE_GUEST_OK) GUEST_OK.add(op);   // sharelinks.js (anyone can open a link)
 
@@ -3587,6 +3589,7 @@ export class GbServerObject extends DurableObject {
     if (name === 'game.rating' || name === 'game.rate' || name === 'rating.limit') return this.ratingOp(name, me, args);   // ratings.js
     if (['game.testers', 'game.addTester', 'game.removeTester', 'game.testerNote', 'game.amTester'].includes(name)) return this.testerOp(name, me, args);   // testers.js
     if (name.startsWith('art.')) return this.artOp(name, me, args);   // art.js
+    if (name.startsWith('audio.')) return this.audioOp(name, me, args);   // audio.js
     if (name.startsWith('paste.')) return this.pasteOp(name, me, args);   // paste.js
     if (name.startsWith('image.')) return this.imageOp(name, me, args);   // image.js
     if (name.startsWith('board.')) return this.boardOp(name, me, args);   // boards.js
@@ -5745,8 +5748,8 @@ export class GbServerObject extends DurableObject {
         const r = kind === 'image' ? this.imageReportTarget(id, me) : this.boardReportTarget(id, me);   // image.js, boards.js
         if (typeof r === 'string') return fail(r);
         target = r.target; about = r.about; copy = r.copy;
-      } else if (kind === 'art' || kind === 'paste' || kind === 'course' || kind === 'video' || kind === 'stream') {
-        const r = kind === 'art' ? this.artReportTarget(id, me) : kind === 'paste' ? this.pasteReportTarget(id, me)
+      } else if (kind === 'art' || kind === 'paste' || kind === 'course' || kind === 'video' || kind === 'stream' || kind === 'audio') {
+        const r = kind === 'art' ? this.artReportTarget(id, me) : kind === 'audio' ? this.audioReportTarget(id, me) : kind === 'paste' ? this.pasteReportTarget(id, me)
           : kind === 'video' ? this.videoReportTarget(id, me) : kind === 'stream' ? this.streamReportTarget(id, me)
           : this.academyReportTarget(id, me);   // art.js, paste.js, videos.js, streams.js, academy.js
         if (typeof r === 'string') return fail(r);
@@ -6117,6 +6120,7 @@ export class GbServerObject extends DurableObject {
       if (x.kind === 'paste') r.name = this.pasteReportName(x.target);   // paste.js
       if (x.kind === 'image') { r.name = this.imageReportName(x.target); r.image = x.target; }   // image.js
       if (x.kind === 'board') { r.name = this.boardReportName(x.target); r.board = x.target; }   // boards.js
+      if (x.kind === 'audio') { r.name = this.audioReportName(x.target); r.track = x.target.split(':')[0]; }   // audio.js
       if (x.kind === 'video') { r.name = this.videoReportName(x.target); r.video = x.target.split(':')[0]; }   // videos.js
       if (x.kind === 'stream') { r.name = this.streamReportName(x.target); r.stream = x.target.split(':')[0]; }   // streams.js
       if (x.kind === 'course') r.name = this.academyReportName(x.target);   // academy.js
@@ -7154,6 +7158,8 @@ export class GbServerObject extends DurableObject {
     if (url.pathname.startsWith('/artpic/')) return this.artPictureResponse(url.pathname.slice(8));
     // GET /imgpic/<id>[/thumb]: a picture on G&B Image (image.js).
     if (url.pathname.startsWith('/imgpic/')) return this.imagePictureResponse(url.pathname.slice(8));
+    // GET /sound/<id>: a sound's file, for the Audio portal's player (audio.js).
+    if (url.pathname.startsWith('/sound/')) return this.audioSoundResponse(request, url.pathname.slice(7));
     // PUT /vidup/<id>, GET /vid/<id> and /vidthumb/<id>: a video's file and picture (videos.js).
     if (/^\/(vidup|vid|vidthumb)\//.test(url.pathname)) return this.videoFetch(request, url);
     // PUT /liveup/<id>, GET /live/<id>/<n> and /live/<id>/pic: a live stream's pieces and picture (streams.js).
@@ -7300,6 +7306,7 @@ installJourneys(GbServerObject);
 installPromoText(GbServerObject);
 installShareLinks(GbServerObject);
 installArt(GbServerObject);
+installAudio(GbServerObject);
 installPaste(GbServerObject);
 installImage(GbServerObject);
 installBoards(GbServerObject);
