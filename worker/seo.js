@@ -7,6 +7,7 @@
 //   /items/<id>                      a catalog or Library item (#/item/<id> or #/library/<n>)
 //   /videos        /videos/<id>      a video, playable right there (#/watch/<id>)
 //   /art           /art/<id>         an art piece          (#/artpiece/<id>)
+//   /audio         /audio/<id>       a sound or song, playable right there (#/track/<id>)
 //   /paste         /paste/<id>       a paste               (#/pasteview/<id>)
 //   /academy       /academy/<id>     a course              (#/course/<id>)
 //   /groups        /groups/<id>      a group               (#/group/<id>)
@@ -34,12 +35,13 @@ const NAME = 'Guts&Bolts';
 const LOGO = SITE + '/img/logo.png';
 const DEFAULT_PIC = SITE + '/img/engine-boom.jpg';
 // The sections that have a list page, in the order the menu shows them.
-export const SECTIONS = ['games', 'videos', 'art', 'paste', 'academy', 'groups'];
-const SECTION_NAMES = { games: 'Games', videos: 'Videos', art: 'Art', paste: 'Paste', academy: 'Academy', groups: 'Groups' };
+export const SECTIONS = ['games', 'videos', 'audio', 'art', 'paste', 'academy', 'groups'];
+const SECTION_NAMES = { games: 'Games', videos: 'Videos', audio: 'Audio', art: 'Art', paste: 'Paste', academy: 'Academy', groups: 'Groups' };
 const SECTION_BLURBS = {
   games: 'Free games made by the Guts&Bolts community: obbies, shooters, horror, roleplay, tycoons and more. Play them on PC, Mac, Linux, Android, VR or in your browser.',
   videos: 'Videos from the Guts&Bolts community: gameplay, Studio tutorials, showcases and more.',
   art: 'Drawings, renders and pixel art from the Guts&Bolts community.',
+  audio: 'Free music, loops and sound effects from the Guts&Bolts community. Listen here, or put them in your own games.',
   paste: 'Code and text shared by the Guts&Bolts community: Lua scripts, snippets and notes.',
   academy: 'Free courses from G&B Academy: learn Lua scripting, Studio, game design and more, one short lesson at a time.',
   groups: 'Groups on Guts&Bolts: communities of players and game makers.',
@@ -221,6 +223,9 @@ async function gamePageOrItem(ask, id, wantGame) {
   return a;
 }
 
+// The Audio portal's kinds (worker/audio.js AUDIO_CATS), and the file types it plays.
+const AUDIO_KIND_NAMES = { music: 'Song', loop: 'Loop', sfx: 'Sound effect', ambience: 'Ambience', voice: 'Voice clip', other: 'Sound' };
+const AUDIO_TYPES = { mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', flac: 'audio/flac' };
 const BUILDERS = {
   async games(ask, id) {
     if (!id) {
@@ -305,6 +310,39 @@ const BUILDERS = {
         openBtn('#/watch/' + encodeURIComponent(v.id), 'Watch on Guts&Bolts') +
         '<p>Like it, comment and follow ' + esc(v.by.name) + ' on Guts&amp;Bolts.</p>' +
         ((v.tags || []).length ? '<dl><dt>Tags</dt><dd>' + esc(v.tags.join(', ')) + '</dd></dl>' : '') + '</div></div></article>',
+    };
+  },
+
+  async audio(ask, id) {
+    const sub = (t) => count(t.plays, 'play') + ' · ' + t.by.name;
+    if (!id) {
+      const r = await ask({ op: 'audio.list', args: { sort: 'top' } });
+      const tracks = r.ok ? r.tracks || [] : [];
+      return listPage('audio', tracks.map((t) => tile('/audio/' + encodeURIComponent(t.id), t.title, sub(t), '', t.title)),
+        tracks.map((t) => '/audio/' + encodeURIComponent(t.id)));
+    }
+    const r = await ask({ op: 'audio.get', args: { id } });
+    if (!r.ok || !r.track || r.track.review || r.track.access === 'private') return null;
+    const t = r.track;
+    const path = '/audio/' + encodeURIComponent(t.id), src = '/sound/' + encodeURIComponent(t.id);
+    const kind = AUDIO_KIND_NAMES[t.cat] || 'Sound';
+    const description = blurb(t.text) || t.title + ', a free ' + kind.toLowerCase() + ' by ' + t.by.name + ' on Guts&Bolts.';
+    const music = t.cat === 'music' || t.cat === 'loop';
+    const num = String(t.num || t.id);
+    return {
+      title: t.title, description, path, type: music ? 'music.song' : 'website', crumbs: [['Audio', '/audio'], [t.title, path]],
+      data: [{ '@context': 'https://schema.org', '@type': music ? 'MusicRecording' : 'AudioObject', name: t.title, description,
+        contentUrl: abs(src), url: SITE + path, encodingFormat: AUDIO_TYPES[t.ext] || undefined, isAccessibleForFree: true,
+        [music ? 'byArtist' : 'creator']: person(t.by), datePublished: iso(t.at), genre: t.genre || undefined, keywords: (t.tags || []).join(', ') || undefined,
+        interactionStatistic: { '@type': 'InteractionCounter', interactionType: 'https://schema.org/ListenAction', userInteractionCount: t.plays || 0 } }],
+      body: '<article><h1>' + esc(t.title) + '</h1>' + byLine(t.by, ' · ' + esc(kind) + (t.genre ? ' · ' + esc(t.genre) : '') + ' · ' + day(t.at)) +
+        '<div class="hero"><div><audio class="media" controls preload="none" src="' + esc(src) + '" aria-label="' + esc(t.title) + '"></audio>' +
+        (t.text ? '<p class="lead">' + esc(t.text) + '</p>' : '') + '</div><div class="card">' +
+        openBtn('#/track/' + encodeURIComponent(t.id), 'Listen on Guts&Bolts') +
+        '<p>Free to use in your own Guts&amp;Bolts games: in Studio, paste the ID into a Sound\'s SoundId.</p>' +
+        '<dl><dt>Sound ID</dt><dd>' + esc(num) + '</dd><dt>Plays</dt><dd>' + Number(t.plays || 0).toLocaleString('en-US') + '</dd>' +
+        '<dt>Faves</dt><dd>' + Number(t.faves || 0).toLocaleString('en-US') + '</dd>' +
+        ((t.tags || []).length ? '<dt>Tags</dt><dd>' + esc(t.tags.join(', ')) + '</dd>' : '') + '</dl></div></div></article>',
     };
   },
 
@@ -467,6 +505,7 @@ export async function sitemap(ask) {
   }
   for (const g of games) { if (!g.review) add('/games/' + encodeURIComponent(g.id), g.updated); }
   for (const v of await pages(ask, 'video.list', { sort: 'new' }, 'videos')) { add('/videos/' + encodeURIComponent(v.id), v.at); if (v.by && v.by.userId) people.add(v.by.userId); }
+  for (const t of await pages(ask, 'audio.list', { sort: 'new' }, 'tracks')) { add('/audio/' + encodeURIComponent(t.id), t.at); if (t.by && t.by.userId) people.add(t.by.userId); }
   for (const p of await pages(ask, 'art.list', { sort: 'new' }, 'pieces')) { add('/art/' + encodeURIComponent(p.id), p.at); if (p.by && p.by.userId) people.add(p.by.userId); }
   for (const p of await pages(ask, 'paste.list', {}, 'pastes')) { if (p.visibility === 'public') add('/paste/' + encodeURIComponent(p.id), p.at); }
   for (const c of await pages(ask, 'academy.list', { sort: 'new' }, 'courses')) { add('/academy/' + encodeURIComponent(c.id), c.edited || c.at); if (c.by && c.by.userId) people.add(c.by.userId); }
@@ -482,7 +521,7 @@ export async function sitemap(ask) {
 // ---------- asking the server ----------
 // The read-only ops the pages may use (all of them are open to guests in the app too).
 export const SEO_OPS = new Set(['list', 'asset.info', 'profile', 'groups.list', 'groups.get', 'video.list', 'video.get',
-  'art.list', 'art.get', 'paste.list', 'paste.get', 'academy.list', 'academy.get']);
+  'audio.list', 'audio.get', 'art.list', 'art.get', 'paste.list', 'paste.get', 'academy.list', 'academy.get']);
 // A visitor who isn't signed in, like a first-time guest on the website, but never saved.
 function visitor() {
   return { id: '0'.repeat(64), name: 'Player', created: 0, lastSeen: 0, ledger: [], grants: {}, owned: [], banned: false,
@@ -508,7 +547,7 @@ export function installSeo(Cls) {
 }
 
 // ---------- routing ----------
-const ROUTE = /^\/(games|items|videos|art|paste|academy|groups|users)(?:\/([^/]{1,80}))?\/?$/;
+const ROUTE = /^\/(games|items|videos|audio|art|paste|academy|groups|users)(?:\/([^/]{1,80}))?\/?$/;
 const EMBED = /^\/embed\/([^/]{1,80})\/?$/;
 export const isSeoPath = (path) => path === '/sitemap.xml' || ROUTE.test(path) || EMBED.test(path);
 
@@ -540,7 +579,7 @@ export function appAddress(path) {
   const m = ROUTE.exec(path);
   if (!m) return '/app/';
   const id = m[2] || '';
-  const hash = { games: '#/game/', items: '#/item/', videos: '#/watch/', art: '#/artpiece/', paste: '#/pasteview/', academy: '#/course/',
+  const hash = { games: '#/game/', items: '#/item/', videos: '#/watch/', audio: '#/track/', art: '#/artpiece/', paste: '#/pasteview/', academy: '#/course/',
     groups: '#/group/', users: '#/user/' }[m[1]];
   return '/app/' + (id ? hash + id : '#/' + m[1]);
 }
