@@ -37,6 +37,8 @@ set(GB_SERVER_SOURCES
     src/server/ServerArt.cpp
     src/server/ServerAudio.cpp
     src/server/ServerPaste.cpp
+    src/server/ServerCalendar.cpp
+    src/server/ServerPress.cpp
     src/server/ServerImage.cpp
     src/server/ServerBoards.cpp
     src/server/ServerLevels.cpp
@@ -1151,6 +1153,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerPasteTests gb_version)
     target_link_libraries(ServerPasteTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerPasteTests COMMAND ServerPasteTests)
+    # The events calendar, Press posts and polls (ServerCalendar.cpp, ServerPress.cpp, ServerUtil.h).
+    add_executable(ServerWhatsOnTests tests/ServerWhatsOnTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerWhatsOnTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerWhatsOnTests gb_version)
+    target_link_libraries(ServerWhatsOnTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerWhatsOnTests COMMAND ServerWhatsOnTests)
     # G&B Image: uploads, the staff check, links, renaming, deleting, reports (ServerImage.cpp).
     add_executable(ServerImageTests tests/ServerImageTests.cpp ${GB_SERVER_TEST_SOURCES})
     target_include_directories(ServerImageTests PRIVATE src/ ${GB_GENERATED})

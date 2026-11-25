@@ -32,6 +32,9 @@ import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installAudio, AUDIO_LOOK_ONLY, AUDIO_COSTLY } from './audio.js';   // the Audio portal: music and sounds, usable in games
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
+import { makePoll, pollJson, pollVote, pollWords } from './polls.js';   // polls on forum threads and group wall posts
+import { installCalendar, CALENDAR_LOOK_ONLY, CALENDAR_COSTLY } from './calendar.js';   // the events calendar
+import { installPress, PRESS_LOOK_ONLY, PRESS_COSTLY } from './press.js';   // Press: news, creator spotlights
 import { installImage, IMAGE_LOOK_ONLY, IMAGE_COSTLY } from './image.js';   // G&B Image: put pictures online, share a link
 import { installBoards, BOARDS_LOOK_ONLY, BOARDS_COSTLY } from './boards.js';   // G&B Boards: plan with cards in columns
 import { installLevels, LEVELS_LOOK_ONLY, LEVELS_COSTLY } from './levels.js';   // levels, XP, daily streaks, profile walls
@@ -342,7 +345,7 @@ const kDeletedName = 'Deleted user';
 const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 1000, kResetHours = 24;
 const TICKET_TOPICS = ['password', 'account', 'underage', 'privacy', 'copyright', 'other'];   // (underage: a parent or someone else says an account belongs to someone under 18; privacy: see/fix/delete/copy my data or opt out; copyright: a takedown notice, website/copyright.html)
 const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass: 'pass' })[a.kind] || a.kind;
-const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste', 'course', 'video', 'stream', 'audio'];   // audio: "sound" or "sound:comment" (audio.js); video: "video" or "video:comment" (videos.js); art: "piece" or "piece:comment" (art.js)
+const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste', 'course', 'video', 'stream', 'audio', 'calendar'];   // audio: "sound" or "sound:comment" (audio.js); video: "video" or "video:comment" (videos.js); art: "piece" or "piece:comment" (art.js)
 REPORT_KINDS.push('image', 'board');   // image.js, boards.js
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.
 const kMaxComments = 500, kCommentLength = 200, kCommentCooldown = 15, kCommentsPage = 20;
@@ -515,6 +518,8 @@ const COSTLY = {
   'forum.reply':         [30, 90, 600],
   'forum.react':         [240, 720, 600],
   'forum.vote':          [240, 720, 600],
+  'forum.pollVote':      [240, 720, 600],
+  'groups.pollVote':     [240, 720, 600],
   'party.react':         [240, 720, 600],
   'ai.preferences.update': [10, 30, 600],
   'ai.content.eligibility.update': [60, 180, 600],
@@ -561,6 +566,8 @@ const kStaffName = 'Guts';
 Object.assign(COSTLY, ART_COSTLY);   // art.js
 Object.assign(COSTLY, AUDIO_COSTLY);   // audio.js
 Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
+Object.assign(COSTLY, CALENDAR_COSTLY);   // calendar.js
+Object.assign(COSTLY, PRESS_COSTLY);   // press.js
 Object.assign(COSTLY, IMAGE_COSTLY);   // image.js
 Object.assign(COSTLY, BOARDS_COSTLY);   // boards.js
 Object.assign(COSTLY, LEVELS_COSTLY);   // levels.js
@@ -615,7 +622,7 @@ export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.m
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
 for (const op of [...IMAGE_LOOK_ONLY, ...BOARDS_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at public pictures and boards (image.js, boards.js)
 for (const op of LEVELS_LOOK_ONLY) GUEST_OK.add(op);   // guests can read profile walls (levels.js)
-for (const op of [...ART_LOOK_ONLY, ...AUDIO_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...LEADER_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of [...ART_LOOK_ONLY, ...AUDIO_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...LEADER_LOOK_ONLY, ...CALENDAR_LOOK_ONLY, ...PRESS_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
 for (const op of SHARE_GUEST_OK) GUEST_OK.add(op);   // sharelinks.js (anyone can open a link)
 
@@ -2745,12 +2752,12 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'gamebadge.create') { sourceType = 'asset'; sourceId = String(args.game || ''); fields.push(['game badge name', args.name], ['game badge description', args.description]);
     } else if (op === 'wall.post') { sourceType = 'profile'; sourceId = String(args.id || ''); fields.push(['profile wall post', args.text]);
     } else if (op === 'comments.post') { sourceType = 'comment'; sourceId = String(args.game || ''); fields.push(['comment', args.text]);
-    } else if (op === 'forum.post') { sourceType = 'forum_thread'; sourceId = String(answer.thread && answer.thread.id || ''); fields.push(['thread title', args.title], ['forum post', args.text]);
+    } else if (op === 'forum.post') { sourceType = 'forum_thread'; sourceId = String(answer.thread && answer.thread.id || ''); fields.push(['thread title', args.title], ['forum post', args.text], ['forum poll', pollWords(args.poll)]);
     } else if (op === 'forum.reply') { sourceType = 'forum_reply'; sourceId = String(args.thread || ''); fields.push(['forum reply', args.text]);
     } else if (op === 'message.send') { sourceType = 'private_message'; sourceId = String(args.to || ''); fields.push(['message subject', args.subject], ['private message', args.body]);
     } else if (op === 'party.send') { sourceType = 'party_chat'; sourceId = String(args.id || ''); fields.push(['party message', args.body]);
     } else if (op === 'groups.create') { sourceType = 'group'; sourceId = String(answer.group && answer.group.id || ''); fields.push(['group name', args.name], ['group description', args.description]);
-    } else if (op === 'groups.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group wall post', args.text]);
+    } else if (op === 'groups.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group wall post', args.text], ['group poll', pollWords(args.poll)]);
     } else if (op === 'groups.shout' || op === 'groups.wall.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group shout', args.text]);
     } else if (op === 'groups.edit') { sourceType = 'group'; sourceId = String(args.id || ''); fields.push(['group description', args.description]);
     } else if (op === 'updates.post') { sourceType = 'platform_update'; sourceId = String(answer.update && answer.update.id || ''); fields.push(['update title', args.name], ['update summary', args.summary], ['update notes', Array.isArray(args.items) ? args.items.join('\n') : '']);
@@ -2759,6 +2766,7 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'art.post') { sourceType = 'art'; sourceId = String(answer.piece && answer.piece.id || ''); fields.push(['art title', args.title], ['art description', args.text], ['art tags', Array.isArray(args.tags) ? args.tags.join(' ') : args.tags]);
     } else if (op === 'video.start' || op === 'video.edit') { sourceType = 'video'; sourceId = String(answer.video && answer.video.id || ''); fields.push(['video title', args.title], ['video description', args.text], ['video tags', Array.isArray(args.tags) ? args.tags.join(' ') : args.tags]);
     } else if (op === 'video.comment') { sourceType = 'video_comment'; sourceId = String(args.id || ''); fields.push(['video comment', args.text]);
+    } else if (op === 'calendar.make' || op === 'calendar.edit') { sourceType = 'calendar_event'; sourceId = String(answer.event && answer.event.id || ''); fields.push(['event title', args.title], ['event description', args.text]);
     } else if (op === 'image.upload') { sourceType = 'image'; sourceId = String(answer.image && answer.image.id || ''); fields.push(['image title', args.title || 'Untitled picture']);
     } else if ((op === 'board.set' || op === 'board.card' || op === 'board.column') && answer.board && answer.board.visibility !== 'private') {
       sourceType = 'board'; sourceId = String(answer.board.id || '');   // (boards.js: only boards other people can see)
@@ -3604,6 +3612,8 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('art.')) return this.artOp(name, me, args);   // art.js
     if (name.startsWith('audio.')) return this.audioOp(name, me, args);   // audio.js
     if (name.startsWith('paste.')) return this.pasteOp(name, me, args);   // paste.js
+    if (name.startsWith('calendar.')) return this.calendarOp(name, me, args);   // calendar.js
+    if (name.startsWith('press.')) return this.pressOp(name, me, args);   // press.js
     if (name.startsWith('image.')) return this.imageOp(name, me, args);   // image.js
     if (name.startsWith('board.')) return this.boardOp(name, me, args);   // boards.js
     if (name.startsWith('wall.') || name === 'levels.me' || name === 'showcase.set') return this.levelsOp(name, me, args);   // levels.js
@@ -5790,8 +5800,9 @@ export class GbServerObject extends DurableObject {
         const r = kind === 'image' ? this.imageReportTarget(id, me) : this.boardReportTarget(id, me);   // image.js, boards.js
         if (typeof r === 'string') return fail(r);
         target = r.target; about = r.about; copy = r.copy;
-      } else if (kind === 'art' || kind === 'paste' || kind === 'course' || kind === 'video' || kind === 'stream' || kind === 'audio') {
+      } else if (kind === 'art' || kind === 'paste' || kind === 'course' || kind === 'video' || kind === 'stream' || kind === 'audio' || kind === 'calendar') {
         const r = kind === 'art' ? this.artReportTarget(id, me) : kind === 'audio' ? this.audioReportTarget(id, me) : kind === 'paste' ? this.pasteReportTarget(id, me)
+          : kind === 'calendar' ? this.calendarReportTarget(id, me)   // calendar.js
           : kind === 'video' ? this.videoReportTarget(id, me) : kind === 'stream' ? this.streamReportTarget(id, me)
           : this.academyReportTarget(id, me);   // art.js, paste.js, videos.js, streams.js, academy.js
         if (typeof r === 'string') return fail(r);
@@ -6160,6 +6171,7 @@ export class GbServerObject extends DurableObject {
       if (x.kind === 'forum') { const th = this.forum.get(x.target.split(':')[0]); r.name = th ? th.title : '(deleted)'; r.thread = th ? th.id : ''; }
       if (x.kind === 'art') { r.name = this.artReportName(x.target); r.piece = x.target.split(':')[0]; }   // art.js
       if (x.kind === 'paste') r.name = this.pasteReportName(x.target);   // paste.js
+      if (x.kind === 'calendar') r.name = this.calendarReportName(x.target);   // calendar.js
       if (x.kind === 'image') { r.name = this.imageReportName(x.target); r.image = x.target; }   // image.js
       if (x.kind === 'board') { r.name = this.boardReportName(x.target); r.board = x.target; }   // boards.js
       if (x.kind === 'audio') { r.name = this.audioReportName(x.target); r.track = x.target.split(':')[0]; }   // audio.js
@@ -6185,7 +6197,7 @@ export class GbServerObject extends DurableObject {
       board: th.board, boardName: (boardOf(th.board) || { name: '?' }).name,
       score: forumScore(th), myVote: me.userId !== 0 ? ((th.votes || {})[me.id] || 0) : 0,
       preview: forumPreview(th.posts[0] && th.posts[0].text), image: forumImage(th.posts[0] && th.posts[0].text),
-      reactions: reactionList(th.posts[0] && th.posts[0].reacts, me.id) });
+      reactions: reactionList(th.posts[0] && th.posts[0].reacts, me.id), hasPoll: !!th.poll });
     // One page of a thread (page -1 = the last page).
     const threadPage = (th, page) => {
       const pages = Math.max(1, Math.ceil(th.posts.length / kForumPage));
@@ -6194,7 +6206,7 @@ export class GbServerObject extends DurableObject {
       const posts = th.posts.slice(p * kForumPage, (p + 1) * kForumPage).filter((x) => !hidden(x.by))
         .map((x) => ({ id: x.id, text: x.text, at: x.at, edited: x.edited || 0, by: who(x.by), first: x.id === th.posts[0].id,
           canDelete: me.userId !== 0 && (x.by === me.id || staff), reactions: reactionList(x.reacts, me.id) }));
-      return okay({ thread: Object.assign(summary(th), { board: th.board, boardName: b.name }), posts, page: p, pages,
+      return okay({ thread: Object.assign(summary(th), { board: th.board, boardName: b.name, poll: pollJson(th.poll, me.userId !== 0 ? me.id : '', t) }), posts, page: p, pages,
         canReply: me.userId !== 0 && (!th.locked || staff), canModerate: staff, canReact: me.userId !== 0, reactions: REACTIONS });
     };
     if (name === 'forum.boards') {
@@ -6254,12 +6266,15 @@ export class GbServerObject extends DurableObject {
       if (b.staffOnly && !staff) return fail('Only Guts&Bolts staff post in ' + b.name + '.');
       const title = say(str(args, 'title'), kForumTitle), text = say(str(args, 'text'), kForumText, true);
       if (!title) return fail('Give your thread a title.');
-      if (!text) return fail('Write something first.');
+      const asked = makePoll(args.poll, say, t);   // a poll on the thread (polls.js)
+      if (asked.error) return fail(asked.error);
+      if (!text && !asked.poll) return fail('Write something first.');
       const key = 'ft:' + me.id;
       if (t - (this.lastPost.get(key) || 0) < kThreadCooldown) return fail('Slow down a little - wait a minute between new threads.');
       this.lastPost.set(key, t);
       const th = { id: 'f' + randomHex(6), board: b.id, title, by: me.id, at: t, last: t, lastBy: me.id, views: 0,
         pinned: false, locked: false, posts: [{ id: randomHex(6), by: me.id, text, at: t }] };
+      if (asked.poll) th.poll = asked.poll;
       this.forum.set(th.id, th);
       this.dirty.forum.add(th.id);
       this.recordForumActivity(th, b.name, 'thread_created', me.name);
@@ -6285,6 +6300,15 @@ export class GbServerObject extends DurableObject {
       if (v) th.votes[me.id] = v; else delete th.votes[me.id];
       this.dirty.forum.add(th.id);
       return okay({ thread: summary(th) });
+    }
+    if (name === 'forum.pollVote') {   // option: an answer's number (from 0), or -1 to take your vote back. Answers the poll.
+      if (me.userId === 0) return fail('Sign up to vote in polls.');
+      const starter = this.users.get(th.by);
+      if (starter && (this.blocks(me, starter) || this.blocks(starter, me))) return fail('You can\'t vote in this poll.');
+      const bad = pollVote(th.poll, me.id, typeof args.option === 'number' ? Math.trunc(args.option) : NaN, t);
+      if (bad) return fail(bad);
+      this.dirty.forum.add(th.id);
+      return okay({ poll: pollJson(th.poll, me.id, t) });
     }
     if (name === 'forum.react') {   // emoji on one post, on or off. Answers that post's reactions.
       if (me.userId === 0) return fail('Sign up to react on the forum.');
@@ -6394,7 +6418,8 @@ export class GbServerObject extends DurableObject {
       const members = Object.keys(g.members).map((id) => [id, this.rankIn(g, id)]).sort((x, y) => y[1].level - x[1].level).slice(0, 500)
         .map(([id, r]) => Object.assign(userJson(id), { role: r.name, rank: r.id, level: r.level }));
       const shoutInfo = g.shout && g.shout.text ? Object.assign(userJson(g.shout.by), { text: g.shout.text, time: g.shout.time }) : {};
-      const wall = g.wall.slice(-60).map((p) => Object.assign(userJson(p.by), { text: p.text, time: p.time }));
+      const wall = g.wall.slice(-60).map((p) => Object.assign(userJson(p.by), { text: p.text, time: p.time },
+        p.poll ? { poll: pollJson(p.poll, myRank ? me.id : '', t) } : {}));
       const games = [...this.assets.values()].filter((x) => x.kind === 'game' && x.group === g.id && this.canPlay(x, me))
         .sort((x, y) => (y.plays || 0) - (x.plays || 0)).slice(0, 50).map((x) => this.publicAsset(x, me));
       const r = okay({ group: this.publicGroup(g), myRole: myRank ? myRank.name : '', myRank: myRank ? rankJson(myRank) : null,
@@ -6432,13 +6457,24 @@ export class GbServerObject extends DurableObject {
     if (name === 'groups.post') {
       if (!myRank) return fail('Join the group to post on its wall.');
       const text = say(str(args, 'text'), 300, true);
-      if (!text) return fail('Write something first.');
+      const asked = makePoll(args.poll, say, t);   // a poll for the group's members (polls.js)
+      if (asked.error) return fail(asked.error);
+      if (!text && !asked.poll) return fail('Write something first.');
       if (t - (this.lastPost.get(me.id) || 0) < kPostCooldown) return fail('Slow down a little - wait a few seconds between posts.');
       this.lastPost.set(me.id, t);
-      g.wall.push({ by: me.id, text, time: t });
+      g.wall.push(asked.poll ? { by: me.id, text, time: t, poll: asked.poll } : { by: me.id, text, time: t });
       if (g.wall.length > kWallSize) g.wall.shift();
       this.saveGroup(g);
       return okay();
+    }
+    if (name === 'groups.pollVote') {   // {id, by, time, option}: vote in a poll on the wall (members only). Answers the poll.
+      if (!myRank) return fail('Join the group to vote in its polls.');
+      const post = g.wall.find((p) => p.time === num(args, 'time') && p.by === str(args, 'by'));
+      if (!post || !post.poll) return fail('That poll is gone.');
+      const bad = pollVote(post.poll, me.id, typeof args.option === 'number' ? Math.trunc(args.option) : NaN, t);
+      if (bad) return fail(bad);
+      this.saveGroup(g);
+      return okay({ poll: pollJson(post.poll, me.id, t) });
     }
     if (name === 'groups.deletePost') {
       const time = num(args, 'time'), by = str(args, 'by');
@@ -7350,6 +7386,8 @@ installShareLinks(GbServerObject);
 installArt(GbServerObject);
 installAudio(GbServerObject);
 installPaste(GbServerObject);
+installCalendar(GbServerObject);
+installPress(GbServerObject);
 installImage(GbServerObject);
 installBoards(GbServerObject);
 installLeaderboards(GbServerObject);

@@ -220,6 +220,7 @@ json GbServer::groupOp(const std::string& name, User& me, const json& args) {
             json p = userJson(g.wall[i].by);
             p["text"] = g.wall[i].text;
             p["time"] = g.wall[i].time;
+            if (g.wall[i].poll.is_object()) p["poll"] = pollJson(g.wall[i].poll, inGroup ? me.id : std::string(), now);
             wall.push_back(p);
         }
         r["wall"] = wall;
@@ -266,13 +267,28 @@ json GbServer::groupOp(const std::string& name, User& me, const json& args) {
     if (name == "groups.post") {
         if (!inGroup) return fail("Join the group to post on its wall.");
         std::string text = say(str("text"), 300, true);
-        if (text.empty()) return fail("Write something first.");
+        json poll;   // a poll for the group's members (ServerUtil.h makePoll)
+        if (const std::string bad = makePoll(args, now, poll); !bad.empty()) return fail(bad);
+        if (text.empty() && poll.is_null()) return fail("Write something first.");
         if (now - m_lastPost[me.id] < kPostCooldown) return fail("Slow down a little - wait a few seconds between posts.");
         m_lastPost[me.id] = now;
-        g.wall.push_back({me.id, text, now});
+        g.wall.push_back({me.id, text, now, poll});
         if (g.wall.size() > kWallSize) g.wall.erase(g.wall.begin());
         saveGroups();
         return okay();
+    }
+    if (name == "groups.pollVote") {   // {id, by, time, option}: vote in a poll on the wall (members only)
+        if (!inGroup) return fail("Join the group to vote in its polls.");
+        const long long t = args.contains("time") && args["time"].is_number() ? (long long)args["time"].get<double>() : 0;
+        const std::string by = str("by");
+        auto p = std::find_if(g.wall.begin(), g.wall.end(), [&](const Post& x) { return x.time == t && x.by == by; });
+        if (p == g.wall.end() || !p->poll.is_object()) return fail("That poll is gone.");
+        const std::string bad = pollVote(p->poll, me.id, args.contains("option") ? args["option"] : json(nullptr), now);
+        if (!bad.empty()) return fail(bad);
+        saveGroups();
+        json r = okay();
+        r["poll"] = pollJson(p->poll, me.id, now);
+        return r;
     }
     if (name == "groups.deletePost") {
         long long t = args.value("time", 0LL);
@@ -448,7 +464,11 @@ void GbServer::saveGroups() {
     json all = json::object();
     for (const auto& [id, g] : m_groups) {
         json wall = json::array();
-        for (const Post& p : g.wall) wall.push_back({p.by, p.text, p.time});
+        for (const Post& p : g.wall) {
+            json w = json::array({p.by, p.text, p.time});
+            if (p.poll.is_object()) w.push_back(p.poll);
+            wall.push_back(w);
+        }
         all[id] = {{"name", g.name}, {"description", g.description}, {"owner", g.owner}, {"created", g.created},
                    {"color", g.color}, {"open", g.open}, {"members", g.members}, {"requests", g.requests},
                    {"shout", {g.shout.by, g.shout.text, g.shout.time}}, {"wall", wall}};
@@ -485,7 +505,8 @@ void GbServer::loadGroups() {
             g.shout = {j["shout"][0].get<std::string>(), j["shout"][1].get<std::string>(), j["shout"][2].get<long long>()};
         if (j.contains("wall"))
             for (const auto& p : j["wall"])
-                if (p.is_array() && p.size() == 3) g.wall.push_back({p[0].get<std::string>(), p[1].get<std::string>(), p[2].get<long long>()});
+                if (p.is_array() && (p.size() == 3 || p.size() == 4))
+                    g.wall.push_back({p[0].get<std::string>(), p[1].get<std::string>(), p[2].get<long long>(), p.size() == 4 ? p[3] : json(nullptr)});
         if (j.contains("ranks") && j["ranks"].is_array()) g.ranks = j["ranks"];
         if (j.contains("ledger") && j["ledger"].is_array())
             for (const auto& e : j["ledger"])
