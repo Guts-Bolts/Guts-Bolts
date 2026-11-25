@@ -28,6 +28,8 @@ import { leaderboardPages } from './leaderboards.js';   // the Leaderboards page
 import { videoPages } from './videos.js';   // G&B Videos' pages
 import { streamPages } from './streams.js';   // G&B Live's pages (inside Videos)
 import { academyPages } from './academy.js';   // G&B Academy's pages
+import { pressPages } from './press.js';   // Press: news and creator spotlights
+import { calendarPages } from './calendar.js';   // the events calendar
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
 import { GROUPS, APPS, productOf, productById, activeLink } from './products.js';
@@ -945,6 +947,10 @@ Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago
 Object.assign(pages, audioPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me, fileBase64: (f) => gb.fileBase64(f) }));
 // G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
 Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// Press (#/press, #/pressview/<id>, #/presswrite): its pages live in press.js.
+Object.assign(pages, pressPages({ html, show, call, pageCall, signedIn, toast, verified, gameCard, me: () => me }));
+// The events calendar (#/calendar, #/calevent/<id>, #/calnew): its pages live in calendar.js.
+Object.assign(pages, calendarPages({ html, show, call, pageCall, signedIn, toast, needSignIn, reportLink, verified, me: () => me }));
 // G&B Image (#/image, #/imageview/<id>, #/imagenew): its pages live in image.js.
 Object.assign(pages, imagePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // G&B Boards (#/boards, #/board/<id>): its pages live in boards.js.
@@ -1151,7 +1157,7 @@ const forumCard = (t, showBoard) => html`<article class="fx-card${t.pinned ? ' p
   <div class="fx-card-main">
     <div class="fx-meta">${showBoard ? html`<a class="fx-board-link" href="#/forum/${t.board}">${forumIcon(t.board)}<b>${t.boardName}</b></a><span class="fx-dot">•</span>` : ''}
       <span class="fx-av">${forumAvatar(t.by, 28)}</span>${forumWho(t.by)}<span class="fx-dot">•</span><span title="${new Date(t.at * 1000).toLocaleString()}">${ago(t.at)}</span>
-      ${t.pinned ? html`<span class="fx-tag pin">📌 Pinned</span>` : ''}${t.locked ? html`<span class="fx-tag lock">🔒 Locked</span>` : ''}</div>
+      ${t.pinned ? html`<span class="fx-tag pin">📌 Pinned</span>` : ''}${t.locked ? html`<span class="fx-tag lock">🔒 Locked</span>` : ''}${t.hasPoll ? html`<span class="fx-tag poll">📊 Poll</span>` : ''}</div>
     <a class="fx-title" href="#/forum/t/${t.id}">${t.title}</a>
     ${t.image ? html`<a class="fx-card-media" href="#/forum/t/${t.id}"><img src="${t.image}" alt="${t.title}" loading="lazy" referrerpolicy="no-referrer"></a>` : ''}
     ${t.preview ? html`<a class="fx-preview" href="#/forum/t/${t.id}">${t.preview}</a>` : ''}
@@ -1177,8 +1183,9 @@ function forumComposer(boards, boardId) {
       ${boardId === 'all' ? html`<label class="fx-field"><span>Board</span><select name="board" required>${choices.map((b) => html`<option value="${b.id}">${FORUM_ICONS[b.id] || ''} ${b.name}</option>`)}</select></label>`
         : html`<input type="hidden" name="board" value="${boardId}">`}
       <input class="fx-input fx-input-title" type="text" name="title" maxlength="80" placeholder="Title" required>
-      <textarea class="fx-input" name="text" maxlength="3000" rows="5" placeholder="Text (you can add GIFs, code and links to games)" required></textarea>
+      <textarea class="fx-input" name="text" maxlength="3000" rows="5" placeholder="Text (you can add GIFs, code and links to games)"></textarea>
       <div class="fx-compose-preview"></div>
+      ${pollFields()}
       <div class="fx-compose-tools"><button type="button" class="fx-tool" data-forum-media title="Add a GIF or sticker">GIF</button>
         <button type="button" class="fx-tool" data-code-insert="lua" title="Add a code block">&lt;/&gt; Code</button>
         <span class="small muted">Be kind, and don't share personal info.</span>
@@ -1186,6 +1193,31 @@ function forumComposer(boards, boardId) {
     </div></form>`;
 }
 const isStaffMe = () => !!(me && me.staff);
+// Polls (worker/polls.js) on forum threads and group wall posts. pollFields() goes inside a post
+// form ("Add a poll", closed until you open it); readPoll(form) is what to send (undefined: no poll).
+const POLL_HOURS = [[24, '1 day'], [72, '3 days'], [168, '1 week'], [720, '30 days']];
+const pollFields = () => html`<details class="poll-make"><summary>📊 Add a poll</summary>
+  <input class="fx-input" type="text" name="pollQ" maxlength="120" placeholder="Ask a question">
+  ${[0, 1, 2, 3, 4, 5].map((i) => html`<input class="fx-input poll-opt" type="text" name="pollA${i}" maxlength="60" placeholder="Answer ${i + 1}${i > 1 ? ' (optional)' : ''}">`)}
+  <label class="small">Open for <select name="pollHours">${POLL_HOURS.map(([h, n]) => html`<option value="${h}" ${h === 168 ? 'selected' : ''}>${n}</option>`)}</select></label></details>`;
+function readPoll(f) {
+  if (!f.pollQ || !f.pollQ.value.trim()) return undefined;
+  return { question: f.pollQ.value, options: [0, 1, 2, 3, 4, 5].map((i) => f['pollA' + i].value).filter((x) => x.trim()), hours: Number(f.pollHours.value) };
+}
+// The poll itself: answers with bars. where = the data-* that say which poll ({thread} or {id, by, time}).
+function pollBox(poll, where, canVote) {
+  const open = !poll.closed && canVote;
+  const attrs = Object.entries(where).map(([k, v]) => ' data-' + k + '="' + String(v).replace(/[^A-Za-z0-9_-]/g, '') + '"').join('');
+  const left = poll.closed ? 'Closed' : 'Closes ' + new Date(poll.until * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return html`<div class="poll-box" data-poll="${where.thread || where.time}"><b class="poll-q">📊 ${poll.question}</b>
+    ${poll.options.map((o, i) => {
+      const pct = poll.total ? Math.round(o.votes * 100 / poll.total) : 0;
+      return html`<button type="button" class="poll-opt-row${poll.mine === i ? ' mine' : ''}" ${open ? '' : 'disabled'} ${raw('data-act="pollVote" data-option="' + (poll.mine === i ? -1 : i) + '"' + attrs)}
+        title="${open ? (poll.mine === i ? 'Take your vote back' : 'Vote for this') : ''}"><span class="poll-bar" style="width:${pct}%"></span>
+        <span class="poll-text">${poll.mine === i ? '✔ ' : ''}${o.text}</span><span class="poll-pct">${pct}% · ${o.votes}</span></button>`;
+    })}
+    <span class="small muted">${poll.total} vote${poll.total === 1 ? '' : 's'} · ${left}${!canVote && !poll.closed ? ' · sign in to vote' : ''}</span></div>`;
+}
 // The GIFs picked for a post you're writing (kept on the form, not typed into the text).
 function forumGifs(form) { try { return JSON.parse(form.dataset.gifs || '[]').filter((u) => safeMediaUrl(u)); } catch { return []; } }
 const forumWithGifs = (text, gifs) => [text.trim(), ...gifs.map((u) => '[media:' + u + ']')].filter(Boolean).join('\n');
@@ -1296,6 +1328,7 @@ async function forumThread(id, page) {
           ${t.pinned ? html`<span class="fx-tag pin">📌 Pinned</span>` : ''}${t.locked ? html`<span class="fx-tag lock">🔒 Locked</span>` : ''}</div>
         <h1 class="fx-title big">${t.title}</h1>
         ${first ? html`<div class="fx-body">${richText(first.text)}</div>` : r.page > 0 ? html`<p class="small muted"><a href="${base}">Back to the start of this post</a></p>` : ''}
+        ${t.poll && (first || r.page === 0) ? pollBox(t.poll, { thread: t.id }, signedIn()) : ''}
         <div class="fx-actions">${first ? forumReacts(t.id, first, r.canReact) : ''}
           <span class="fx-pill quiet">💬 ${plural(t.replies, 'comment', 'comments')}</span><span class="fx-pill quiet">👁 ${t.views}</span>
           <button type="button" class="fx-pill" data-act="copyText" data-text="${location.origin + location.pathname}#/forum/t/${t.id}">↗ Share</button>
@@ -3241,12 +3274,13 @@ pages.group = async (id) => {
         <td>${e.reason}</td><td class="muted small">${ago(e.at)}</td></tr>`)}</table>` : html`<p class="muted small">Nothing yet.</p>`}</div>` : ''}
     <h2>Wall</h2>
     ${role ? html`<form class="row" data-form="groupPost"><input type="hidden" name="id" value="${g.id}">
-      <input type="text" name="text" maxlength="300" placeholder="Say something" style="max-width:420px" required>
-      <button class="btn blue">Post</button></form>` : ''}
+      <input type="text" name="text" maxlength="300" placeholder="Say something" style="max-width:420px">
+      <button class="btn blue">Post</button>${pollFields()}</form>` : ''}
     <div class="wall">${r.wall.length ? r.wall.slice().reverse().map((p) => html`<div><a href="#/user/${p.id}"><b>${p.name}</b></a>${verified(p.verified)}
       <span class="small muted">${ago(p.time)}</span>
       ${signedIn() && (p.id === me.id || can('manage')) ? html`<button class="btn small" data-act="group" data-op="groups.deletePost" data-id="${g.id}"
-        data-by="${p.id}" data-time="${p.time}">Delete</button>` : ''}<br>${p.text}</div>`) : html`<p class="muted">Nothing on the wall yet.</p>`}</div>
+        data-by="${p.id}" data-time="${p.time}">Delete</button>` : ''}<br>${p.text}
+      ${p.poll ? pollBox(p.poll, { group: g.id, by: p.id, time: p.time }, !!role) : ''}</div>`) : html`<p class="muted">Nothing on the wall yet.</p>`}</div>
     ${can('manage') && r.requests && r.requests.length ? html`<h2>Waiting to join</h2><div class="list">${r.requests.map((u) => html`<div>
       <a class="grow" href="#/user/${u.id}">${u.name}</a>
       <button class="btn green small" data-act="group" data-op="groups.request" data-id="${g.id}" data-user="${u.id}" data-accept="1">Let in</button>
@@ -3623,6 +3657,7 @@ function reportsBox(rep, closed) {
     if (x.kind === 'video') return html`${x.target.includes(':') ? 'a comment' : 'the video'} by ${person(x.about)} on <a href="#/watch/${x.video}">${x.name}</a>`;   // videos.js
     if (x.kind === 'stream') return html`${x.target.includes(':') ? 'a chat line' : 'the live stream'} by ${person(x.about)} on <a href="#/live/${x.stream}">${x.name}</a>`;   // streams.js
     if (x.kind === 'paste') return html`the paste <a href="#/pasteview/${x.target}">${x.name}</a> by ${person(x.about)}`;
+    if (x.kind === 'calendar') return html`the event <a href="#/calevent/${x.target}">${x.name}</a> by ${person(x.about)}`;
     if (x.kind === 'image') return html`the picture <a href="#/imageview/${x.target}">${x.name}</a> by ${person(x.about)}`;   // image.js
     if (x.kind === 'board') return html`the board <a href="#/board/${x.target}">${x.name}</a> by ${person(x.about)}`;   // boards.js
     const href = isCatalogItem(x.assetKind) ? '#/item/' + x.target : '#/library/' + x.target;
@@ -4000,6 +4035,8 @@ function noteLink(n) {
   if (n.kind === 'group') return '#/group/' + n.about;
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;
+  if (n.kind === 'calendar') return '#/calevent/' + n.about;   // calendar.js
+  if (n.kind === 'press') return '#/pressview/' + n.about;   // press.js
   if (n.kind === 'sale' || n.kind === 'upload') return '#/library/' + n.about;
   if (n.kind === 'gift' || n.kind === 'auction' || n.kind === 'wishlist') return '#/item/' + n.about;
   if (n.kind === 'support') return '#/support';
@@ -4990,6 +5027,14 @@ const actions = {
     render();
   },
   // Vote a post up or down (pressing your own vote again takes it back). Only the vote box changes.
+  // A vote in a poll (pollBox): a forum thread's (d.thread) or a group wall post's (d.group, d.by, d.time).
+  async pollVote(d, el) {
+    const r = d.thread ? await call('forum.pollVote', { thread: d.thread, option: Number(d.option) })
+      : await call('groups.pollVote', { id: d.group, by: d.by, time: Number(d.time), option: Number(d.option) });
+    if (!r.ok) { toast(r.error); return; }
+    const box = el.closest('.poll-box');
+    if (box) box.outerHTML = pollBox(r.poll, d.thread ? { thread: d.thread } : { group: d.group, by: d.by, time: d.time }, true).s;
+  },
   async forumVote(d, el) {
     const box = el.closest('.fx-vote');
     const now = box.classList.contains('up') ? 1 : box.classList.contains('down') ? -1 : 0;
@@ -5500,7 +5545,7 @@ const forms = {
     location.hash = '#/forumsearch/' + encodeURIComponent(q) + '/' + encodeURIComponent(f.board.value || 'all') + '/1';
   },
   async forumPost(f) {
-    const r = await call('forum.post', { board: f.board.value, title: f.title.value, text: forumWithGifs(f.text.value, forumGifs(f)) });
+    const r = await call('forum.post', { board: f.board.value, title: f.title.value, text: forumWithGifs(f.text.value, forumGifs(f)), poll: readPoll(f) });
     if (!r.ok) { toast(r.error); return; }
     location.hash = '#/forum/t/' + r.thread.id;
   },
@@ -5958,7 +6003,7 @@ const forms = {
     location.hash = '#/group/' + r.group.id;
   },
   async groupPost(f) {
-    const r = await call('groups.post', { id: f.id.value, text: f.text.value });
+    const r = await call('groups.post', { id: f.id.value, text: f.text.value, poll: readPoll(f) });
     if (!r.ok) toast(r.error); else render();
   },
   async groupShout(f) {

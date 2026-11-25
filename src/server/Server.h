@@ -143,7 +143,7 @@ private:
         nlohmann::json testerNotes = nlohmann::json::object();
     };
 
-    struct Post { std::string by, text; long long time = 0; };
+    struct Post { std::string by, text; long long time = 0; nlohmann::json poll = nullptr; };   // poll: ServerUtil.h makePoll (wall posts only)
     struct Group {
         std::string id, name, description, owner;
         long long   created = 0;
@@ -353,6 +353,18 @@ private:
     std::string pasteReportName(const std::string& target) const;
     void savePastes();
     void loadPastes();
+    // ServerCalendar.cpp: the events calendar (calendar.json), same rules as worker/calendar.js.
+    nlohmann::json calendarOp(const std::string& name, User* me, const nlohmann::json& args);
+    nlohmann::json calendarJson(const nlohmann::json& e, const User* me, long long t, bool full) const;
+    std::string calendarReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string calendarReportName(const std::string& target) const;
+    void saveCalendar();
+    void loadCalendar();
+    // ServerPress.cpp: Press posts by staff (press.json), same rules as worker/press.js.
+    nlohmann::json pressOp(const std::string& name, User* me, const nlohmann::json& args);
+    nlohmann::json pressJson(const nlohmann::json& p, const User* me, bool full) const;
+    void savePress();
+    void loadPress();
     // ServerImage.cpp: G&B Image (images.json + files/image-<id>), same rules as worker/image.js.
     nlohmann::json imageOp(const std::string& name, User* me, const nlohmann::json& args);
     bool imageCanSee(const nlohmann::json& m, const User* me) const;
@@ -580,6 +592,8 @@ private:
     nlohmann::json m_experiments = {{"games", nlohmann::json::object()}, {"data", nlohmann::json::object()}, {"journeys", nlohmann::json::object()}, {"jdata", nlohmann::json::object()}};   // ServerExperiments.cpp
     nlohmann::json m_shareLinks = {{"links", nlohmann::json::object()}, {"seen", nlohmann::json::object()}};   // ServerShareLinks.cpp
     nlohmann::json m_pastes = {{"pastes", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerPaste.cpp
+    nlohmann::json m_calendar = {{"events", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerCalendar.cpp
+    nlohmann::json m_press = {{"posts", nlohmann::json::object()}};   // ServerPress.cpp
     nlohmann::json m_images = {{"images", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerImage.cpp
     nlohmann::json m_kanban = {{"boards", nlohmann::json::object()}};   // ServerBoards.cpp
     nlohmann::json m_leadersCache = nlohmann::json::object();   // ServerLeaderboards.cpp: "week" / "all" -> the last answer

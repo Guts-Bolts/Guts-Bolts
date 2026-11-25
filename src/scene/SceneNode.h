@@ -414,17 +414,24 @@ inline ParticleProps particleDefaults(ParticleType t) {
     return p;
 }
 
-enum class ConstraintType { Rope, Rod, Spring, Weld, Hinge, BallSocket, Prismatic, Cylindrical };
-inline constexpr int kConstraintTypeCount = 8;
+enum class ConstraintType { Rope, Rod, Spring, Weld, Hinge, BallSocket, Prismatic, Cylindrical,
+                            Rigid, Plane, Universal, TorsionSpring, NoCollision, LineForce };
+inline constexpr int kConstraintTypeCount = 14;
 inline const char* const kConstraintNames[kConstraintTypeCount] = {"Rope", "Rod", "Spring", "Weld", "Hinge",
-                                                                   "BallSocket", "Prismatic", "Cylindrical"};
+                                                                   "BallSocket", "Prismatic", "Cylindrical",
+                                                                   "Rigid", "Plane", "Universal", "TorsionSpring",
+                                                                   "NoCollision", "LineForce"};
 inline const char* const kConstraintClassNames[kConstraintTypeCount] = {
     "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint",
-    "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint"};
+    "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint",
+    "RigidConstraint", "PlaneConstraint", "UniversalConstraint", "TorsionSpringConstraint",
+    "NoCollisionConstraint", "LineForce"};
 // The joints whose settings live in JointProps (below).
-inline bool usesJointProps(ConstraintType t) { return (int)t >= (int)ConstraintType::BallSocket; }
+inline bool usesJointProps(ConstraintType t) { return (int)t >= (int)ConstraintType::BallSocket && t != ConstraintType::NoCollision; }
 // Prismatic and cylindrical joints slide along Attachment0's axis.
 inline bool jointSlides(ConstraintType t) { return t == ConstraintType::Prismatic || t == ConstraintType::Cylindrical; }
+// WeldConstraint and NoCollisionConstraint join two Parts (Part0 / Part1); the rest join Attachments.
+inline bool joinsParts(ConstraintType t) { return t == ConstraintType::Weld || t == ConstraintType::NoCollision; }
 
 // ActuatorType / AngularActuatorType: nothing, a motor (runs at a speed) or a
 // servo (goes to a target and stops there).
@@ -461,9 +468,29 @@ struct JointProps {
     bool  angularLimitsEnabled = false;           // [AngularLimitsEnabled]: LowerAngle..UpperAngle
     float lowerAngle       = -45.0f;              // [LowerAngle]
     float inclinationAngle = 0.0f;                // [InclinationAngle]
+    // Universal / TorsionSpring: how far the two axes may lean apart, in a cone [MaxAngle]
+    // (with LimitsEnabled and Restitution above).
+    float maxAngle = 45.0f;
+    // TorsionSpring: the most it may turn things [MaxTorque] (its Stiffness and Damping are the node's).
+    float maxTorque = 1e30f;
+    // RigidConstraint: with DestructionEnabled it snaps when pulled harder than DestructionForce
+    // or twisted harder than DestructionTorque.
+    bool  destructionEnabled = false;
+    float destructionForce = 0.0f, destructionTorque = 0.0f;
+    // LineForce: pushes (or, below 0, pulls) Attachment0 along the line to Attachment1 [Magnitude],
+    // at the part's middle [ApplyAtCenterOfMass], weaker with distance squared [InverseSquareLaw],
+    // never more than [MaxForce], and pushing Attachment1 back the other way [ReactionForceEnabled].
+    float lineMagnitude = 1000.0f;
+    bool  applyAtCenterOfMass = false, inverseSquareLaw = false, reactionForceEnabled = false;
+    float lineMaxForce = 1e30f;
+    // RopeConstraint's winch: reels the rope in or out to WinchTarget studs, WinchSpeed studs a
+    // second at most, pulling with up to WinchForce [WinchEnabled, WinchResponsiveness].
+    bool  winchEnabled = false;
+    float winchTarget = 5.0f, winchSpeed = 2.0f, winchForce = 10000.0f, winchResponsiveness = 45.0f;
     // Where it is now (worked out by the physics, not saved): [CurrentPosition]
-    // studs along the axis, [CurrentAngle] degrees around it.
-    float currentPosition = 0.0f, currentAngle = 0.0f;
+    // studs along the axis, [CurrentAngle] degrees around it, and how far apart the two
+    // attachments are [CurrentDistance] (rope, rod, spring: CurrentLength).
+    float currentPosition = 0.0f, currentAngle = 0.0f, currentDistance = 0.0f;
 };
 
 enum class LightType { Point, Spot };

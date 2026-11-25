@@ -71,6 +71,71 @@ inline std::string toggleReaction(json& holder, const std::string& emoji, const 
     if (reacts.empty()) holder.erase("reacts");
     return "";
 }
+// Polls on forum threads and group wall posts (worker/polls.js has the same rules): a question
+// (up to 120 bytes) with 2 to 6 different answers (up to 60 each), open for 1, 3, 7 or 30 days,
+// one vote each that you can change or take back (-1) until it closes. Kept as
+// {q, options: [text], votes: {account: index}, at, until}.
+// makePoll: "" and out = the poll (null when none was asked for), or why not.
+inline std::string makePoll(const json& args, long long now, json& out) {
+    out = nullptr;
+    if (!args.contains("poll") || args["poll"].is_null() || args["poll"] == false || args["poll"] == "") return "";
+    const json& in = args["poll"];
+    if (!in.is_object()) return "That poll doesn't look right.";
+    const std::string q = say(in.contains("question") && in["question"].is_string() ? in["question"].get<std::string>() : "", 120);
+    if (q.empty()) return "Give your poll a question.";
+    json options = json::array();
+    if (in.contains("options") && in["options"].is_array()) {
+        size_t seen = 0;
+        for (const json& o : in["options"]) {
+            if (++seen > 20) break;
+            const std::string text = say(o.is_string() ? o.get<std::string>() : "", 60);
+            if (text.empty()) continue;
+            bool dup = false;
+            for (const json& x : options) if (lower(x.get<std::string>()) == lower(text)) dup = true;
+            if (!dup) options.push_back(text);
+        }
+    }
+    if (options.size() < 2) return "A poll needs at least 2 different answers.";
+    if (options.size() > 6) return "A poll can have at most 6 answers.";
+    long long hours = 168;
+    if (in.contains("hours")) hours = in["hours"].is_number() ? (long long)in["hours"].get<double>() : 0;
+    if (hours != 24 && hours != 72 && hours != 168 && hours != 720) return "Pick how long the poll stays open: 1 day, 3 days, 1 week or 30 days.";
+    out = {{"q", q}, {"options", options}, {"votes", json::object()}, {"at", now}, {"until", now + hours * 3600}};
+    return "";
+}
+// What people see: the counts, their own vote (-1: none), and whether it's closed. Never who voted.
+inline json pollJson(const json& poll, const std::string& meId, long long now) {
+    if (!poll.is_object()) return nullptr;
+    const json& opts = poll.contains("options") && poll["options"].is_array() ? poll["options"] : json::array();
+    std::vector<long long> counts(opts.size(), 0);
+    long long mine = -1;
+    if (poll.contains("votes") && poll["votes"].is_object())
+        for (const auto& [who, v] : poll["votes"].items()) {
+            if (!v.is_number()) continue;
+            const long long n = (long long)v.get<double>();
+            if (n >= 0 && n < (long long)counts.size()) ++counts[(size_t)n];
+            if (!meId.empty() && who == meId) mine = n;
+        }
+    json options = json::array();
+    long long total = 0;
+    for (size_t i = 0; i < opts.size(); ++i) { options.push_back({{"text", opts[i]}, {"votes", counts[i]}}); total += counts[i]; }
+    const long long until = poll.value("until", 0LL);
+    return {{"question", poll.value("q", std::string())}, {"options", options}, {"total", total}, {"mine", mine},
+            {"until", until}, {"closed", now >= until}};
+}
+// Vote (an answer's number from 0) or take it back (-1). "" when it worked.
+inline std::string pollVote(json& poll, const std::string& meId, const json& option, long long now) {
+    if (!poll.is_object()) return "There's no poll there.";
+    if (now >= poll.value("until", 0LL)) return "This poll has closed.";
+    if (!option.is_number() || std::floor(option.get<double>()) != option.get<double>()) return "Pick one of the answers.";
+    const long long n = (long long)option.get<double>();
+    if (!poll.contains("votes") || !poll["votes"].is_object()) poll["votes"] = json::object();
+    if (n == -1) { poll["votes"].erase(meId); return ""; }
+    if (n < 0 || n >= (long long)poll["options"].size()) return "Pick one of the answers.";
+    if (!poll["votes"].contains(meId) && poll["votes"].size() >= 100000) return "This poll is full.";
+    poll["votes"][meId] = n;
+    return "";
+}
 // Lyreto (lyreto.com) is the chat app Guts&Bolts partners with: games and groups can link their
 // Lyreto server. A link cleaned up to https://lyreto.com/... ("" for no link), or false when it
 // isn't a Lyreto link (the same rules as lyretoLink in worker/server.js).

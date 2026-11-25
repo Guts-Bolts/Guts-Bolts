@@ -96,7 +96,8 @@ const char* const kWords[] = {
     "Contrast", "Saturation", "TintColor", "Intensity", "Spread", "Threshold", "FarIntensity", "NearIntensity",
     "FocusDistance", "InFocusRadius", "CurrentCamera",
     // Joints
-    "Attachment", "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint",
+    "Attachment", "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint", "RigidConstraint", "PlaneConstraint", "UniversalConstraint",
+    "TorsionSpringConstraint", "NoCollisionConstraint", "LineForce", "WinchEnabled", "WinchTarget", "CurrentDistance",
     "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint", "LimitsEnabled", "UpperAngle", "LowerAngle",
     "TwistLimitsEnabled", "TwistLowerAngle", "TwistUpperAngle", "Restitution", "LowerLimit", "UpperLimit",
     "ActuatorType", "Enum.ActuatorType.Motor", "Enum.ActuatorType.Servo", "MotorMaxForce", "ServoMaxForce",

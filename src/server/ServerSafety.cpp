@@ -19,7 +19,7 @@ constexpr size_t kMaxBlocked    = 200;
 constexpr int    kReportsPerDay = 20;
 constexpr size_t kMaxReports    = 3000;
 bool isReportKind(const std::string& k) {
-    return k == "user" || k == "game" || k == "item" || k == "message" || k == "group" || k == "comment" || k == "forum" || k == "art" || k == "paste" || k == "course" || k == "video" || k == "stream" || k == "audio" || k == "image" || k == "board";   // art: ServerArt.cpp, audio: ServerAudio.cpp; image: ServerImage.cpp; board: ServerBoards.cpp
+    return k == "user" || k == "game" || k == "item" || k == "message" || k == "group" || k == "comment" || k == "forum" || k == "art" || k == "paste" || k == "calendar" || k == "course" || k == "video" || k == "stream" || k == "audio" || k == "image" || k == "board";   // art: ServerArt.cpp, audio: ServerAudio.cpp; image: ServerImage.cpp; board: ServerBoards.cpp
 }
 bool has(const std::vector<std::string>& list, const std::string& id) {
     return std::find(list.begin(), list.end(), id) != list.end();
@@ -143,6 +143,9 @@ json GbServer::safetyOp(const std::string& name, User& me, const json& args) {
         } else if (kind == "paste") {   // ServerPaste.cpp
             const std::string why = pasteReportTarget(id, me, target, about, copy);
             if (!why.empty()) return fail(why);
+        } else if (kind == "calendar") {   // ServerCalendar.cpp
+            const std::string why = calendarReportTarget(id, me, target, about, copy);
+            if (!why.empty()) return fail(why);
         } else if (kind == "video") {   // ServerVideo.cpp
             const std::string why = videoReportTarget(id, me, target, about, copy);
             if (!why.empty()) return fail(why);
@@ -221,6 +224,7 @@ json GbServer::reportsJson(const std::string& status) const {
         }
         if (kind == "art") { r["name"] = artReportName(target); r["piece"] = target.substr(0, target.find(':')); }
         if (kind == "paste") r["name"] = pasteReportName(target);   // ServerPaste.cpp
+        if (kind == "calendar") r["name"] = calendarReportName(target);   // ServerCalendar.cpp
         if (kind == "image") { r["name"] = imageReportName(target); r["image"] = target; }   // ServerImage.cpp
         if (kind == "board") { r["name"] = kanbanReportName(target); r["board"] = target; }   // ServerBoards.cpp
         if (kind == "audio") { r["name"] = audioReportName(target); r["track"] = target.substr(0, target.find(':')); }   // ServerAudio.cpp

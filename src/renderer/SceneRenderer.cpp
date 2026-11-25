@@ -1227,7 +1227,7 @@ void SceneRenderer::drawConstraints(Scene& scene, bool editing) {
             draw(m, n->selected ? glm::vec3(1, 0.6f, 0.1f) : glm::vec3(0.2f, 1.0f, 0.3f), Material::Neon, *ball);
             return;
         }
-        if (!n->isConstraint() || !n->shown() || n->constraintType == ConstraintType::Weld) return;
+        if (!n->isConstraint() || !n->shown() || joinsParts(n->constraintType)) return;
         SceneNode* a0 = scene.findById(n->ref0);
         SceneNode* a1 = scene.findById(n->ref1);
         if (!a0 || !a1) return;
@@ -1316,6 +1316,20 @@ void SceneRenderer::drawConstraints(Scene& scene, bool editing) {
                 }
                 break;
             }
+            case ConstraintType::TorsionSpring:
+            case ConstraintType::Universal:
+            case ConstraintType::Rigid: {
+                // A small ball at each attachment, joined by a thin bar.
+                const float r = std::max(0.12f, th * 1.5f);
+                draw(glm::translate(glm::mat4(1.0f), p0) * glm::scale(glm::mat4(1.0f), glm::vec3(r)), col, Material::Metal, *ball);
+                draw(glm::translate(glm::mat4(1.0f), p1) * glm::scale(glm::mat4(1.0f), glm::vec3(r)), col * 0.8f, Material::Metal, *ball);
+                if (glm::length(p1 - p0) > r) draw(segment(p0, p1, th * 0.5f), col, Material::Metal, *cyl);
+                break;
+            }
+            case ConstraintType::Plane:
+            case ConstraintType::LineForce:
+                draw(segment(p0, p1, th * 0.4f), col, Material::Neon, *cyl);
+                break;
             default: break;
         }
     });

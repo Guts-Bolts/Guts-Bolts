@@ -125,12 +125,25 @@ export const PRODUCTS = [
   {
     id: 'communities', name: 'Communities', status: 'open', href: '#/forum',
     blurb: 'Forums, groups and people to meet.',
-    pages: ['forum', 'forumsearch', 'groups', 'group', 'people', 'leaderboards'],
+    pages: ['forum', 'forumsearch', 'groups', 'group', 'people', 'leaderboards', 'calendar', 'calevent', 'calnew'],
     links: [
       ['Forum', '#/forum', 'forum'],
       ['Groups', '#/groups', 'groups'],
+      ['Calendar', '#/calendar', 'calendar'],
       ['People', '#/people', 'people'],
       ['Leaderboards', '#/leaderboards', 'leaderboards'],
+    ],
+  },
+  {
+    id: 'press', name: 'Press', status: 'open', href: '#/press',
+    blurb: 'News from the team, creator spotlights and stories from behind the scenes.',
+    pages: ['press', 'pressview', 'presswrite'],
+    links: [
+      ['Latest', '#/press', 'press'],
+      ['News', '#/press?kind=news', 'press-news'],
+      ['Creator spotlights', '#/press?kind=spotlight', 'press-spotlight'],
+      ['Behind the scenes', '#/press?kind=devlog', 'press-devlog'],
+      ['Calendar', '#/calendar', ''],
     ],
   },
   {
@@ -176,7 +189,7 @@ export const GROUPS = [
   { id: 'games', name: 'Games', products: ['games'], later: [] },
   { id: 'media', name: 'Media', products: ['videos', 'live', 'audio'], later: [] },
   { id: 'creation', name: 'Creation', products: ['art', 'image'], later: ['Modeler', 'Capture'] },
-  { id: 'community', name: 'Community', products: ['communities', 'chat'], later: ['Press'] },
+  { id: 'community', name: 'Community', products: ['communities', 'chat', 'press'], later: [] },
   { id: 'ai', name: 'AI', products: ['fyxa'], later: ['Fyxa Desktop', 'AI Lab'] },
   { id: 'learning', name: 'Learning', products: ['academy'], later: [] },
   { id: 'development', name: 'Development', products: ['paste'], later: ['Code'] },
@@ -226,6 +239,9 @@ export function activeLink(page, hash) {
   if (page === 'item') return 'catalog';
   if (page === 'trade') return 'trades';
   if (page === 'forumsearch') return 'forum';
+  if (page === 'calevent' || page === 'calnew') return 'calendar';
+  if (page === 'press') { const m = /[?&]kind=(news|spotlight|devlog)/.exec(String(hash || '')); return m ? 'press-' + m[1] : 'press'; }
+  if (page === 'pressview') return 'press';
   if (page === 'group') return 'groups';
   if (page === 'parties') return 'chat';
   if (page === 'create' && /^#\/create\/library/.test(String(hash || ''))) return 'library';
