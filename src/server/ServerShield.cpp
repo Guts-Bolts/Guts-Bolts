@@ -77,6 +77,8 @@ constexpr Rule kCostly[] = {
     {"party.react", 240, 720, 600},
     {"chat.translate", 400, 1200, 600},
     {"groups.create", 5, 15, 3600},
+    {"groups.announce", 20, 60, 3600},   // (ServerGroupPages.cpp)
+    {"groups.pictures", 30, 90, 3600},
     {"bolts.redeem", 20, 60, 600},   // (so nobody can guess promo codes over and over)
     {"roadmap.suggest", 5, 15, 3600},
     {"roadmap.vote", 120, 360, 600},

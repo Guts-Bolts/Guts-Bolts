@@ -34,6 +34,7 @@ import { installAudio, AUDIO_LOOK_ONLY, AUDIO_COSTLY } from './audio.js';   // t
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
 import { makePoll, pollJson, pollVote, pollWords } from './polls.js';   // polls on forum threads and group wall posts
 import { installCalendar, CALENDAR_LOOK_ONLY, CALENDAR_COSTLY } from './calendar.js';   // the events calendar
+import { installGroupPages, GROUP_PAGE_OPS, GROUP_PAGE_LOOK_ONLY, GROUP_PAGE_COSTLY } from './group-pages.js';   // group icons, announcements, members by rank
 import { installPress, PRESS_LOOK_ONLY, PRESS_COSTLY } from './press.js';   // Press: news, creator spotlights
 import { installImage, IMAGE_LOOK_ONLY, IMAGE_COSTLY } from './image.js';   // G&B Image: put pictures online, share a link
 import { installBoards, BOARDS_LOOK_ONLY, BOARDS_COSTLY } from './boards.js';   // G&B Boards: plan with cards in columns
@@ -567,6 +568,7 @@ Object.assign(COSTLY, ART_COSTLY);   // art.js
 Object.assign(COSTLY, AUDIO_COSTLY);   // audio.js
 Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
 Object.assign(COSTLY, CALENDAR_COSTLY);   // calendar.js
+Object.assign(COSTLY, GROUP_PAGE_COSTLY);   // group-pages.js
 Object.assign(COSTLY, PRESS_COSTLY);   // press.js
 Object.assign(COSTLY, IMAGE_COSTLY);   // image.js
 Object.assign(COSTLY, BOARDS_COSTLY);   // boards.js
@@ -622,7 +624,7 @@ export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.m
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
 for (const op of [...IMAGE_LOOK_ONLY, ...BOARDS_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at public pictures and boards (image.js, boards.js)
 for (const op of LEVELS_LOOK_ONLY) GUEST_OK.add(op);   // guests can read profile walls (levels.js)
-for (const op of [...ART_LOOK_ONLY, ...AUDIO_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...LEADER_LOOK_ONLY, ...CALENDAR_LOOK_ONLY, ...PRESS_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of [...ART_LOOK_ONLY, ...AUDIO_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...LEADER_LOOK_ONLY, ...CALENDAR_LOOK_ONLY, ...GROUP_PAGE_LOOK_ONLY, ...PRESS_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
 for (const op of SHARE_GUEST_OK) GUEST_OK.add(op);   // sharelinks.js (anyone can open a link)
 
@@ -2457,7 +2459,8 @@ export class GbServerObject extends DurableObject {
     const o = this.users.get(g.owner);
     return { id: g.id, name: g.name, description: g.description, owner: g.owner, ownerName: o ? o.name : '?',
       ownerVerified: !!o && this.isVerified(o), members: Object.keys(g.members).length, color: g.color, open: g.open,
-      created: g.created, shout: (g.shout && g.shout.text) || '', lyreto: this.lyretoJson(g) };
+      created: g.created, shout: (g.shout && g.shout.text) || '', lyreto: this.lyretoJson(g),
+      icon: this.groupPicture(g.icon), banner: this.groupPicture(g.banner) };   // group-pages.js
   }
   groupsOf(id) { return [...this.groups.values()].filter((g) => g.members[id]); }
   ranksOf(g) { return Array.isArray(g.ranks) && g.ranks.length ? g.ranks : defaultRanks(); }
@@ -2759,6 +2762,7 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'groups.create') { sourceType = 'group'; sourceId = String(answer.group && answer.group.id || ''); fields.push(['group name', args.name], ['group description', args.description]);
     } else if (op === 'groups.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group wall post', args.text], ['group poll', pollWords(args.poll)]);
     } else if (op === 'groups.shout' || op === 'groups.wall.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group shout', args.text]);
+    } else if (op === 'groups.announce') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group announcement title', args.title], ['group announcement', args.text]);
     } else if (op === 'groups.edit') { sourceType = 'group'; sourceId = String(args.id || ''); fields.push(['group description', args.description]);
     } else if (op === 'updates.post') { sourceType = 'platform_update'; sourceId = String(answer.update && answer.update.id || ''); fields.push(['update title', args.name], ['update summary', args.summary], ['update notes', Array.isArray(args.items) ? args.items.join('\n') : '']);
     } else if (op === 'profile.set') { sourceType = 'profile'; sourceId = actor.id; fields.push(['profile about', args.blurb], ['profile status', args.status]);
@@ -3584,7 +3588,8 @@ export class GbServerObject extends DurableObject {
       if (q[0] === '@') q = q.slice(1);
       const wantId = q && q.length < 12 && /^[0-9]+$/.test(q) ? Number(q) : -1;
       const found = [...this.users.values()].filter((u) => !u.banned && u.userId > 0 &&
-        (!q || u.userId === wantId || lower(u.name).includes(q) || lower(u.username).includes(q)));
+        (!q || u.userId === wantId || lower(u.name).includes(q) || lower(u.username).includes(q)) &&
+        this.peopleShown(str(args, 'show'), u, me));   // the People page's tabs (group-pages.js)
       found.sort((a, b) => {
         const ea = lower(a.username) === q || a.userId === wantId, eb = lower(b.username) === q || b.userId === wantId;
         if (ea !== eb) return ea ? -1 : 1;
@@ -3592,7 +3597,7 @@ export class GbServerObject extends DurableObject {
         if (va !== vb) return va ? -1 : 1;
         return b.lastSeen - a.lastSeen;
       });
-      return okay({ users: found.slice(0, 50).map((u) => this.publicUser(u)) });
+      return okay({ users: found.slice(0, 50).map((u) => this.personCard(u, me)) });   // (with avatars and levels: group-pages.js)
     }
     if (name.startsWith('fyxacloud.') || name === 'admin.fyxaCloud') return this.fyxaCloudOp(name, me, args);   // fyxa-cloud.js
     if (name.startsWith('ai.')) return this.aiOp(name, me, args);
@@ -6422,9 +6427,9 @@ export class GbServerObject extends DurableObject {
         p.poll ? { poll: pollJson(p.poll, myRank ? me.id : '', t) } : {}));
       const games = [...this.assets.values()].filter((x) => x.kind === 'game' && x.group === g.id && this.canPlay(x, me))
         .sort((x, y) => (y.plays || 0) - (x.plays || 0)).slice(0, 50).map((x) => this.publicAsset(x, me));
-      const r = okay({ group: this.publicGroup(g), myRole: myRank ? myRank.name : '', myRank: myRank ? rankJson(myRank) : null,
+      const r = Object.assign(okay({ group: this.publicGroup(g), myRole: myRank ? myRank.name : '', myRank: myRank ? rankJson(myRank) : null,
         ranks: this.ranksOf(g).slice().sort((x, y) => y.level - x.level).map(rankJson), requested: g.requests.includes(me.id),
-        memberList: members, shoutInfo, wall, games });
+        memberList: members, shoutInfo, wall, games }), this.groupExtras(g));   // (news, rankCounts: group-pages.js)
       if (can('manage')) r.requests = g.requests.map(userJson);
       if (can('funds') || staff) {
         r.funds = this.groupFunds(g);
@@ -6608,6 +6613,7 @@ export class GbServerObject extends DurableObject {
       this.dirty.groups.add(g.id);
       return okay();
     }
+    if (GROUP_PAGE_OPS.has(name)) return this.groupPageOp(name, me, args, g);   // group-pages.js
     return fail('The server doesn\'t know how to do "' + name + '". It might need updating.');
   }
 
@@ -7387,6 +7393,7 @@ installArt(GbServerObject);
 installAudio(GbServerObject);
 installPaste(GbServerObject);
 installCalendar(GbServerObject);
+installGroupPages(GbServerObject, say);
 installPress(GbServerObject);
 installImage(GbServerObject);
 installBoards(GbServerObject);

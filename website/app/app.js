@@ -30,6 +30,7 @@ import { streamPages } from './streams.js';   // G&B Live's pages (inside Videos
 import { academyPages } from './academy.js';   // G&B Academy's pages
 import { pressPages } from './press.js';   // Press: news and creator spotlights
 import { calendarPages } from './calendar.js';   // the events calendar
+import { groupPages } from './groups.js';   // the Groups, group and People pages
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
 import { GROUPS, APPS, productOf, productById, activeLink } from './products.js';
@@ -2959,16 +2960,6 @@ pages.trade = async (id) => {
       <p><button class="btn green">Send trade offer</button> <span id="tradeMsg"></span></p></form>`);
 };
 
-pages.people = async () => {
-  const query = new URLSearchParams(location.hash.split('?')[1] || '').get('q') || '';
-  const r = await pageCall('users.search', { query });
-  show(html`<h1>People</h1>
-    <form class="row" data-form="peopleSearch"><input type="search" name="q" placeholder="Search by username or #number" value="${query}" style="max-width:280px">
-      <button class="btn blue">Search</button></form>
-    <div class="list">${r.ok ? r.users.map((u) => html`<div><a class="grow" href="#/user/${u.userId}"><b>${u.username}</b></a>${verified(u.verified)}${club(u)}${partner(u)}
-      <span class="muted small">#${u.userId}${u.official ? ' · Guts&Bolts staff' : ''}</span></div>`) : html`<p class="error">${r.error}</p>`}</div>`);
-};
-
 // Someone's friends, who they follow, or their followers: #/user/5/friends (or /following, /followers).
 const PEOPLE_TABS = [['friends', 'Friends'], ['following', 'Following'], ['followers', 'Followers']];
 async function peoplePage(id, which, page) {
@@ -3184,120 +3175,6 @@ pages.friends = async () => {
           Meanwhile, look around the <a href="#/people">People</a> page!</p>`}
     ${r.outgoing.length ? html`<h2>Waiting for them</h2><div class="list">${r.outgoing.map((p) => html`<div>${person(p)}
       <button class="btn small" data-act="friend" data-op="friends.cancel" data-user="${p.id}">Cancel</button></div>`)}</div>` : ''}`);
-};
-
-pages.groups = async () => {
-  const query = new URLSearchParams(location.hash.split('?')[1] || '').get('q') || '';
-  const [r, mine] = await Promise.all([pageCall('groups.list', { query }), signedIn() ? pageCall('groups.mine', {}) : { ok: false }]);
-  const row = (g) => html`<div><span style="width:14px;height:14px;border-radius:3px;background:#${Number(g.color).toString(16).padStart(6, '0')}"></span>
-    <a class="grow" href="#/group/${g.id}"><b>${g.name}</b></a><span class="muted small">${g.members} members${g.open ? '' : ' · invite only'}</span></div>`;
-  show(html`<h1>Groups</h1>
-    ${mine.ok && mine.groups.length ? html`<h2>My groups</h2><div class="list">${mine.groups.map(row)}</div>` : ''}
-    <h2>Find groups</h2>
-    <form class="row" data-form="groupSearch"><input type="search" name="q" placeholder="Search groups" value="${query}" style="max-width:280px">
-      <button class="btn blue">Search</button></form>
-    <div class="list">${r.ok ? r.groups.map(row) : html`<p class="error">${r.error}</p>`}</div>
-    <h2>Make a group</h2>
-    ${signedIn() ? html`<form class="form" data-form="groupCreate">
-      <label>Name</label><input type="text" name="name" maxlength="40" required>
-      <label>Description</label><textarea name="description" maxlength="1000"></textarea>
-      <label>Colour</label><input type="color" name="color" value="#3a7bd5">
-      <label><input type="checkbox" name="open" checked> Anyone can join (untick: people ask to join)</label>
-      <p><button class="btn green">Make it${me.verified ? ' (free)' : ' for 50 Bolts'}</button></p></form>` : html`<form class="form" data-form="groupCreate">
-      <label>Name</label><input type="text" name="name" maxlength="40">
-      <p><button class="btn green">Make a group</button></p></form>`}`);
-};
-
-// What each group permission lets a rank do (the server checks the same).
-const GROUP_PERMS = [['shout', 'Shout'], ['manage', 'Let people in, remove people, delete wall posts, change settings'],
-  ['ranks', 'Change people\'s ranks'], ['games', 'Add their games to the group'], ['funds', 'See the group\'s Bolts and pay people']];
-
-pages.group = async (id) => {
-  const r = await pageCall('groups.get', { id });
-  if (!r.ok) { show(html`<h1>Group not found</h1><p class="muted">${r.error}</p>`); return; }
-  const g = r.group, role = r.myRole, mine = r.myRank, owner = !!mine && mine.id === 'Owner';
-  const can = (perm) => !!mine && (owner || mine.perms.includes(perm));
-  const myLevel = mine ? mine.level : 0;
-  const color = '#' + Number(g.color).toString(16).padStart(6, '0');
-  const join = !signedIn() ? html`<button class="btn green" data-act="group" data-op="groups.join" data-id="${g.id}">${g.open ? 'Join' : 'Ask to join'}</button>` : role ? (owner ? '' : html`<button class="btn small" data-act="group" data-op="groups.leave" data-id="${g.id}">Leave</button>`)
-    : r.requested ? html`<span class="muted">You asked to join.</span>`
-      : html`<button class="btn green" data-act="group" data-op="groups.join" data-id="${g.id}">${g.open ? 'Join' : 'Ask to join'}</button>`;
-  // Ranks someone can be given by me: below my level (the owner can give any but Owner).
-  const giveable = r.ranks.filter((x) => x.id !== 'Owner' && (owner || x.level < myLevel));
-  const memberRow = (u) => {
-    const below = u.level < myLevel && u.id !== me.id && u.rank !== 'Owner';
-    return html`<div><a class="grow" href="#/user/${u.id}">${u.name}</a>${verified(u.verified)}
-      ${can('ranks') && below ? html`<form class="row inline" data-form="groupRank"><input type="hidden" name="id" value="${g.id}">
-        <input type="hidden" name="user" value="${u.id}"><select name="rank">${giveable.map((x) => html`<option value="${x.id}" ${x.id === u.rank ? 'selected' : ''}>${x.name}</option>`)}</select>
-        <button class="btn small">Set</button></form>` : html`<span class="muted small">${u.role}</span>`}
-      ${owner && u.rank !== 'Owner' ? html`<button class="btn small" data-act="group" data-op="groups.member" data-id="${g.id}" data-user="${u.id}" data-action="owner"
-        data-confirm="Make ${u.name} the owner of ${g.name}? You can't undo this yourself.">Make owner</button>` : ''}
-      ${can('manage') && below ? html`
-        <button class="btn small red" data-act="group" data-op="groups.member" data-id="${g.id}" data-user="${u.id}" data-action="kick">Remove</button>` : ''}</div>`;
-  };
-  const rankForm = (x) => html`<form class="form rank-edit" data-form="groupRankSave"><input type="hidden" name="id" value="${g.id}">
-    <input type="hidden" name="rank" value="${x ? x.id : ''}">
-    <div class="row"><input type="text" name="name" maxlength="24" placeholder="Rank name" value="${x ? x.name : ''}" required style="max-width:200px">
-      ${x && (x.id === 'Owner' || x.id === 'Member') ? html`<span class="muted small">level ${x.level}</span><input type="hidden" name="level" value="${x.level}">`
-        : html`<label class="small">Level <input type="number" name="level" min="2" max="254" value="${x ? x.level : ''}" required style="width:70px"></label>`}</div>
-    ${x && x.id === 'Owner' ? html`<p class="small muted">The owner can do everything.</p>`
-      : html`<div class="perm-picks">${GROUP_PERMS.map(([k, label]) => html`<label class="choice small"><input type="checkbox" name="perm" value="${k}" ${x && x.perms.includes(k) ? 'checked' : ''}> ${label}</label>`)}</div>`}
-    <p><button class="btn small blue">${x ? 'Save' : 'Add rank'}</button>
-      ${x && x.id !== 'Owner' && x.id !== 'Member' ? html` <button type="button" class="btn small red" data-act="group" data-op="groups.rankDelete" data-id="${g.id}" data-rank="${x.id}"
-        data-confirm="Delete the ${x.name} rank? Everyone in it becomes a ${r.ranks.find((y) => y.id === 'Member').name}.">Delete</button>` : ''}</p></form>`;
-  show(html`<p><a href="#/groups">&lt; Groups</a></p>
-    <div class="banner-color" style="background:${color}"></div>
-    <div class="box" style="border-top:0;border-radius:0 0 6px 6px"><h1>${g.name}</h1>
-      <p class="muted">Owned by <a href="#/user/${g.owner}">${g.ownerName}</a>${verified(g.ownerVerified)} · ${g.members} members
-        ${role ? html` · your rank: <b>${role}</b>` : ''}</p>
-      <p style="white-space:pre-wrap">${g.description}</p>${join}${owner ? '' : html` ${reportLink('group', g.id, g.name)}`}</div>
-    ${lyretoCard(g.lyreto, g.name)}
-    ${r.shoutInfo && r.shoutInfo.text ? html`<div class="box info"><b>${r.shoutInfo.name}:</b> ${r.shoutInfo.text}
-      <span class="small muted">· ${ago(r.shoutInfo.time)}</span></div>` : ''}
-    ${can('shout') ? html`<form class="row" data-form="groupShout"><input type="hidden" name="id" value="${g.id}">
-      <input type="text" name="text" maxlength="200" placeholder="Shout something to the whole group" style="max-width:420px">
-      <button class="btn blue">Shout</button></form>` : ''}
-    ${r.games.length || can('games') ? html`<h2>Games</h2>
-      ${r.games.length ? html`<div class="grid">${r.games.map((x) => html`<div class="group-game">${gameCard(x)}
-        ${owner || (can('games') && x.creator === me.id) ? html`<button class="btn small" data-act="group" data-op="groups.removeGame" data-id="${g.id}" data-game="${x.id}"
-          data-confirm="Take ${x.name} out of ${g.name}? Its sales go back to its creator.">Take out</button>` : ''}</div>`)}</div>`
-        : html`<p class="muted">No games yet.</p>`}
-      ${can('games') ? html`<p class="small muted">To add one of your games, open its Configure page and pick this group under "Group". Its game pass and product sales then go to the group's Bolts.</p>` : ''}` : ''}
-    ${r.funds !== undefined ? html`<h2>Group Bolts</h2><div class="box">
-      <p class="big-bolts">${bolts(r.funds)}</p>
-      <p class="small muted">Sales from the group's games go here. You pay members from it.</p>
-      ${can('funds') ? html`<form class="row" data-form="groupPayout"><input type="hidden" name="id" value="${g.id}">
-        <select name="user">${r.memberList.map((u) => html`<option value="${u.id}">${u.name}</option>`)}</select>
-        <input type="number" name="amount" min="1" max="${Math.max(1, r.funds)}" placeholder="Bolts" required style="width:100px">
-        <button class="btn green" ${r.funds > 0 ? '' : 'disabled'}>Pay</button></form>` : ''}
-      ${r.ledger.length ? html`<table class="ledger">${r.ledger.map((e) => html`<tr><td class="${e.amount < 0 ? 'neg' : 'pos'}">${e.amount > 0 ? '+' : ''}${e.amount}</td>
-        <td>${e.reason}</td><td class="muted small">${ago(e.at)}</td></tr>`)}</table>` : html`<p class="muted small">Nothing yet.</p>`}</div>` : ''}
-    <h2>Wall</h2>
-    ${role ? html`<form class="row" data-form="groupPost"><input type="hidden" name="id" value="${g.id}">
-      <input type="text" name="text" maxlength="300" placeholder="Say something" style="max-width:420px">
-      <button class="btn blue">Post</button>${pollFields()}</form>` : ''}
-    <div class="wall">${r.wall.length ? r.wall.slice().reverse().map((p) => html`<div><a href="#/user/${p.id}"><b>${p.name}</b></a>${verified(p.verified)}
-      <span class="small muted">${ago(p.time)}</span>
-      ${signedIn() && (p.id === me.id || can('manage')) ? html`<button class="btn small" data-act="group" data-op="groups.deletePost" data-id="${g.id}"
-        data-by="${p.id}" data-time="${p.time}">Delete</button>` : ''}<br>${p.text}
-      ${p.poll ? pollBox(p.poll, { group: g.id, by: p.id, time: p.time }, !!role) : ''}</div>`) : html`<p class="muted">Nothing on the wall yet.</p>`}</div>
-    ${can('manage') && r.requests && r.requests.length ? html`<h2>Waiting to join</h2><div class="list">${r.requests.map((u) => html`<div>
-      <a class="grow" href="#/user/${u.id}">${u.name}</a>
-      <button class="btn green small" data-act="group" data-op="groups.request" data-id="${g.id}" data-user="${u.id}" data-accept="1">Let in</button>
-      <button class="btn small" data-act="group" data-op="groups.request" data-id="${g.id}" data-user="${u.id}">Decline</button></div>`)}</div>` : ''}
-    <h2>Members</h2><div class="list">${r.memberList.map(memberRow)}</div>
-    ${owner ? html`<h2>Ranks</h2><p class="small muted">Higher levels are more in charge. People can only change the rank of people below them.
-      A group can have up to 10 ranks.</p>
-      <div class="ranks">${r.ranks.map(rankForm)}${r.ranks.length < 10 ? html`<h3>New rank</h3>${rankForm(null)}` : ''}</div>` : ''}
-    ${can('manage') ? html`<h2>Settings</h2><form class="form" data-form="groupEdit"><input type="hidden" name="id" value="${g.id}">
-      <label>Description</label><textarea name="description" maxlength="1000">${g.description}</textarea>
-      <label>Colour</label><input type="color" name="color" value="${color}">
-      <label>Lyreto server</label><input type="url" name="lyreto" maxlength="200" placeholder="https://lyreto.com/..." value="${g.lyreto ? g.lyreto.link : ''}">
-      <p class="small muted">${LYRETO_FIELD_NOTE}</p>
-      <label><input type="checkbox" name="open" ${g.open ? 'checked' : ''}> Anyone can join</label>
-      <p><button class="btn blue">Save</button>
-      ${owner ? html` <button type="button" class="btn red" data-act="group" data-op="groups.delete" data-id="${g.id}">Delete group</button>` : ''}</p></form>` : ''}`);
-  if (owner) addShareBox(view, 'group', g.id, call, toast);   // share links (sharelinks.js)
 };
 
 let avatarDraft = null;   // the avatar being edited (saved with the Save button)
@@ -6230,6 +6107,13 @@ function drawSectionBar(name, path) {
   bar.querySelector('.wrap').innerHTML = links.length ? html`<b class="section-name">${product.name}</b>${links.map(([label, href, page]) =>
     html`<a href="${href}" class="${page && page === lit ? 'on' : ''}">${label}</a>`)}`.s : '';
 }
+
+// Groups (#/groups, #/group/<id>/<tab>) and People (#/people): their pages live in groups.js.
+const groupPageSet = groupPages({ html, show, call, pageCall, signedIn, toast, verified, club, partner, avatarSvg, avatarPicture, lyretoCard,
+  LYRETO_FIELD_NOTE, gameCard, pollBox, pollFields, reportLink, ago, bolts, addShareBox, render, view, me: () => me });
+pages.groups = groupPageSet.groups;
+pages.group = groupPageSet.group;
+pages.people = groupPageSet.people;
 
 async function render() {
   const token = ++pageToken;

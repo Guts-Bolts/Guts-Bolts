@@ -34,6 +34,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerShareLinks.cpp
     src/server/ServerRatings.cpp
     src/server/ServerBackgrounds.cpp
+    src/server/ServerGroupPages.cpp
     src/server/ServerArt.cpp
     src/server/ServerAudio.cpp
     src/server/ServerPaste.cpp
@@ -1241,6 +1242,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerBackgroundsTests gb_version)
     target_link_libraries(ServerBackgroundsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerBackgroundsTests COMMAND ServerBackgroundsTests)
+    # Group pages: icons and banners, announcements, members by rank, people cards (ServerGroupPages.cpp).
+    add_executable(ServerGroupPagesTests tests/ServerGroupPagesTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerGroupPagesTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerGroupPagesTests gb_version)
+    target_link_libraries(ServerGroupPagesTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerGroupPagesTests COMMAND ServerGroupPagesTests)
 
     # Studio Learn progress: account validation, persistence across server restarts and guest denial.
     add_executable(ServerLearnProgressTests tests/ServerLearnProgressTests.cpp ${GB_SERVER_TEST_SOURCES})
