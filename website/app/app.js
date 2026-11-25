@@ -4021,7 +4021,7 @@ function clubShop(items, club) {
   return html`${tiers.length ? html`<section class="club-shop">
       <h2>Boltworks Club</h2>
       <p class="muted">Extras for people who want to support Guts&amp;Bolts. Playing, making games and uploading stay free for everyone.</p>
-      ${club && club.earlyDiscount && !paid ? html`<p class="ok"><b>You're on the early list:</b> your launch discount is taken off at checkout.</p>` : ''}
+      ${club && club.earlyDiscount && !paid ? html`<p class="ok"><b>You're on the early list:</b> your early-list discount is taken off at checkout, for good.</p>` : ''}
       ${paid ? html`<p class="club-member">${raw(clubSvg(paid, 22))} You're a member of <b>${CLUB[paid].name}</b>. Thank you!</p>` : ''}
       ${club && club.canManage ? html`<p><button class="btn" data-act="clubManage">Manage membership</button> <span class="small muted">Change tier, update your card or cancel.</span></p>` : ''}
       <div class="club-tiers">${tiers.map((t) => html`<div class="club-tier club-tier-${t}">
@@ -4488,7 +4488,7 @@ pages.terms = async () => {
         doesn't cancel it. Deleting your account cancels it too.</li>
       <li>Some catalog items are <b>Boltworks Club items</b>: members of that tier (or a higher one) get them for
         free. You keep them after your membership ends.</li>
-      <li>People who signed up for the early list before memberships launched get a one-time launch discount.</li>
+      <li>People who signed up for the early list before memberships launched get a discount on their membership for as long as they keep it, and again if they come back later.</li>
       <li>If Guts&amp;Bolts shuts down, we'll stop all renewals first.</li>
     </ul>
 

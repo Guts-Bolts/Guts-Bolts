@@ -867,6 +867,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         json r = okay();
         r["registered"] = registered;
         r["total"] = m_boltworks.size();
+        r["listClosed"] = Online::unixNow() >= 1795564380;
         return r;
     }
     if (name == "club.claim") {
@@ -884,6 +885,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         r["registered"] = true;
         for (const json& x : m_boltworks)
             if (x.value("id", std::string()) == me.id) { r["already"] = true; return r; }
+        // The early list closed when paid memberships launched (EARLY_LIST_CLOSED in worker/club-pay.js).
+        if (Online::unixNow() >= 1795564380) return fail("The early list closed when memberships launched.");
         m_boltworks.push_back({{"id", me.id}, {"username", me.name}, {"at", Online::unixNow()}});
         writeFile(m_opts.data / "boltworks.json", m_boltworks.dump(1));
         r["already"] = false;

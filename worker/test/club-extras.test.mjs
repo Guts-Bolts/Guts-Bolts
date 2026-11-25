@@ -1,10 +1,10 @@
 // Boltworks Club extras (worker/club-pay.js): a ban for good or a deleted account cancels the
-// Stripe membership, people on the early list get the launch discount once, and staff can make
+// Stripe membership, people on the early list (before launch) get a discount for good, and staff can make
 // Boltworks Club items that members of a tier (or higher) get for free.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sessionParams, stripeWork, handleStripe } from '../stripe.js';
-import { clubAtLeast } from '../club-pay.js';
+import { clubAtLeast, EARLY_LIST_CLOSED } from '../club-pay.js';
 import { makeServer } from './helpers.mjs';
 
 const env = { STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_PRICE_BWC_MONTH: 'price_bwcm', STRIPE_PRICE_BOLTS_500: 'price_b500', STRIPE_COUPON_EARLY: 'EARLY25' };
@@ -57,18 +57,24 @@ test('deleting an account cancels its membership too', async () => {
   assert.equal(s2.paidTierOf(other), '');
 });
 
-test('the early-list discount: only for people who registered, only once, only with a coupon set', () => {
+const onList = (s, people) => s.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'boltworksWaitlist',
+  JSON.stringify(people.map(([u, at]) => ({ id: u.id, username: u.name, at }))));
+
+test('the early-list discount: for people who registered before launch, for good, only with a coupon set', () => {
   const s = makeServer({ STRIPE_COUPON_EARLY: 'EARLY25' });
-  const fan = s.signUp('Fan'), late = s.signUp('Late');
-  assert.equal(s.call(fan, 'boltworks.register').ok, true);
+  const fan = s.signUp('Fan'), late = s.signUp('Late'), none = s.signUp('None');
+  onList(s, [[fan, EARLY_LIST_CLOSED - 60], [late, EARLY_LIST_CLOSED + 60]]);
   assert.equal(s.call(fan, 'boltworks.status').earlyDiscount, true);
-  assert.equal(s.call(late, 'boltworks.status').earlyDiscount, false);
+  assert.equal(s.call(late, 'boltworks.status').earlyDiscount, false);   // joined after launch
+  assert.equal(s.call(none, 'boltworks.status').earlyDiscount, false);
+  assert.match(s.call(none, 'boltworks.register').error, /closed/);
   assert.equal(s.stripeEvent({ kind: 'early', user: String(fan.userId) }).early, true);
-  // They used it: no second time.
+  // Still theirs after a membership with it, and if they leave and come back.
   s.stripeEvent({ kind: 'club', user: String(fan.userId), sub: 'sub_f', tier: 'bwc', at: 5, early: true });
-  assert.equal(s.stripeEvent({ kind: 'early', user: String(fan.userId) }).early, false);
+  s.stripeEvent({ kind: 'club', user: String(fan.userId), sub: 'sub_f', tier: '', at: 9 });
+  assert.equal(s.stripeEvent({ kind: 'early', user: String(fan.userId) }).early, true);
   const s2 = makeServer(), fan2 = s2.signUp('Fan2');
-  s2.call(fan2, 'boltworks.register');
+  onList(s2, [[fan2, 1795000000]]);
   assert.equal(s2.earlyDiscountFor(fan2), false);   // no coupon set up
 });
 

@@ -67,17 +67,18 @@ Bolts in each pack is set in `worker/stripe.js` (`ITEMS`), not by the product's 
 | `STRIPE_PRICE_BOLTS_2400` | 2400 Bolts | one-time |
 | `STRIPE_PRICE_BOLTS_6500` | 6500 Bolts | one-time |
 
-### The early-list launch discount
+### The early-list discount
 
-People who pressed "Let me know" on the Bolts page before launch get a discount on their first
-membership, once each. To turn it on:
+People who pressed "Let me know" on the Bolts page before memberships launched (2026-11-24 23:53 UTC)
+get a discount for good: on every membership they start, renewals included. The list is closed now,
+so nobody new can join it. To turn it on:
 
-1. Stripe Dashboard > Product catalog > **Coupons** > Create coupon. For example: 25% off,
-   duration "Repeating" for 3 months. (Leave "Customer-facing code" off: nobody types it in.)
+1. Stripe Dashboard > Product catalog > **Coupons** > Create coupon, with duration **Forever**
+   (it stays on every renewal). Leave "Customer-facing code" off: nobody types it in.
 2. Copy the coupon's ID and put it in Cloudflare as a plain variable named `STRIPE_COUPON_EARLY`.
 
-The server checks who is on the early list, adds the coupon at checkout and remembers that they
-used it. Remove the setting to end the offer. Bolts packs never get it.
+The server checks who is on the early list and adds the coupon at checkout. Remove the setting to
+stop adding it to new memberships (ones that already have it keep it). Bolts packs never get it.
 
 ### Bans and deleted accounts
 

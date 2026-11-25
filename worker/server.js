@@ -37,7 +37,7 @@ import { installVideos, VIDEO_LOOK_ONLY, VIDEO_COSTLY } from './videos.js';   //
 import { installStreams, STREAM_LOOK_ONLY, STREAM_COSTLY } from './streams.js';   // G&B Live: live streams in Videos
 import { installAcademy, ACADEMY_LOOK_ONLY, ACADEMY_COSTLY } from './academy.js';   // G&B Academy: courses anyone can write
 import { installFyxaCloud } from './fyxa-cloud.js';
-import { installClubPay } from './club-pay.js';   // paid Boltworks Club tiers + Bolts packs (Stripe)   // Fyxa answered by Cloudflare's AI, with daily limits
+import { installClubPay, EARLY_LIST_CLOSED } from './club-pay.js';   // paid Boltworks Club tiers + Bolts packs (Stripe)   // Fyxa answered by Cloudflare's AI, with daily limits
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
   kLogTitle, kLogText, kEventName, kEventText } from './extras.js';   // achievements, game update logs, events
@@ -4190,7 +4190,8 @@ export class GbServerObject extends DurableObject {
     if (name === 'boltworks.status') {
       const registrations = this.getMeta('boltworksWaitlist', []);
       return okay({ registered: registrations.some((entry) => entry.id === me.id), total: registrations.length,
-        paid: this.paidTierOf(me), canManage: !!me.stripeCustomer, earlyDiscount: this.earlyDiscountFor(me) });
+        paid: this.paidTierOf(me), canManage: !!me.stripeCustomer, earlyDiscount: this.earlyDiscountFor(me),
+        listClosed: t >= EARLY_LIST_CLOSED });
     }
     if (name === 'club.manage') return this.clubManageOp(me, args);   // club-pay.js
     if (name === 'club.claim') {
@@ -4206,6 +4207,7 @@ export class GbServerObject extends DurableObject {
       const registrations = this.getMeta('boltworksWaitlist', []);
       if (registrations.some((entry) => entry.id === me.id))
         return okay({ registered: true, already: true });
+      if (t >= EARLY_LIST_CLOSED) return fail('The early list closed when memberships launched.');
       registrations.push({ id: me.id, username: me.name, at: t });
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'boltworksWaitlist', JSON.stringify(registrations));
       return okay({ registered: true, already: false });
