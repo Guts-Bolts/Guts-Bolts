@@ -21,6 +21,7 @@ import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
 import { audioPages } from './audio.js';   // the Audio portal's pages (and its player bar)
 import { pastePages } from './paste.js';   // G&B Paste's pages
+import { leaderboardPages } from './leaderboards.js';   // the Leaderboards page
 import { videoPages } from './videos.js';   // G&B Videos' pages
 import { streamPages } from './streams.js';   // G&B Live's pages (inside Videos)
 import { academyPages } from './academy.js';   // G&B Academy's pages
@@ -939,6 +940,8 @@ Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago
 Object.assign(pages, audioPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me, fileBase64: (f) => gb.fileBase64(f) }));
 // G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
 Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// Leaderboards (#/leaderboards): its page lives in leaderboards.js.
+Object.assign(pages, leaderboardPages({ html, raw, show, pageCall, signedIn, verified, avatarSvg, gameIcon, me: () => me }));
 // G&B Videos (#/videos, #/watch/<id>, #/videoupload): its pages live in videos.js.
 // G&B Live (#/live, #/live/<id>, #/golive): its pages live in streams.js.
 const liveParts = streamPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me });
@@ -3995,17 +3998,58 @@ pages.notifications = async () => {
   }
 };
 
+// What's on sale (worker/stripe.js reads the real prices from Stripe). Empty until payments are set up.
+async function storePrices() {
+  try { const r = await fetch('/api/stripe/prices'); return r.ok ? ((await r.json()).items || {}) : {}; } catch { return {}; }
+}
+const money = (p) => p && Number.isInteger(p.amount) ? (p.amount / 100).toLocaleString('en-US', { style: 'currency', currency: (p.currency || 'usd').toUpperCase() }) : '';
+// The checkout page for something (it goes to your account, so you need to be logged in).
+const buyLink = (item) => signedIn() ? '../checkout.html?item=' + encodeURIComponent(item) + '&user=' + encodeURIComponent(me.userId) : '#/login';
+const CLUB_PERKS = {
+  bwc: ['Blue club badge next to your name', 'No ads anywhere on the site', '75 Fyxa cloud AI steps a day'],
+  tbc: ['Gold club badge next to your name', 'No ads anywhere on the site', '200 Fyxa cloud AI steps a day'],
+  obc: ['Red club badge next to your name', 'No ads anywhere on the site', '200 Fyxa cloud AI steps a day', 'Our biggest thank-you'],
+};
+// Boltworks Club tiers and Bolts packs you can buy, on the Bolts page.
+function clubShop(items, club) {
+  const tiers = Object.keys(CLUB).filter((t) => items[t + '_month'] || items[t + '_year']);
+  const packs = Object.keys(items).filter((k) => k.startsWith('bolts_')).sort((a, b) => items[a].bolts - items[b].bolts);
+  const paid = club && club.paid;
+  return html`${tiers.length ? html`<section class="club-shop">
+      <h2>Boltworks Club</h2>
+      <p class="muted">Extras for people who want to support Guts&amp;Bolts. Playing, making games and uploading stay free for everyone.</p>
+      ${paid ? html`<p class="club-member">${raw(clubSvg(paid, 22))} You're a member of <b>${CLUB[paid].name}</b>. Thank you!</p>` : ''}
+      ${club && club.canManage ? html`<p><button class="btn" data-act="clubManage">Manage membership</button> <span class="small muted">Change tier, update your card or cancel.</span></p>` : ''}
+      <div class="club-tiers">${tiers.map((t) => html`<div class="club-tier club-tier-${t}">
+        <div class="club-tier-head">${raw(clubSvg(t, 34))}<div><strong>${CLUB[t].name}</strong><small>${CLUB[t].short}</small></div></div>
+        <ul>${CLUB_PERKS[t].map((p) => html`<li>${p}</li>`)}</ul>
+        <div class="club-tier-buy">${items[t + '_month'] ? html`<a class="btn gold" href="${buyLink(t + '_month')}">${money(items[t + '_month']) ? money(items[t + '_month']) + ' a month' : 'Monthly'}</a>` : ''}
+          ${items[t + '_year'] ? html`<a class="btn" href="${buyLink(t + '_year')}">${money(items[t + '_year']) ? money(items[t + '_year']) + ' a year' : 'Yearly'}</a>` : ''}</div>
+      </div>`)}</div>
+      <p class="small muted">Paid with a card through Stripe; Guts&amp;Bolts never sees your card number. Cancel any time. See <a href="#/terms">the Terms</a>, section 4.</p>
+    </section>` : ''}
+    ${packs.length ? html`<section class="bolts-packs"><h2>Buy Bolts</h2>
+      <div class="bolts-pack-grid">${packs.map((k) => html`<a class="bolts-pack" href="${buyLink(k)}"><strong>${items[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(items[k]) || 'Buy'}</b></a>`)}</div>
+      <p class="small muted">Paid once, through Stripe. See <a href="#/terms">the Terms</a>, section 4.</p></section>` : ''}`;
+}
+
 pages.bolts = async () => {
-  const r = signedIn() ? await pageCall('bolts.history', {}) : { ok: true, history: [] };
-  const club = signedIn() ? await pageCall('boltworks.status', {}) : { ok: true, registered: false };
+  const [r, club, items] = await Promise.all([
+    signedIn() ? pageCall('bolts.history', {}) : { ok: true, history: [] },
+    signedIn() ? pageCall('boltworks.status', {}) : { ok: true, registered: false },
+    storePrices(),
+  ]);
+  const onSale = Object.keys(items).length > 0;
+  const justPaid = new URLSearchParams(location.search).has('checkout');
   show(html`<h1>Bolts</h1>
+    ${justPaid ? html`<p class="ok">Thanks for your payment! It can take a minute to show up here.</p>` : ''}
     <section class="bolts-hero">
       <div class="bolts-hero-copy"><span class="bolts-eyebrow">YOUR GUTS &amp; BOLTS WALLET</span><h2>Make every Bolt count.</h2><p>Earn Bolts by playing, create things worth buying, and spend them across the platform.</p></div>
       <div class="bolts-balance"><span>YOUR BALANCE</span><strong>${bolts(signedIn() ? me.bolts : 0)}</strong>
         ${!signedIn() || me.canDaily ? html`<button class="btn green" data-act="daily">Claim today's 25 Bolts</button>` : html`<span class="muted">Daily reward claimed. Come back tomorrow.</span>`}</div>
     </section>
     <div class="bolts-earn-grid"><div class="bolts-earn-card"><span class="bolts-earn-icon">⚡</span><strong>Show up daily</strong><p>Claim 25 Bolts every day.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🎮</span><strong>Play games</strong><p>Earn 5 Bolts every 5 minutes, up to 50 a day.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🛠️</span><strong>Make stuff</strong><p>Earn Bolts when people buy your creations.</p></div></div>
-    <section class="boltworks-teaser">
+    ${onSale ? clubShop(items, club) : html`<section class="boltworks-teaser">
       <div class="boltworks-topline"><span class="boltworks-stamp">COMING LATER</span><span class="boltworks-mini">G&amp;B MEMBERSHIP</span></div>
       <div class="boltworks-content"><div class="boltworks-emblem" aria-hidden="true"><span>✦</span><b>B</b><i></i></div><div class="boltworks-copy">
         <p class="boltworks-kicker">THE NEXT LEVEL OF GUTS &amp; BOLTS</p><h2>Boltworks Club</h2><p class="boltworks-lede">For the builders, collectors, and absolute agents of chaos.</p>
@@ -4014,7 +4058,7 @@ pages.bolts = async () => {
         <div class="boltworks-cta">${!signedIn() ? html`<a class="btn gold big" href="#/signup">Sign up for early access</a>` : club.registered ? html`<span class="boltworks-registered"><b>✓</b> You're on the early list</span>` : html`<button class="btn gold big" data-act="boltworksRegister">Register for the launch discount</button>`}
           <span class="boltworks-note">${signedIn() ? 'Register now to qualify for a discount when memberships launch. No payment today.' : 'Create a free account to reserve your early-registration discount. No payment today.'}</span></div>
       </div></div><div class="boltworks-footer"><span>NOT AVAILABLE YET</span><span>EARLY REGISTRATION = FUTURE DISCOUNT ELIGIBILITY</span></div>
-    </section>
+    </section>`}
     <h2>Redeem a code</h2><form class="row" data-form="redeem"><input type="text" name="code" placeholder="Type your code here" style="max-width:360px"><button class="btn blue">Redeem</button></form><p class="small"><a href="#/redeem">Got a promo code? Redeem it here</a></p>
     <h2>Transaction history</h2><div class="list bolts-history">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div>${h.gift ? html`<span class="note-icon" aria-hidden="true">🎁</span>` : ''}<span class="grow">${h.reason}</span>${h.gift === 'got' && !h.amount ? html`<span class="ok">Gift</span>` : html`<span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span>`}<span class="small muted">${ago(h.time)}</span></div>`) : html`<p class="muted">${signedIn() ? 'Nothing yet.' : 'Log in to see your Bolts. New accounts start with 100!'}</p>`}</div>`);
 };
@@ -4340,15 +4384,16 @@ let authSetup = null;   // Settings: an authenticator app being set up ({secret,
 pages.terms = async () => {
   show(html`<div class="terms">
     <h1>Guts&amp;Bolts Terms of Service</h1>
-    <p class="muted small">Last updated November 2026. By making an account, playing or using Studio, you agree to these
+    <p class="muted small">Last updated November 25, 2026. By making an account, playing or using Studio, you agree to these
       terms. If you don't agree, please don't use Guts&amp;Bolts.</p>
     <p>"Guts&amp;Bolts", "we" and "us" mean the people who make and run Guts&amp;Bolts. "You" means you, the person
       using it. These terms cover the website, Studio, the Player and our game servers.</p>
 
     <h2>1. What Guts&amp;Bolts is</h2>
     <p>Guts&amp;Bolts is a free, independent game engine and platform: Studio to build games, the Player to play them,
-      and this website. It's a hobby project made for fun. There are no paid subscriptions, and Bolts (the money used
-      inside Guts&amp;Bolts) can't be bought with or turned into real money (see section 4).</p>
+      and this website. It's a hobby project made for fun. Playing, making games and uploading are free. You can
+      choose to pay for extras: a Boltworks Club membership or packs of Bolts (the money used inside Guts&amp;Bolts).
+      Bolts can never be turned back into real money (see section 4).</p>
     <p>Guts&amp;Bolts is <b>not affiliated with, endorsed by, or connected to Roblox Corporation</b>. "Roblox" is
       their trademark. We don't use their name or logos for our own branding, and we don't support or speak for them.
       Guts&amp;Bolts exists because its creator got fed up with update after update on that platform and decided to
@@ -4398,13 +4443,13 @@ pages.terms = async () => {
         and items on a deleted account are gone for good.</li>
     </ul>
 
-    <h2>4. Bolts and items are not real money</h2>
-    <p>This is the important bit about the in-game money and stuff, so please read it.</p>
+    <h2>4. Bolts, items and paying real money</h2>
+    <p>This is the important bit about the in-game money, memberships and stuff, so please read it.</p>
     <ul>
-      <li><b>Bolts have no real-money value.</b> You can't buy them with real money, and you can't cash them out,
-        sell them, or swap them for real money or anything outside Guts&amp;Bolts.</li>
-      <li>You get Bolts by playing: 100 when you sign up, a daily reward, some for playing games, from selling things
-        you made, from groups, and sometimes as gifts or codes from staff.</li>
+      <li><b>Bolts can't be cashed out.</b> You can buy Bolts with real money (see "Paying with a card" below), but
+        you can't cash them out, sell them, or swap them for real money or anything outside Guts&amp;Bolts.</li>
+      <li>You also get Bolts for free: 100 when you sign up, a daily reward, some for playing games, from selling
+        things you made, from groups, and sometimes as gifts or codes from staff.</li>
       <li>Bolts and items (hats, shirts, Limiteds, game passes and the rest) aren't your property. They're a
         <b>permission to use</b> them inside Guts&amp;Bolts, which we can change or take away (for example if you're
         banned, or Guts&amp;Bolts shuts down).</li>
@@ -4415,6 +4460,29 @@ pages.terms = async () => {
         back, and may take back what you bought with them.</li>
       <li><b>No real-money trading.</b> Selling or buying Bolts, items or accounts for real money (or gift cards,
         crypto, or anything else outside Guts&amp;Bolts) isn't allowed, and can get every account involved banned.</li>
+    </ul>
+    <h3>Paying with a card</h3>
+    <ul>
+      <li>You can buy a <b>Boltworks Club</b> membership (Boltworks Club, Turbo or Overclocked, paid monthly or
+        yearly) or <b>packs of Bolts</b> (paid once) on the <a href="#/bolts">Bolts</a> page. Prices are shown there
+        before you pay.</li>
+      <li>Payments are handled by <b>Stripe</b>. Guts&amp;Bolts never sees or keeps your card number.</li>
+      <li><b>Memberships renew by themselves</b> every month or year, at the price shown when you joined, until you
+        cancel. If the price changes, we'll say so on the <a href="#/updates">Updates</a> page before your next
+        renewal.</li>
+      <li><b>Cancel any time</b> with the Manage membership button on the Bolts page. You keep your perks until the
+        end of the time you already paid for, and you won't be charged again. We don't give back money for the part
+        of a month or year you didn't use.</li>
+      <li>A membership gives extras only (like a club badge, no ads, and more Fyxa cloud steps). We can change which
+        extras each tier has. Everything free stays free.</li>
+      <li><b>Bought Bolts are final.</b> Once they're in your wallet, they can't be refunded, except where the law
+        says they must be, or when staff fix a mistake (like being charged twice).</li>
+      <li>If a payment is reversed or charged back, we can take back the Bolts or membership it paid for, and may
+        suspend the account while we look into it.</li>
+      <li>If your account is banned for breaking these terms, you lose its Bolts and membership, and paid time isn't
+        refunded. Cancel the membership yourself so it stops renewing; staff can help on the
+        <a href="#/support">Support</a> page.</li>
+      <li>If Guts&amp;Bolts shuts down, we'll stop all renewals first.</li>
     </ul>
 
     <h2>5. Selling, trading, resale and auctions</h2>
@@ -4539,8 +4607,7 @@ pages.terms = async () => {
     <h2>15. Changes and the law</h2>
     <p>These terms can change as Guts&amp;Bolts grows. If they change in a big way, it'll be on the
       <a href="#/updates">Updates</a> page, and the date at the top of this page will change. Keeping on playing
-      after that means you accept the new version. If paid features are ever added, they'll come with their own terms
-      first.</p>
+      after that means you accept the new version.</p>
     <p>These terms follow the laws of the State of Florida, USA. If one part of them can't be enforced, the rest still
       counts.</p>
 
@@ -4656,6 +4723,12 @@ const actions = {
       <p class="small muted">If your browser asks, choose Open Guts&amp;Bolts. If you just installed the app, launch Guts&amp;Bolts Player once to register its link handler, then retry. Lessons do not run in the mobile Player.</p>
       <p class="popup-buttons"><a class="btn green" href="${url}">Open lesson</a> <a class="btn" href="../#download">Download the app</a></p>`);
     location.href = url;
+  },
+  // Stripe's own page for changing tier, the card, or cancelling (club-pay.js makes the link).
+  async clubManage() {
+    const r = await call('club.manage', { origin: location.origin });
+    if (!r.ok || !r.url) { toast(r.error || 'Could not open the membership page.'); return; }
+    location.href = r.url;
   },
   async boltworksRegister() {
     const r = await call('boltworks.register', {});

@@ -80,7 +80,7 @@ test('the page loads Stripe.js from Stripe, and the security headers allow it', 
 });
 
 test('a missing setting is named (never its value), and Stripe\'s own error is passed on', async () => {
-  const req = () => new Request('https://gutsandbolts.net/api/stripe/checkout', { method: 'POST', body: '{}' });
+  const req = () => new Request('https://gutsandbolts.net/api/stripe/checkout', { method: 'POST', body: '{"userId":"7"}' });
   const u = new URL('https://gutsandbolts.net/api/stripe/checkout');
   assert.match((await (await handleStripe(req(), { STRIPE_PRICE_ID: 'price_1' }, u)).json()).error, /STRIPE_SECRET_KEY is missing/);
   assert.match((await (await handleStripe(req(), { STRIPE_SECRET_KEY: 'sk_test_x' }, u)).json()).error, /STRIPE_PRICE_ID is missing/);
