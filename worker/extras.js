@@ -38,11 +38,24 @@ export const ACHIEVEMENTS = [
   { id: 'dressed-up',   name: 'Dressed Up',      text: 'Save an outfit',                        stat: 'outfits',    need: 1 },
   { id: 'party-goer',   name: 'Party Goer',      text: 'Get a free item from an event',         stat: 'events',     need: 1 },
   { id: 'one-year',     name: 'One Year Club',   text: 'Have your account for a whole year',    stat: 'days',       need: 365 },
+  // Uploading and getting noticed (the counts come from leaderboards.js uploadCounts).
+  { id: 'first-upload', name: 'First Upload',    text: 'Upload anything: a game, item, art, video or paste', stat: 'uploads', need: 1 },
+  { id: 'prolific',     name: 'Prolific',        text: 'Upload 25 things',                      stat: 'uploads',    need: 25 },
+  { id: 'artist',       name: 'Artist',          text: 'Post your first piece of art',          stat: 'art',        need: 1 },
+  { id: 'fan-favorite', name: 'Fan Favorite',    text: 'Get 25 faves on your art',              stat: 'artFaves',   need: 25 },
+  { id: 'filmmaker',    name: 'Filmmaker',       text: 'Upload your first video',               stat: 'videos',     need: 1 },
+  { id: 'hit-maker',    name: 'Hit Maker',       text: 'Get 1,000 visits on your games',        stat: 'visits',     need: 1000 },
+  { id: 'superstar',    name: 'Superstar',       text: 'Get 10,000 visits on your games',       stat: 'visits',     need: 10000 },
+  { id: 'adventurer',   name: 'Adventurer',      text: 'Play 100 different games',              stat: 'played',     need: 100 },
 ];
 
-// The numbers achievements look at. `made`: the assets this person created.
-export function achievementStats(u, made, t) {
+// The numbers achievements look at. `made`: the assets this person created. `more`: what they
+// posted outside the catalog, {art, artFaves, videos, pastes} (leaderboards.js uploadCounts).
+export function achievementStats(u, made, t, more = {}) {
+  const art = more.art || 0, videos = more.videos || 0, pastes = more.pastes || 0;
   return {
+    uploads: made.length + art + videos + pastes,
+    art, videos, artFaves: more.artFaves || 0,
     played: (u.played || []).length,
     gamesMade: made.filter((a) => a.kind === 'game').length,
     itemsMade: made.filter((a) => a.kind !== 'game' && a.kind !== 'model' && a.kind !== 'devproduct' && a.kind !== 'pass').length,
