@@ -45,7 +45,7 @@ Cloudflare dashboard: **Workers & Pages > project-guts-and-bolts > Settings > Va
 | `STRIPE_SECRET_KEY` | **Secret** (click "Encrypt") | Stripe Dashboard > Developers > API keys > Secret key (`sk_test_...` while testing, `sk_live_...` when live). Never put it in the code or show anyone. |
 | `STRIPE_PUBLISHABLE_KEY` | Plain variable | Same page, Publishable key (`pk_test_...` / `pk_live_...`). This one is safe to be public. |
 | `STRIPE_PRICE_...` | Plain variables | One per thing on sale (table below). Stripe Dashboard > Product catalog > click the product > click the price > copy its `price_...` ID. |
-| `STRIPE_WEBHOOK_SECRET` | **Secret** | Stripe Dashboard > Developers > Webhooks > Add endpoint: URL `https://gutsandbolts.net/api/stripe/webhook`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted`. Copy its signing secret (`whsec_...`). |
+| `STRIPE_WEBHOOK_SECRET` | **Secret** | Stripe Dashboard > Developers > Webhooks > Add endpoint: URL `https://gutsandbolts.net/api/stripe/webhook`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `charge.refunded` and `charge.dispute.created` (the last two take refunded or charged-back Bolts back). Copy its signing secret (`whsec_...`). |
 
 ### The price settings
 
@@ -98,6 +98,70 @@ To try it on your own computer with `wrangler dev`, put the same four names in a
 No new packages are needed: the server talks to Stripe's API directly with `fetch`, and the page
 loads Stripe.js from `https://js.stripe.com/dahlia/stripe.js` (it must always come from Stripe).
 
+## More ways to pay (no code needed)
+
+The payment form shows every payment method that's switched on in Stripe, because the code never
+picks a list of methods. To add more:
+
+1. Stripe Dashboard > **Settings > Payment methods**. Turn on the ones you want. Good ones to start:
+   **Apple Pay**, **Google Pay**, **Link** (Stripe's saved-card button), **Cash App Pay**, **Amazon Pay**.
+   Some aren't offered in every country; the page says which ones your account can use.
+2. **Apple Pay only:** Stripe Dashboard > Settings > Payment methods > **Payment method domains** >
+   Add `gutsandbolts.net`. Without that, the Apple Pay button never shows up on iPhones and Macs.
+3. **Crypto through Stripe:** if your account shows **Stablecoins and crypto** on that page, turning it
+   on lets people pay with stablecoins (USDC and similar, which are pegged to the US dollar). That's
+   not Bitcoin, which is why Bitcoin goes through OpenNode (below).
+4. **Bank payments** (like ACH in the US) also work: the Bolts or the tier only arrive once the bank
+   payment clears, which can take a few days. Skip "buy now, pay later" ones (Klarna, Afterpay) for
+   small Bolts packs; they cost more per payment.
+
+Each method has its own fee; Stripe shows it on that page.
+
+## Bitcoin (through OpenNode)
+
+Bolts packs (not memberships, since Bitcoin can't renew by itself) can be paid with Bitcoin, normal or
+Lightning. The code is `worker/bitcoin.js`. Prices are in US dollars (`BITCOIN_PRICES`, the same as the
+card packs); OpenNode works out how much Bitcoin that is when someone pays.
+
+1. Make an account at https://app.opennode.com (it asks for business details, like Stripe did). To try
+   it first with fake Bitcoin, use https://app.dev.opennode.com instead.
+2. Settings > **Integrations > API keys** > Add key, with the **Invoices** permission. Copy it (you only
+   see it once).
+3. Cloudflare (same place as the Stripe settings): add `OPENNODE_API_KEY` as a **Secret** with that key.
+   While you use a dev.opennode.com key, also add a plain variable `OPENNODE_DEV` = `1`. Remove it
+   when you switch to a real key.
+4. Optional: in OpenNode's settings, pick whether you keep the Bitcoin or have it turned into dollars
+   and sent to your bank (auto-convert / settlement). Turning it into dollars means the price of
+   Bitcoin going up or down can't change what you earn.
+
+There's no webhook to set up: each charge tells OpenNode to call `https://gutsandbolts.net/api/bitcoin/webhook`.
+The "Pay with Bitcoin" buttons show up on the Bolts page once the key is set.
+
+How it stays safe: OpenNode's call only proves which payment it's about, so the server always asks
+OpenNode's API for that payment and only gives Bolts when OpenNode says it's **paid**, for at least the
+pack's price. Each payment gives Bolts once. If someone sends too little or too late, no Bolts are
+added; they sort that out with OpenNode (it can refund an underpaid payment).
+
+**No chargebacks.** A confirmed Bitcoin payment can't be reversed by a bank, so there's nothing to take
+back later, unlike cards. The flip side: if a buyer makes a mistake, only you can send money back.
+
+## Refunds and chargebacks (cards and wallets)
+
+If you refund a Bolts pack in the Stripe Dashboard, the server takes back the same share of the Bolts
+(a full refund takes them all, a half refund takes half). If the buyer's bank charges it back (a
+dispute), the whole pack is taken back. It never takes back more than the pack gave, and the balance
+can go below zero if they already spent them. If you **win** a dispute, give the Bolts back by hand
+(staff tools). Memberships are left to Stripe: refunding one doesn't end it, so cancel it in the
+Dashboard too if you want the badge gone. (Bolts bought before this update aren't linked to their
+payment, so refunds of those don't take anything back; do that by hand if needed.)
+
+## Before selling with crypto: check the legal side
+
+This isn't legal advice, just things to look at (or ask someone who knows): the Terms now mention
+Bitcoin through OpenNode and that Bitcoin payments can't be reversed, and the Privacy Policy lists
+OpenNode. Crypto sales can count differently for taxes and bookkeeping (you get Bitcoin, or dollars
+from OpenNode, instead of a card payment), and some places have their own rules about taking crypto.
+
 ## New files
 
 ```
@@ -107,6 +171,8 @@ website/checkout.js                 shows Stripe's payment form on that page
 worker/test/stripe-checkout.test.mjs  checks
 worker/club-pay.js                  the game server's side: gives tiers and Bolts, Manage membership
 worker/test/club-payments.test.mjs  checks for tiers and packs
+worker/bitcoin.js                   Bitcoin through OpenNode: charges, webhook, check
+worker/test/bitcoin-payments.test.mjs  checks for Bitcoin, refunds and chargebacks
 STRIPE_INTEGRATION_TODO.md          this file
 ```
 
