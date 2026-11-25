@@ -1562,6 +1562,11 @@ export class GbServerObject extends DurableObject {
     for (const k of CLUB_TIERS) if ((g[k] && grantValid(this.official, k, u.id, g[k])) || paid === k) return k;
     return '';
   }
+  // Why someone can't buy a Boltworks Club item.
+  clubItemNote(a) {
+    const name = { bwc: 'Boltworks Club', tbc: 'Turbo Boltworks Club', obc: 'Overclocked Boltworks Club' }[a.meta.clubGift] || 'Boltworks Club';
+    return 'This is a Boltworks Club item: members of ' + name + (a.meta.clubGift === 'obc' ? '' : ' or higher') + ' get it for free. Join on the Bolts page!';
+  }
   claimOfficial(u) {
     if (!this.isOfficial(u) || u.userId === 1) return;
     u.userId = 1; u.username = kStaffName;
@@ -1903,6 +1908,9 @@ export class GbServerObject extends DurableObject {
       delete to.banReason; delete to.banNote; delete to.bannedAt; delete to.bannedUntil;
     }
     to.banned = on;
+    // Banned for good: their paid Boltworks Club membership stops too, so they aren't charged again
+    // (Terms section 4). A ban for some days leaves it alone.
+    if (on && !to.bannedUntil) this.cancelStripeSubs(to, 'banned');
     this.staffDid(me, on ? 'ban' : 'unban', on ? 'Banned ' + to.name + ' (' + (BAN_REASONS[to.banReason] || to.banReason) + ', '
       + (to.bannedUntil ? clamp(num(args, 'days'), 0, 3650) + ' days' : 'for good') + ')' + (to.banNote ? ': "' + to.banNote + '"' : '') : 'Unbanned ' + to.name, to.id);
     this.saveUser(to);
@@ -2363,6 +2371,7 @@ export class GbServerObject extends DurableObject {
       offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), staffOffsale: !!(a.meta && a.meta.staffOffsale),
       limitedType: a.limited ? limitedTypeOf(a) : undefined, review: a.review || undefined, reviewNote: a.reviewNote || undefined,
       exclusive: a.exclusive ? true : undefined, gift: a.giftItem ? true : undefined, auction: this.auctionJson(a, me),
+      clubGift: a.meta && a.meta.clubGift || undefined,   // a Boltworks Club item: free for this tier and up (club-pay.js)
       giftItem: a.giftItem && me && this.isStaff(me) ? this.giftJson(a) : undefined,   // (staff only: it's a surprise)
       privatePrice: a.kind === 'game' ? (a.privatePrice || 0) : undefined,
       lyreto: a.kind === 'game' ? this.lyretoJson(a) : undefined,
@@ -4181,9 +4190,18 @@ export class GbServerObject extends DurableObject {
     if (name === 'boltworks.status') {
       const registrations = this.getMeta('boltworksWaitlist', []);
       return okay({ registered: registrations.some((entry) => entry.id === me.id), total: registrations.length,
-        paid: this.paidTierOf(me), canManage: !!me.stripeCustomer });
+        paid: this.paidTierOf(me), canManage: !!me.stripeCustomer, earlyDiscount: this.earlyDiscountFor(me) });
     }
     if (name === 'club.manage') return this.clubManageOp(me, args);   // club-pay.js
+    if (name === 'club.claim') {
+      // "Get it free" on a Boltworks Club item (they're usually handed out by themselves already).
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || !(a.meta && a.meta.clubGift)) return fail('That isn\'t a Boltworks Club item.');
+      if (me.owned.includes(a.id)) return okay({ me: this.meJson(me), already: true });
+      if (me.banned) return fail('Banned accounts can\'t get items.');
+      if (!this.giveClubItems(me, [a])) return fail(this.clubItemNote(a, me));
+      return okay({ me: this.meJson(me) });
+    }
     if (name === 'boltworks.register') {
       const registrations = this.getMeta('boltworksWaitlist', []);
       if (registrations.some((entry) => entry.id === me.id))
@@ -4316,6 +4334,7 @@ export class GbServerObject extends DurableObject {
         if (!grantValid(this.official, key, to.id, sig)) return fail('That badge signature isn\'t valid.');
         if (CLUB_TIERS.includes(key)) for (const k of CLUB_TIERS) delete to.grants[k];   // one Boltworks Club tier at a time
         to.grants[key] = sig;
+        if (CLUB_TIERS.includes(key)) this.giveClubItems(to);   // their tier's Boltworks Club items (club-pay.js)
         this.staffDid(me, 'badge', 'Gave ' + to.name + ' the ' + key + ' badge', to.id);
         this.saveUser(to);
         return okay({ user: this.publicUser(to) });
@@ -4859,6 +4878,7 @@ export class GbServerObject extends DurableObject {
       if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: confirm an email in Settings and it\'s yours.');
       if (a.promoOnly) return fail('This item is only available through a promo code.');
       if (a.exclusive) return fail('This is an Exclusive item: it can\'t be bought. It comes from events and gift boxes.');
+      if (a.meta && a.meta.clubGift) return fail(this.clubItemNote(a, me));
       if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited && limitedTypeOf(a) === 'limited_u' ? ' Buy one from a reseller on the item\'s page.' : ''));
       if (a.limited && a.sales >= a.stock) return fail(limitedTypeOf(a) === 'limited_u' ? 'Sold out! Buy one from a reseller on the item\'s page.' : 'Sold out! This Limited cannot be resold.');
       if (a.price > 0) {
@@ -4886,6 +4906,7 @@ export class GbServerObject extends DurableObject {
       if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: it\'s given to people who confirm an email.');
       if (a.limited) return fail('Limited items can\'t be gifts. Trade one with your friend instead.');
       if (a.exclusive) return fail('This is an Exclusive item: it can\'t be bought or gifted. It comes from events and gift boxes.');
+      if (a.meta && a.meta.clubGift) return fail('Boltworks Club items can\'t be gifts: members get them for free.');
       if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.');
       if (!(a.price > 0)) return fail('This item is free, so your friend can just get it themselves.');
       const to = this.findPerson(args.to);
@@ -4949,6 +4970,18 @@ export class GbServerObject extends DurableObject {
         a.meta = a.meta || {};
         a.meta.staffOffsale = args.staffOffsale === true;
       }
+      let newClubItem = false;
+      if ('clubGift' in args) {
+        // A Boltworks Club item: free for members of this tier or higher ('' = a normal item). club-pay.js
+        if (!this.isStaff(me)) return fail('Only staff can make Boltworks Club items.');
+        const tier = str(args, 'clubGift');
+        if (tier && !CLUB_TIERS.includes(tier)) return fail('Pick bwc, tbc or obc for a Boltworks Club item.');
+        if (tier && !isCatalogItem(a.kind)) return fail('Only catalog items can be Boltworks Club items.');
+        if (tier && a.limited) return fail('A Limited can\'t be a Boltworks Club item (its copies are numbered).');
+        a.meta = a.meta || {};
+        newClubItem = !!tier && a.meta.clubGift !== tier;
+        if (tier) a.meta.clubGift = tier; else delete a.meta.clubGift;
+      }
       if ('exclusive' in args || 'giftItem' in args) {
         if (!this.isStaff(me)) return fail('Only staff can make items Exclusive or gift boxes.');
         if ('exclusive' in args) a.exclusive = args.exclusive === true;
@@ -4985,7 +5018,9 @@ export class GbServerObject extends DurableObject {
       a.updated = t;
       this.saveAsset(a);
       this.wishlistAlert(a, before, me);
-      return okay({ asset: this.publicAsset(a, me) });
+      const given = newClubItem ? this.giveClubItemToMembers(a) : 0;   // members who already qualify get it now
+      if (given) this.staffDid(me, 'item', 'Made ' + a.name + ' a Boltworks Club item (' + a.meta.clubGift + '); ' + given + ' members got it');
+      return okay({ asset: this.publicAsset(a, me), clubGiven: newClubItem ? given : undefined });
     }
     if (name === 'item.give') {
       // Staff hand an item to someone (event prizes, Exclusive hats). Free, and it's theirs for good.
@@ -5521,6 +5556,8 @@ export class GbServerObject extends DurableObject {
   // reach a deleted account), so they're out of circulation for good.
   deleteAccount(u) {
     const t = now(), number = u.userId;
+    this.cancelStripeSubs(u, 'account deleted');   // no more charges for a membership nobody can use (club-pay.js)
+    delete u.stripeCustomer;
     // Account deletion leaves published games/items online, but it revokes all Fyxa permissions
     // and rights attestations attached to that account before its personal account data is erased.
     // Conversation sessions and user-authored memories are personal account data and must not

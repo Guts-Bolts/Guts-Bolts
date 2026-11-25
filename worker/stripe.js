@@ -68,7 +68,8 @@ export function itemOfPrice(env, price) {
 }
 
 // What we ask Stripe for. The fixed values were picked in Stripe's Checkout Studio.
-export function sessionParams(env, origin, userId, item = 'bwc_month') {
+// early: they're on the early list and get the launch discount (the STRIPE_COUPON_EARLY coupon).
+export function sessionParams(env, origin, userId, item = 'bwc_month', early = false) {
   // Club tiers are monthly or yearly memberships (subscriptions); Bolts packs are paid once.
   const mode = ITEMS[item] && ITEMS[item].bolts ? 'payment' : 'subscription';
   const params = {
@@ -89,6 +90,11 @@ export function sessionParams(env, origin, userId, item = 'bwc_month') {
     params.metadata = { gb_user: String(userId), gb_item: item };
     if (mode === 'subscription') params.subscription_data = { metadata: { gb_user: String(userId), gb_item: item } };
   }
+  const coupon = String(env.STRIPE_COUPON_EARLY || '').trim();
+  if (early && coupon && mode === 'subscription') {
+    params.discounts = [{ coupon }];
+    params.metadata = Object.assign(params.metadata || {}, { gb_early: '1' });
+  }
   return params;
 }
 
@@ -101,7 +107,7 @@ function stripeFetch(env, path, form) {
   } : { headers: { authorization: 'Bearer ' + key, 'stripe-version': STRIPE_API_VERSION } });
 }
 
-async function createSession(request, env, url) {
+async function createSession(request, env, url, deliver = toServer) {
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
   const key = String(env.STRIPE_SECRET_KEY || '').trim();
   let body = {};
@@ -114,7 +120,12 @@ async function createSession(request, env, url) {
   if (!price) return json({ error: 'That isn\'t for sale yet (' + ITEMS[item].env + (item === 'bwc_month' ? ' or STRIPE_PRICE_ID' : '') + ' is missing).' }, 503);
   const userId = /^\d{1,12}$/.test(String(body.userId || '')) ? String(body.userId) : '';
   if (!userId) return json({ error: 'Log in first, so we know whose account it goes to.' }, 400);
-  const r = await stripeFetch(env, 'checkout/sessions', sessionParams(env, url.origin, userId, item));
+  // The early-list launch discount (club tiers only; the game server knows who registered).
+  let early = false;
+  if (ITEMS[item].tier && String(env.STRIPE_COUPON_EARLY || '').trim()) {
+    try { early = !!(await deliver(env, { kind: 'early', user: userId })).early; } catch { early = false; }
+  }
+  const r = await stripeFetch(env, 'checkout/sessions', sessionParams(env, url.origin, userId, item, early));
   const session = await r.json().catch(() => ({}));
   if (!r.ok || !session.client_secret) {
     console.error('Stripe checkout failed:', session.error && session.error.message || r.status);
@@ -168,7 +179,8 @@ export function stripeWork(event, env) {
     if (o.mode === 'payment' && it.bolts && o.payment_status === 'paid')
       return [{ kind: 'bolts', user, bolts: it.bolts, ref: 'stripe:' + o.id }];
     if (o.mode === 'subscription' && it.tier && idOf(o.subscription))
-      return [{ kind: 'club', user, sub: idOf(o.subscription), customer: idOf(o.customer), tier: it.tier, at }];
+      return [Object.assign({ kind: 'club', user, sub: idOf(o.subscription), customer: idOf(o.customer), tier: it.tier, at },
+        meta.gb_early === '1' ? { early: true } : {})];
     return [];
   }
   if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
@@ -226,7 +238,7 @@ async function webhook(request, env, deliver = toServer) {
 
 // Answers the /api/stripe/... addresses, or null for anything else.
 export function handleStripe(request, env, url, deliver) {
-  if (url.pathname === '/api/stripe/checkout') return createSession(request, env, url);
+  if (url.pathname === '/api/stripe/checkout') return createSession(request, env, url, deliver);
   if (url.pathname === '/api/stripe/prices') return prices(env);
   if (url.pathname === '/api/stripe/config') return json({ publishableKey: String(env.STRIPE_PUBLISHABLE_KEY || '').trim() });
   if (url.pathname === '/api/stripe/webhook') return webhook(request, env, deliver);

@@ -508,6 +508,17 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
             a.price = price;
         }
         if (!a.meta.is_object()) a.meta = json::object();
+        bool newClubItem = false;
+        if (args.contains("clubGift")) {
+            // A Boltworks Club item: free for members of this tier or higher ("" = a normal item).
+            if (!isStaff(me)) return fail("Only staff can make Boltworks Club items.");
+            const std::string tier = str("clubGift");
+            if (!tier.empty() && tier != "bwc" && tier != "tbc" && tier != "obc") return fail("Pick bwc, tbc or obc for a Boltworks Club item.");
+            if (!tier.empty() && !Online::isCatalogItem(a.kind)) return fail("Only catalog items can be Boltworks Club items.");
+            if (!tier.empty() && a.limited) return fail("A Limited can't be a Boltworks Club item (its copies are numbered).");
+            newClubItem = !tier.empty() && a.meta.value("clubGift", std::string()) != tier;
+            if (tier.empty()) a.meta.erase("clubGift"); else a.meta["clubGift"] = tier;
+        }
         if (args.contains("exclusive") || args.contains("giftItem")) {
             if (!isStaff(me)) return fail("Only staff can make items Exclusive or gift boxes.");
             if (args.contains("exclusive")) {
@@ -562,7 +573,11 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         a.meta["updated"] = now;
         saveAssets();
         wishlistAlert(a, priceBefore, offsaleBefore, me);
-        return assetReply(a);
+        int given = 0;
+        if (newClubItem) for (auto& [uid, u] : m_users) given += giveClubItems(u, &a);   // members who already qualify
+        json r = assetReply(a);
+        if (newClubItem) r["clubGiven"] = given;
+        return r;
     }
     if (name == "item.give") {
         // Staff hand an item to someone (event prizes, Exclusive hats). Free, and it's theirs for good.
