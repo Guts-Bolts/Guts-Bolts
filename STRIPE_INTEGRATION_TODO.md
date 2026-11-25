@@ -44,8 +44,34 @@ Cloudflare dashboard: **Workers & Pages > project-guts-and-bolts > Settings > Va
 |------|------|-----------------|
 | `STRIPE_SECRET_KEY` | **Secret** (click "Encrypt") | Stripe Dashboard > Developers > API keys > Secret key (`sk_test_...` while testing, `sk_live_...` when live). Never put it in the code or show anyone. |
 | `STRIPE_PUBLISHABLE_KEY` | Plain variable | Same page, Publishable key (`pk_test_...` / `pk_live_...`). This one is safe to be public. |
-| `STRIPE_PRICE_ID` | Plain variable | Stripe Dashboard > Product catalog > add product "Boltworks Club", recurring monthly price > copy its `price_...` ID. |
-| `STRIPE_WEBHOOK_SECRET` | **Secret** | Stripe Dashboard > Developers > Webhooks > Add endpoint: URL `https://gutsandbolts.net/api/stripe/webhook`, event `checkout.session.completed`. Copy its signing secret (`whsec_...`). |
+| `STRIPE_PRICE_...` | Plain variables | One per thing on sale (table below). Stripe Dashboard > Product catalog > click the product > click the price > copy its `price_...` ID. |
+| `STRIPE_WEBHOOK_SECRET` | **Secret** | Stripe Dashboard > Developers > Webhooks > Add endpoint: URL `https://gutsandbolts.net/api/stripe/webhook`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted`. Copy its signing secret (`whsec_...`). |
+
+### The price settings
+
+Only the ones you fill in go on sale; the rest stay hidden. The website reads the real price from
+Stripe, so changing a price in Stripe changes it on the site (within 10 minutes). The number of
+Bolts in each pack is set in `worker/stripe.js` (`ITEMS`), not by the product's name in Stripe.
+
+| Setting | Stripe product | Kind |
+|---------|----------------|------|
+| `STRIPE_PRICE_BWC_MONTH` | Boltworks Club, monthly price | subscription (the old `STRIPE_PRICE_ID` still works for this one) |
+| `STRIPE_PRICE_BWC_YEAR` | Boltworks Club, yearly price | subscription |
+| `STRIPE_PRICE_TBC_MONTH` | Turbo Boltworks Club, monthly price | subscription |
+| `STRIPE_PRICE_TBC_YEAR` | Turbo Boltworks Club, yearly price | subscription |
+| `STRIPE_PRICE_OBC_MONTH` | Overclocked Boltworks Club, monthly price | subscription |
+| `STRIPE_PRICE_OBC_YEAR` | Overclocked Boltworks Club, yearly price | subscription |
+| `STRIPE_PRICE_BOLTS_200` | 200 Bolts | one-time |
+| `STRIPE_PRICE_BOLTS_500` | 500 Bolts | one-time |
+| `STRIPE_PRICE_BOLTS_1100` | 1100 Bolts | one-time |
+| `STRIPE_PRICE_BOLTS_2400` | 2400 Bolts | one-time |
+| `STRIPE_PRICE_BOLTS_6500` | 6500 Bolts | one-time |
+
+### The "Manage membership" page
+
+Stripe Dashboard > Settings > Billing > **Customer portal**: turn it on, allow cancelling and
+updating the card, and (to let people switch tier) allow "switch plans" with the three club products.
+The Manage membership button on the Bolts page opens this page.
 
 To try it on your own computer with `wrangler dev`, put the same four names in a `.dev.vars` file
 (it's ignored by git, so it never gets pushed).
@@ -60,6 +86,8 @@ worker/stripe.js                    the server side: makes Checkout Sessions, ch
 website/checkout.html               the "Join Boltworks Club" payment page
 website/checkout.js                 shows Stripe's payment form on that page
 worker/test/stripe-checkout.test.mjs  checks
+worker/club-pay.js                  the game server's side: gives tiers and Bolts, Manage membership
+worker/test/club-payments.test.mjs  checks for tiers and packs
 STRIPE_INTEGRATION_TODO.md          this file
 ```
 
@@ -68,14 +96,18 @@ Also changed: `worker/index.js` (the three `/api/stripe/...` addresses), `worker
 
 ## How it works
 
-1. Someone opens `https://gutsandbolts.net/checkout?user=<their user number>`.
-2. The page asks `/api/stripe/config` for the publishable key, then `POST /api/stripe/checkout`.
-3. The server asks Stripe for a Checkout Session (subscription, Boltworks Club price) and sends back
-   only its `client_secret`. The user number is saved on the payment (`client_reference_id`
-   `gb-user-<number>` and `metadata.gb_user`).
-4. Stripe draws the card form in its own frame. Card numbers never touch Guts&Bolts.
-5. After paying, they come back to the Bolts page.
-6. Stripe calls `/api/stripe/webhook`. The server checks Stripe's signature and logs the payment.
+1. The Bolts page asks `/api/stripe/prices` what's on sale. Until a price is set, it shows the old
+   "coming later" teaser.
+2. A tier or pack button opens `/checkout.html?item=<item>&user=<their user number>`.
+3. The page asks `/api/stripe/config` for the publishable key, then `POST /api/stripe/checkout`.
+4. The server asks Stripe for a Checkout Session (a subscription for tiers, a one-time payment for
+   Bolts) and sends back only its `client_secret`. The user number and item are saved on the payment
+   (`metadata.gb_user`, `metadata.gb_item`).
+5. Stripe draws the card form in its own frame. Card numbers never touch Guts&Bolts.
+6. Stripe calls `/api/stripe/webhook`. The server checks Stripe's signature, then hands the job to the
+   game server (`worker/club-pay.js`): it adds the Bolts once (the payment id is kept, so a repeated
+   message does nothing), or turns the club tier on, changes it, or takes it away. Staff-given tiers
+   keep working too.
 
 ## Testing
 
@@ -91,16 +123,11 @@ Use any future date, any 3-digit CVC and any postcode. More: https://docs.stripe
 
 ## Next steps (before charging real people)
 
-- **Giving the club tier automatically.** Club tiers are signed by the official staff account, which the
-  server can't do on its own. For now: when a payment comes in, look at its `gb_user` in Stripe and
-  give the tier by hand on the Staff page. Automating this needs a decision on how the server is
-  allowed to give paid tiers (and cancelling should take the tier away, via the
-  `customer.subscription.deleted` webhook event).
-- **A "Join" button.** The Boltworks Club box on the Bolts page still says "coming later". Link it to
-  `/checkout?user=<user number>` when you're ready.
-- **Terms of Service.** They currently say there are no paid subscriptions. Update them (prices,
-  renewals, cancelling, refunds) before going live.
-- **Prices and perks.** Decide the tiers (BWC / TBC / OBC). Each tier would need its own Price ID.
+- **Terms of Service.** They still say there are no paid subscriptions and that Bolts can't be bought
+  with real money. Update them (prices, renewals, cancelling, refunds) before going live.
+- **Early-list discount.** The Bolts page promised people on the early list a launch discount. Not
+  built yet: it could be a Stripe coupon.
+- **Taxes.** `automatic_tax` is off. Turn on Stripe Tax once there are real sales.
 - **Switch to live keys** (`sk_live_`, `pk_live_`, a live webhook) once everything works in test mode.
 
 ## Resources

@@ -273,7 +273,7 @@ async function route(request, env, ctx) {
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
     // Stripe's own servers call this (signature-checked in stripe.js), so it skips the bot check.
     if (url.pathname === '/api/stripe/webhook') return handleStripe(request, env, url);
-    const stripePath = url.pathname === '/api/stripe/checkout' || url.pathname === '/api/stripe/config';
+    const stripePath = url.pathname === '/api/stripe/checkout' || url.pathname === '/api/stripe/config' || url.pathname === '/api/stripe/prices';
     const picture = /^\/(thumb|icon|shot|wear|decal|artpic|pasteraw|avatar)\//.test(url.pathname);
     // Videos (videos.js): /vid/<id> and /vidthumb/<id> count like pictures; /vidup/<id> (sending one) like a request.
     const video = /^\/(vid|vidthumb|vidup)\//.test(url.pathname);

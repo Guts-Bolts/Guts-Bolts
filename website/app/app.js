@@ -21,6 +21,7 @@ import { levelPill, levelBox, streakLine, mountShowcase, mountWall } from './lev
 import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
 import { pastePages } from './paste.js';   // G&B Paste's pages
+import { leaderboardPages } from './leaderboards.js';   // the Leaderboards page
 import { videoPages } from './videos.js';   // G&B Videos' pages
 import { streamPages } from './streams.js';   // G&B Live's pages (inside Videos)
 import { academyPages } from './academy.js';   // G&B Academy's pages
@@ -937,6 +938,8 @@ pages.soon = async (id) => {
 Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
 Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// Leaderboards (#/leaderboards): its page lives in leaderboards.js.
+Object.assign(pages, leaderboardPages({ html, raw, show, pageCall, signedIn, verified, avatarSvg, gameIcon, me: () => me }));
 // G&B Videos (#/videos, #/watch/<id>, #/videoupload): its pages live in videos.js.
 // G&B Live (#/live, #/live/<id>, #/golive): its pages live in streams.js.
 const liveParts = streamPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me });
@@ -4000,10 +4003,51 @@ pages.notifications = async () => {
   }
 };
 
+// What's on sale (worker/stripe.js reads the real prices from Stripe). Empty until payments are set up.
+async function storePrices() {
+  try { const r = await fetch('/api/stripe/prices'); return r.ok ? ((await r.json()).items || {}) : {}; } catch { return {}; }
+}
+const money = (p) => p && Number.isInteger(p.amount) ? (p.amount / 100).toLocaleString('en-US', { style: 'currency', currency: (p.currency || 'usd').toUpperCase() }) : '';
+// The checkout page for something (it goes to your account, so you need to be logged in).
+const buyLink = (item) => signedIn() ? '../checkout.html?item=' + encodeURIComponent(item) + '&user=' + encodeURIComponent(me.userId) : '#/login';
+const CLUB_PERKS = {
+  bwc: ['Blue club badge next to your name', 'No ads anywhere on the site', '75 Fyxa cloud AI steps a day'],
+  tbc: ['Gold club badge next to your name', 'No ads anywhere on the site', '200 Fyxa cloud AI steps a day'],
+  obc: ['Red club badge next to your name', 'No ads anywhere on the site', '200 Fyxa cloud AI steps a day', 'Our biggest thank-you'],
+};
+// Boltworks Club tiers and Bolts packs you can buy, on the Bolts page.
+function clubShop(items, club) {
+  const tiers = Object.keys(CLUB).filter((t) => items[t + '_month'] || items[t + '_year']);
+  const packs = Object.keys(items).filter((k) => k.startsWith('bolts_')).sort((a, b) => items[a].bolts - items[b].bolts);
+  const paid = club && club.paid;
+  return html`${tiers.length ? html`<section class="club-shop">
+      <h2>Boltworks Club</h2>
+      <p class="muted">Extras for people who want to support Guts&amp;Bolts. Playing, making games and uploading stay free for everyone.</p>
+      ${paid ? html`<p class="club-member">${raw(clubSvg(paid, 22))} You're a member of <b>${CLUB[paid].name}</b>. Thank you!</p>` : ''}
+      ${club && club.canManage ? html`<p><button class="btn" data-act="clubManage">Manage membership</button> <span class="small muted">Change tier, update your card or cancel.</span></p>` : ''}
+      <div class="club-tiers">${tiers.map((t) => html`<div class="club-tier club-tier-${t}">
+        <div class="club-tier-head">${raw(clubSvg(t, 34))}<div><strong>${CLUB[t].name}</strong><small>${CLUB[t].short}</small></div></div>
+        <ul>${CLUB_PERKS[t].map((p) => html`<li>${p}</li>`)}</ul>
+        <div class="club-tier-buy">${items[t + '_month'] ? html`<a class="btn gold" href="${buyLink(t + '_month')}">${money(items[t + '_month']) ? money(items[t + '_month']) + ' a month' : 'Monthly'}</a>` : ''}
+          ${items[t + '_year'] ? html`<a class="btn" href="${buyLink(t + '_year')}">${money(items[t + '_year']) ? money(items[t + '_year']) + ' a year' : 'Yearly'}</a>` : ''}</div>
+      </div>`)}</div>
+      <p class="small muted">Paid with a card through Stripe; Guts&amp;Bolts never sees your card number. If you're under 18, ask a parent or guardian first. Cancel any time.</p>
+    </section>` : ''}
+    ${packs.length ? html`<section class="bolts-packs"><h2>Buy Bolts</h2>
+      <div class="bolts-pack-grid">${packs.map((k) => html`<a class="bolts-pack" href="${buyLink(k)}"><strong>${items[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(items[k]) || 'Buy'}</b></a>`)}</div>
+      <p class="small muted">Paid once, through Stripe. If you're under 18, ask a parent or guardian first.</p></section>` : ''}`;
+}
+
 pages.bolts = async () => {
-  const r = signedIn() ? await pageCall('bolts.history', {}) : { ok: true, history: [] };
-  const club = signedIn() ? await pageCall('boltworks.status', {}) : { ok: true, registered: false };
+  const [r, club, items] = await Promise.all([
+    signedIn() ? pageCall('bolts.history', {}) : { ok: true, history: [] },
+    signedIn() ? pageCall('boltworks.status', {}) : { ok: true, registered: false },
+    storePrices(),
+  ]);
+  const onSale = Object.keys(items).length > 0;
+  const justPaid = new URLSearchParams(location.search).has('checkout');
   show(html`<h1>Bolts</h1>
+    ${justPaid ? html`<p class="ok">Thanks for your payment! It can take a minute to show up here.</p>` : ''}
     <section class="bolts-hero">
       <div class="bolts-hero-copy"><span class="bolts-eyebrow">YOUR GUTS &amp; BOLTS WALLET</span><h2>Make every Bolt count.</h2><p>Earn Bolts by playing, create things worth buying, and spend them across the platform.</p></div>
       <div class="bolts-balance"><span>YOUR BALANCE</span><strong>${bolts(signedIn() ? me.bolts : 0)}</strong>
@@ -4011,7 +4055,7 @@ pages.bolts = async () => {
         ${signedIn() ? raw(streakLine(me.levels)) : ''}</div>
     </section>
     <div class="bolts-earn-grid"><div class="bolts-earn-card"><span class="bolts-earn-icon">⚡</span><strong>Show up daily</strong><p>Claim 25 Bolts every day, and up to 60 when you come back days in a row.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🎮</span><strong>Play games</strong><p>Earn 5 Bolts every 5 minutes, up to 50 a day.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🛠️</span><strong>Make stuff</strong><p>Earn Bolts when people buy your creations.</p></div></div>
-    <section class="boltworks-teaser">
+    ${onSale ? clubShop(items, club) : html`<section class="boltworks-teaser">
       <div class="boltworks-topline"><span class="boltworks-stamp">COMING LATER</span><span class="boltworks-mini">G&amp;B MEMBERSHIP</span></div>
       <div class="boltworks-content"><div class="boltworks-emblem" aria-hidden="true"><span>✦</span><b>B</b><i></i></div><div class="boltworks-copy">
         <p class="boltworks-kicker">THE NEXT LEVEL OF GUTS &amp; BOLTS</p><h2>Boltworks Club</h2><p class="boltworks-lede">For the builders, collectors, and absolute agents of chaos.</p>
@@ -4020,7 +4064,7 @@ pages.bolts = async () => {
         <div class="boltworks-cta">${!signedIn() ? html`<a class="btn gold big" href="#/signup">Sign up for early access</a>` : club.registered ? html`<span class="boltworks-registered"><b>✓</b> You're on the early list</span>` : html`<button class="btn gold big" data-act="boltworksRegister">Register for the launch discount</button>`}
           <span class="boltworks-note">${signedIn() ? 'Register now to qualify for a discount when memberships launch. No payment today.' : 'Create a free account to reserve your early-registration discount. No payment today.'}</span></div>
       </div></div><div class="boltworks-footer"><span>NOT AVAILABLE YET</span><span>EARLY REGISTRATION = FUTURE DISCOUNT ELIGIBILITY</span></div>
-    </section>
+    </section>`}
     <h2>Redeem a code</h2><form class="row" data-form="redeem"><input type="text" name="code" placeholder="Type your code here" style="max-width:360px"><button class="btn blue">Redeem</button></form><p class="small"><a href="#/redeem">Got a promo code? Redeem it here</a></p>
     <h2>Transaction history</h2><div class="list bolts-history">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div>${h.gift ? html`<span class="note-icon" aria-hidden="true">🎁</span>` : ''}<span class="grow">${h.reason}</span>${h.gift === 'got' && !h.amount ? html`<span class="ok">Gift</span>` : html`<span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span>`}<span class="small muted">${ago(h.time)}</span></div>`) : html`<p class="muted">${signedIn() ? 'Nothing yet.' : 'Log in to see your Bolts. New accounts start with 100!'}</p>`}</div>`);
 };
@@ -4662,6 +4706,12 @@ const actions = {
       <p class="small muted">If your browser asks, choose Open Guts&amp;Bolts. If you just installed the app, launch Guts&amp;Bolts Player once to register its link handler, then retry. Lessons do not run in the mobile Player.</p>
       <p class="popup-buttons"><a class="btn green" href="${url}">Open lesson</a> <a class="btn" href="../#download">Download the app</a></p>`);
     location.href = url;
+  },
+  // Stripe's own page for changing tier, the card, or cancelling (club-pay.js makes the link).
+  async clubManage() {
+    const r = await call('club.manage', { origin: location.origin });
+    if (!r.ok || !r.url) { toast(r.error || 'Could not open the membership page.'); return; }
+    location.href = r.url;
   },
   async boltworksRegister() {
     const r = await call('boltworks.register', {});

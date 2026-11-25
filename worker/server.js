@@ -32,11 +32,13 @@ import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
 import { installLevels, LEVELS_LOOK_ONLY, LEVELS_COSTLY } from './levels.js';   // levels, XP, daily streaks, profile walls
+import { installLeaderboards, LEADER_LOOK_ONLY } from './leaderboards.js';   // site-wide top lists (#/leaderboards)
 import { installSeo } from './seo.js';   // pages search engines can read (seoAsk)
 import { installVideos, VIDEO_LOOK_ONLY, VIDEO_COSTLY } from './videos.js';   // G&B Videos: upload and watch videos
 import { installStreams, STREAM_LOOK_ONLY, STREAM_COSTLY } from './streams.js';   // G&B Live: live streams in Videos
 import { installAcademy, ACADEMY_LOOK_ONLY, ACADEMY_COSTLY } from './academy.js';   // G&B Academy: courses anyone can write
-import { installFyxaCloud } from './fyxa-cloud.js';   // Fyxa answered by Cloudflare's AI, with daily limits
+import { installFyxaCloud } from './fyxa-cloud.js';
+import { installClubPay } from './club-pay.js';   // paid Boltworks Club tiers + Bolts packs (Stripe)   // Fyxa answered by Cloudflare's AI, with daily limits
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
   kLogTitle, kLogText, kEventName, kEventText } from './extras.js';   // achievements, game update logs, events
@@ -605,7 +607,7 @@ export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.m
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
 for (const op of LEVELS_LOOK_ONLY) GUEST_OK.add(op);   // guests can read profile walls (levels.js)
-for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...LEADER_LOOK_ONLY, ...ACADEMY_LOOK_ONLY, ...VIDEO_LOOK_ONLY, ...STREAM_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
 for (const op of SHARE_GUEST_OK) GUEST_OK.add(op);   // sharelinks.js (anyone can open a link)
 
@@ -1557,10 +1559,10 @@ export class GbServerObject extends DurableObject {
   isVerified(u) { return this.isOfficial(u) || grantValid(this.official, 'verified', u.id, (u.grants || {}).verified); }
   isPartner(u) { return grantValid(this.official, 'partner', u.id, (u.grants || {}).partner); }
   // Boltworks Club tier shown next to their name: 'obc', 'tbc', 'bwc' or '' (the best one they have).
-  // A tier is a signed badge like the others; only the official account gives them out (for now: free, no payments).
+  // A tier is a signed badge the official account gives out, or a membership they pay for (club-pay.js).
   clubOf(u) {
-    const g = u.grants || {};
-    for (const k of CLUB_TIERS) if (g[k] && grantValid(this.official, k, u.id, g[k])) return k;
+    const g = u.grants || {}, paid = this.paidTierOf(u);
+    for (const k of CLUB_TIERS) if ((g[k] && grantValid(this.official, k, u.id, g[k])) || paid === k) return k;
     return '';
   }
   claimOfficial(u) {
@@ -3514,7 +3516,7 @@ export class GbServerObject extends DurableObject {
         isFollowing: (me.following || []).includes(u.id), blocked: (me.blocked || []).includes(u.id),
         online: this.presence(me, u).online, playing: this.presence(me, u).playing, placeVisits, gameBadges,
         blurb: u.blurb || '', status: (u.posts || [])[0] || null, playerBadges: this.playerBadgesOf(u), allPlayerBadges: PLAYER_BADGES,
-        achievements: achievementsOf(achievementStats(u, [...this.assets.values()].filter((a) => a.creator === u.id), t)) });
+        achievements: achievementsOf(achievementStats(u, [...this.assets.values()].filter((a) => a.creator === u.id), t, this.uploadCounts(u.id))) });   // (uploadCounts: leaderboards.js)
     }
     if (name === 'profile.inventory') {
       // Everything someone owns (catalog items, games, audio, models...), a page at a time, in one group (INVENTORY_CATS).
@@ -3578,6 +3580,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('art.')) return this.artOp(name, me, args);   // art.js
     if (name.startsWith('paste.')) return this.pasteOp(name, me, args);   // paste.js
     if (name.startsWith('wall.') || name === 'levels.me' || name === 'showcase.set') return this.levelsOp(name, me, args);   // levels.js
+    if (name.startsWith('leaders.')) return this.leadersOp(name, me, args);   // leaderboards.js
     if (name.startsWith('video.')) return this.videoOp(name, me, args);   // videos.js
     if (name.startsWith('stream.')) return this.streamOp(name, me, args);   // streams.js
     if (name.startsWith('academy.')) return this.academyOp(name, me, args);   // academy.js
@@ -4182,8 +4185,10 @@ export class GbServerObject extends DurableObject {
     }
     if (name === 'boltworks.status') {
       const registrations = this.getMeta('boltworksWaitlist', []);
-      return okay({ registered: registrations.some((entry) => entry.id === me.id), total: registrations.length });
+      return okay({ registered: registrations.some((entry) => entry.id === me.id), total: registrations.length,
+        paid: this.paidTierOf(me), canManage: !!me.stripeCustomer });
     }
+    if (name === 'club.manage') return this.clubManageOp(me, args);   // club-pay.js
     if (name === 'boltworks.register') {
       const registrations = this.getMeta('boltworksWaitlist', []);
       if (registrations.some((entry) => entry.id === me.id))
@@ -7043,7 +7048,7 @@ export class GbServerObject extends DurableObject {
         this.scanModerationSubmission(req, reply.moderationActor, reply),
         'Fyxa WebSocket moderation scan');
     }
-    if (reply.webJob || reply.iceJob || reply.fyxaCloud) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
+    if (reply.webJob || reply.iceJob || reply.fyxaCloud || reply.stripePortal) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
     if ('id' in req) reply.id = req.id;
     this.sendTo(c, reply);
   }
@@ -7052,6 +7057,14 @@ export class GbServerObject extends DurableObject {
     const url = new URL(request.url);
     // worker/mcp.js asking a Studio something (an internal address: requests from the internet never get here).
     if (url.hostname === 'gb.internal' && url.pathname === '/mcp-call' && request.method === 'POST') return this.mcpFetch(request);
+    // worker/stripe.js passing on a paid membership or Bolts pack (also internal-only; club-pay.js).
+    if (url.hostname === 'gb.internal' && url.pathname === '/stripe-event' && request.method === 'POST') {
+      let job = null;
+      try { job = JSON.parse(await request.text()); } catch { job = null; }
+      let r;
+      try { r = this.stripeEvent(job); } catch (e) { r = { ok: false, error: String(e && e.message || e), retry: true }; }
+      return new Response(JSON.stringify(r), { headers: { 'content-type': 'application/json' } });
+    }
     if (url.pathname === '/ws') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket.', { status: 426 });
       const pair = new WebSocketPair();
@@ -7219,6 +7232,7 @@ export class GbServerObject extends DurableObject {
     if (answer.ok && answer.supabase) answer = await this.supabaseFollowUp(answer);
     if (answer.ok && answer.translate) answer = await this.translate(answer);
     if (answer.ok && answer.fyxaCloud) answer = await this.fyxaCloudAnswer(answer);
+    if (answer.ok && answer.stripePortal) answer = await this.clubPortalAnswer(answer);
     if (answer.ok && answer.fyxaHome) answer = await this.fyxaHomeAnswer(answer);
     if (answer.ok && answer.webJob) answer = await this.webFetch(answer);
     if (answer.ok && answer.iceJob) answer = await this.iceFetch(answer);
@@ -7257,6 +7271,7 @@ installChats(GbServerObject);
 installBanLists(GbServerObject);
 installTesters(GbServerObject);
 installFyxaCloud(GbServerObject);
+installClubPay(GbServerObject);
 installRatings(GbServerObject);
 installLaunchpad(GbServerObject);
 installBackgrounds(GbServerObject);
@@ -7266,6 +7281,7 @@ installPromoText(GbServerObject);
 installShareLinks(GbServerObject);
 installArt(GbServerObject);
 installPaste(GbServerObject);
+installLeaderboards(GbServerObject);
 installSeo(GbServerObject);
 installVideos(GbServerObject);
 installStreams(GbServerObject);
