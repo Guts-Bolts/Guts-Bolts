@@ -83,6 +83,25 @@ export const PRODUCTS = [
     ],
   },
   {
+    id: 'image', name: 'Image', status: 'open', href: '#/image',
+    blurb: 'Put a picture online and share a link. Crop, turn and resize it first, free.',
+    pages: ['image', 'imageview', 'imagenew'],
+    links: [
+      ['Recent', '#/image', 'image'],
+      ['My pictures', '#/image?by=me', 'image-mine'],
+      ['Upload and edit', '#/imagenew', 'imagenew'],
+    ],
+  },
+  {
+    id: 'boards', name: 'Boards', status: 'open', href: '#/boards',
+    blurb: 'Plan a game, track bugs or run an event with cards in columns, alone or with friends.',
+    pages: ['boards', 'board'],
+    links: [
+      ['My boards', '#/boards', 'boards'],
+      ['Public boards', '#/boards?public=1', 'boards-public'],
+    ],
+  },
+  {
     id: 'academy', name: 'Academy', status: 'open', href: '#/academy',
     blurb: 'Free courses about scripting, building, modeling and making games.',
     pages: ['academy', 'course', 'lesson', 'coursewrite'],
@@ -169,13 +188,13 @@ export const APPS = [
 export const GROUPS = [
   { id: 'games', name: 'Games', products: ['games'], later: [] },
   { id: 'media', name: 'Media', products: ['videos', 'live', 'audio'], later: [] },
-  { id: 'creation', name: 'Creation', products: ['art'], later: ['Modeler', 'Image', 'Capture'] },
+  { id: 'creation', name: 'Creation', products: ['art', 'image'], later: ['Modeler', 'Capture'] },
   { id: 'community', name: 'Community', products: ['communities', 'chat', 'press'], later: [] },
   { id: 'ai', name: 'AI', products: ['fyxa'], later: ['Fyxa Desktop', 'AI Lab'] },
   { id: 'learning', name: 'Learning', products: ['academy'], later: [] },
   { id: 'development', name: 'Development', products: ['paste'], later: ['Code'] },
   { id: 'commerce', name: 'Commerce', products: [], later: ['Services', 'Storefronts'] },
-  { id: 'productivity', name: 'Productivity', products: [], later: ['Drive', 'Projects', 'Boards'] },
+  { id: 'productivity', name: 'Productivity', products: ['boards'], later: ['Drive', 'Projects'] },
 ];
 
 // Which product a page belongs to (or null for pages that belong to the whole
@@ -211,6 +230,10 @@ export function activeLink(page, hash) {
   if (page === 'watch') return 'videos';
   if (page === 'paste') return /[?&]by=me/.test(String(hash || '')) ? 'paste-mine' : 'paste';
   if (page === 'pasteview') return 'paste';
+  if (page === 'image') return /[?&]by=me/.test(String(hash || '')) ? 'image-mine' : 'image';   // image.js
+  if (page === 'imageview') return 'image';
+  if (page === 'boards') return /[?&]public=/.test(String(hash || '')) ? 'boards-public' : 'boards';   // boards.js
+  if (page === 'board') return 'boards';
   if (page === 'academy') return /[?&]mine=/.test(String(hash || '')) ? 'academy-mine' : 'academy';
   if (page === 'course' || page === 'lesson') return 'academy';
   if (page === 'item') return 'catalog';
