@@ -1,0 +1,19 @@
+/* The Leaderboards page (leaderboards.js). Red and white like the rest of the site. */
+.lb-tabs .btn { margin-right: 4px; }
+.lb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.lb-box { margin: 0; }
+.lb-list { list-style: none; margin: 0; padding: 0; }
+.lb-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-top: 1px solid var(--line, #ddd); }
+.lb-row:first-child { border-top: 0; }
+.lb-row.lb-me { background: rgba(208, 36, 44, 0.08); }
+.lb-place { width: 28px; flex: none; text-align: center; font: 16px/1 var(--gb-font); color: var(--gb-red, #d0242c); }
+.lb-place-1, .lb-place-2, .lb-place-3 { font-size: 22px; }
+.lb-pic { width: 40px; height: 40px; flex: none; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.lb-pic svg { width: 40px; height: 40px; }
+.lb-art img { width: 40px; height: 40px; object-fit: cover; border: 1px solid var(--line, #ccc); }
+.lb-name { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.lb-name > a, .lb-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-score { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
+.lb-score b { font: 16px/1.1 var(--gb-font); color: var(--gb-red, #d0242c); }
+.lb-empty { padding: 8px 0; }
+.lb-how li { margin: 4px 0; }

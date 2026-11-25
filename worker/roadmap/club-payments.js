@@ -1,4 +1,4 @@
 export default {
-  id: 'club-payments', title: 'Pay for Boltworks Club with a card', status: 'working', version: '', pr: 305, time: 1794276000,
-  text: 'Monthly Boltworks Club membership through Stripe. The payment page is built; next is giving the club tier automatically after paying, and the Join button.',
+  id: 'club-payments', title: 'Pay for Boltworks Club with a card', status: 'working', version: '', pr: 305, time: 1795552079,
+  text: 'Boltworks Club tiers (monthly or yearly) and Bolts packs through Stripe. The Join cards, automatic badges, bought Bolts and Manage membership are built; it switches on once the Stripe settings are filled in.',
 };
