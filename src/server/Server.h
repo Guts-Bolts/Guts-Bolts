@@ -305,6 +305,16 @@ private:
     std::string artReportName(const std::string& target) const;
     void saveArt();
     void loadArt();
+    // ServerAudio.cpp: the Audio portal (audio.json; the sounds are Library audio assets), same rules as worker/audio.js.
+    nlohmann::json audioOp(const std::string& name, User* me, const nlohmann::json& args);
+    nlohmann::json& audioExtra(const std::string& id);
+    bool audioListed(const Asset& a) const;
+    bool audioCanSee(const Asset& a, const User* me) const;
+    nlohmann::json audioJson(const Asset& a, const User* me, bool full);
+    std::string audioReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string audioReportName(const std::string& target) const;
+    void saveAudio();
+    void loadAudio();
     // ServerVideo.cpp: G&B Videos (videos.json + files/video-<id>), same rules as worker/videos.js.
     nlohmann::json videoOp(const std::string& name, User* me, const nlohmann::json& args);
     bool videoCanSee(const nlohmann::json& v, const User* me) const;
@@ -529,6 +539,7 @@ private:
     nlohmann::json m_events = nlohmann::json::array();   // ServerExtras.cpp
     nlohmann::json m_banLists = nlohmann::json::object();   // ServerBanLists.cpp: list id -> list
     nlohmann::json m_art = {{"pieces", nlohmann::json::object()}, {"posts", nlohmann::json::object()}};   // ServerArt.cpp
+    nlohmann::json m_audio = {{"tracks", nlohmann::json::object()}, {"heard", nlohmann::json::object()}};   // ServerAudio.cpp
     nlohmann::json m_videos = {{"videos", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerVideo.cpp
     nlohmann::json m_streams = {{"streams", nlohmann::json::object()}, {"made", nlohmann::json::object()}, {"told", nlohmann::json::object()}};   // ServerStream.cpp
     std::map<std::string, std::map<long long, std::string>> m_streamPieces;   // stream id -> piece number -> bytes (ServerStream.cpp)

@@ -98,6 +98,8 @@ json GbServer::handle(const json& req) { return handle(req, From()); }
 json GbServer::handle(const json& req, const From& from) {
     if (req.value("op", std::string()) == "art.picture")   // (public pictures: worker/index.js asks for /artpic/ without an account)
         return artOp("art.picture", nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
+    if (req.value("op", std::string()) == "audio.file")   // (sounds for the Audio portal: worker/index.js asks for /sound/ without an account)
+        return audioOp("audio.file", nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     if (const std::string op = req.value("op", std::string()); op == "video.chunk" || op == "video.bytes" || op == "video.thumb")
         return videoOp(op, nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());   // (worker/index.js: /vidup, /vid, /vidthumb; the token or key is checked)
     if (const std::string op = req.value("op", std::string()); op == "stream.push" || op == "stream.piece" || op == "stream.picture")
@@ -160,7 +162,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards", "gamelog.list", "events.list",
-                                                    "art.list", "art.get", "art.picture", "leaders.get", "video.list", "video.get", "stream.list", "stream.get", "paste.list", "paste.get", "academy.list", "academy.get", "academy.lesson",
+                                                    "art.list", "art.get", "art.picture", "audio.list", "audio.get", "audio.listen", "audio.file", "leaders.get", "video.list", "video.get", "stream.list", "stream.get", "paste.list", "paste.get", "academy.list", "academy.get", "academy.lesson",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate", "http.request",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove",
@@ -731,6 +733,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("share.", 0) == 0) return shareOp(name, me, args);   // ServerShareLinks.cpp
     if (name == "game.rating" || name == "game.rate" || name == "rating.limit") return ratingOp(name, me, args);   // ServerRatings.cpp
     if (name.rfind("art.", 0) == 0) return artOp(name, &me, args);   // ServerArt.cpp
+    if (name.rfind("audio.", 0) == 0) return audioOp(name, &me, args);   // ServerAudio.cpp
     if (name.rfind("paste.", 0) == 0) return pasteOp(name, &me, args);   // ServerPaste.cpp
     if (name.rfind("leaders.", 0) == 0) return leadersOp(name, args);   // ServerLeaderboards.cpp
     if (name.rfind("video.", 0) == 0) return videoOp(name, &me, args);   // ServerVideo.cpp
@@ -2312,6 +2315,7 @@ void GbServer::load() {
     loadEvents();
     loadBanLists();
     loadArt();
+    loadAudio();
     loadExperiments();
     loadShareLinks();
     loadPastes();

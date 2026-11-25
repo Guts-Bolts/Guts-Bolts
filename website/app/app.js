@@ -19,6 +19,7 @@ import { mountLaunchpad, mountLaunchpadShelf, launchpadPill } from './launchpad.
 import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // profile backgrounds
 import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
+import { audioPages } from './audio.js';   // the Audio portal's pages (and its player bar)
 import { pastePages } from './paste.js';   // G&B Paste's pages
 import { leaderboardPages } from './leaderboards.js';   // the Leaderboards page
 import { videoPages } from './videos.js';   // G&B Videos' pages
@@ -935,6 +936,8 @@ pages.soon = async (id) => {
 
 // The Art portal (#/art, #/artpiece/<id>, #/artpost): its pages live in art.js.
 Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// The Audio portal (#/audio, #/track/<id>, #/audioupload): its pages live in audio.js.
+Object.assign(pages, audioPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me, fileBase64: (f) => gb.fileBase64(f) }));
 // G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
 Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // Leaderboards (#/leaderboards): its page lives in leaderboards.js.
@@ -3591,6 +3594,7 @@ function reportsBox(rep, closed) {
     if (x.kind === 'comment') return html`a comment by ${person(x.about)} on <a href="#/game/${x.game}">${x.name}</a>`;
     if (x.kind === 'forum') return html`a forum post by ${person(x.about)} in <a href="#/forum/t/${x.thread}">${x.name}</a>`;
     if (x.kind === 'art') return html`${x.target.includes(':') ? 'a comment' : 'art'} by ${person(x.about)} on <a href="#/artpiece/${x.piece}">${x.name}</a>`;
+    if (x.kind === 'audio') return html`${x.target.includes(':') ? 'a comment' : 'the sound'} by ${person(x.about)} on <a href="#/track/${x.track}">${x.name}</a>`;   // audio.js
     if (x.kind === 'course') return html`the course <a href="#/course/${x.target}">${x.name}</a> by ${person(x.about)}`;
     if (x.kind === 'video') return html`${x.target.includes(':') ? 'a comment' : 'the video'} by ${person(x.about)} on <a href="#/watch/${x.video}">${x.name}</a>`;   // videos.js
     if (x.kind === 'stream') return html`${x.target.includes(':') ? 'a chat line' : 'the live stream'} by ${person(x.about)} on <a href="#/live/${x.stream}">${x.name}</a>`;   // streams.js
@@ -3961,6 +3965,7 @@ function noteLink(n) {
   if (n.kind === 'rating') return '#/configure/' + n.about;   // ratings.js
   if (n.kind === 'testers') return '#/game/' + n.about;   // testers.js
   if (n.kind === 'art') return '#/artpiece/' + n.about;   // art.js
+  if (n.kind === 'audio') return '#/track/' + n.about;   // audio.js
   if (n.kind === 'video') return '#/watch/' + n.about;   // videos.js
   if (n.kind === 'stream') return '#/live/' + n.about;   // streams.js
   if (n.kind === 'academy') return '#/course/' + n.about;   // academy.js
