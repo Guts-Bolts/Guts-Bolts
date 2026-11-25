@@ -1,0 +1,59 @@
+/* The Audio portal (audio.js). Only uses app.css's colour tokens, so dark mode and themes keep working. */
+.product-audio .product-icon { background: #7a1418; }
+.audio-hero { background: linear-gradient(135deg, #8d0f15 0%, #d4202a 55%, #2a0507 100%); }
+
+/* The list: a Newgrounds-style chart, one row per sound. */
+.audio-table-wrap { overflow-x: auto; }
+.audio-table { width: 100%; border-collapse: collapse; }
+.audio-row td { padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.audio-row:hover td { background: var(--panel2); }
+.audio-n { width: 28px; text-align: right; color: var(--muted, #888); font: 12px var(--gb-font); }
+.audio-name { min-width: 160px; }
+.audio-name a { display: block; overflow-wrap: anywhere; }
+.audio-name .small { display: block; }
+.audio-kind { white-space: nowrap; }
+.audio-num { white-space: nowrap; text-align: right; }
+.audio-when { white-space: nowrap; text-align: right; }
+.audio-flag { color: #b06a00; font-weight: bold; }
+.audio-genres { font-size: 11px; margin-top: -6px; }
+
+/* Play buttons (they light up while their sound is playing). */
+.audio-play { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--gb-red, #d4202a); background: var(--panel);
+  color: var(--gb-red, #d4202a); font-size: 12px; line-height: 1; cursor: pointer; padding: 0; flex: none; }
+.audio-play:hover, .audio-play.on { background: var(--gb-red, #d4202a); color: #fff; }
+.audio-play-big { width: 56px; height: 56px; font-size: 20px; }
+
+/* One sound's page. */
+.audio-track { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
+.audio-stage { margin: 0; }
+.audio-stage-top { display: flex; gap: 14px; align-items: center; }
+.audio-stage-top h1 { margin: 0 0 4px; font-size: 22px; overflow-wrap: anywhere; }
+.audio-stage-top p { margin: 0; }
+.audio-wave { display: block; width: 100%; height: 110px; margin: 14px 0 4px; cursor: pointer; background: var(--panel2);
+  border: 2px solid var(--line); --wave-played: var(--gb-red, #d4202a); --wave-rest: #8a8f98; }
+.audio-stage-foot { margin-top: 0; }
+.audio-use { margin: 0; }
+.audio-use .row { gap: 6px; }
+.audio-code { background: var(--panel2); border: 1px solid var(--line); padding: 8px; font-size: 12px; overflow-x: auto; white-space: pre; }
+
+/* The player bar at the bottom of the screen. */
+.audio-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; background: #1a0405; color: #fff; border-top: 3px solid var(--gb-red, #d4202a); box-shadow: 0 -2px 10px rgba(0,0,0,.35); }
+.audio-bar[hidden] { display: none; }
+body.has-audio-bar { padding-bottom: 64px; }
+.audio-bar-btn { background: none; border: 0; color: #fff; font-size: 16px; cursor: pointer; padding: 4px 6px; flex: none; }
+.audio-bar-btn:hover { color: #ffd65a; }
+.audio-bar-play { width: 36px; height: 36px; border-radius: 50%; background: var(--gb-red, #d4202a); font-size: 13px; }
+.audio-bar-mid { flex: 1; min-width: 0; }
+.audio-bar-title { display: block; color: #fff; font: 12px var(--gb-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.audio-bar-title:hover { color: #ffd65a; }
+.audio-bar-seek { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.audio-bar-seek input { flex: 1; min-width: 0; accent-color: var(--gb-red, #d4202a); }
+.audio-bar-vol { width: 90px; accent-color: var(--gb-red, #d4202a); flex: none; }
+
+@media (max-width: 700px) {
+  .audio-track { grid-template-columns: 1fr; }
+  .audio-kind, .audio-when, .audio-n { display: none; }
+  .audio-bar-vol { display: none; }
+  .audio-bar { gap: 4px; padding: 6px 8px; }
+}

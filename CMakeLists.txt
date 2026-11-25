@@ -35,6 +35,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerRatings.cpp
     src/server/ServerBackgrounds.cpp
     src/server/ServerArt.cpp
+    src/server/ServerAudio.cpp
     src/server/ServerPaste.cpp
     src/server/ServerCalendar.cpp
     src/server/ServerPress.cpp
@@ -1129,6 +1130,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerArtTests gb_version)
     target_link_libraries(ServerArtTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerArtTests COMMAND ServerArtTests)
+    # The Audio portal: lists, plays, faves, comments, reports and the sound file (ServerAudio.cpp).
+    add_executable(ServerAudioTests tests/ServerAudioTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerAudioTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerAudioTests gb_version)
+    target_link_libraries(ServerAudioTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerAudioTests COMMAND ServerAudioTests)
 
     # GIFs, emoji reactions and forum votes (ServerForum.cpp, ServerSocial.cpp, TextFilter.cpp).
     add_executable(ServerReactionsTests tests/ServerReactionsTests.cpp ${GB_SERVER_TEST_SOURCES})
