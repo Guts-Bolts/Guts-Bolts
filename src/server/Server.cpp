@@ -120,6 +120,7 @@ json GbServer::handle(const json& req, const From& from) {
         openGiftBoxes();   // (ServerItems.cpp)
         finishAuctions();
         json reply = op(name, *me, args);
+        if (reply.value("ok", false)) levelsEarn(name, *me);   // XP for doing things (ServerLevels.cpp)
         if (reply.value("ok", false) || isGuess(name)) for (Costly* c : counters) ++c->n;
         return reply;
     } catch (const std::exception& e) {
@@ -162,7 +163,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards", "gamelog.list", "events.list",
-                                                    "art.list", "art.get", "art.picture", "audio.list", "audio.get", "audio.listen", "audio.file", "leaders.get", "video.list", "video.get", "stream.list", "stream.get", "paste.list", "paste.get", "academy.list", "academy.get", "academy.lesson",
+                                                    "art.list", "art.get", "art.picture", "audio.list", "audio.get", "audio.listen", "audio.file", "leaders.get", "video.list", "video.get", "stream.list", "stream.get", "paste.list", "paste.get", "wall.list", "academy.list", "academy.get", "academy.lesson",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate", "http.request",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove",
@@ -299,6 +300,7 @@ json GbServer::meJson(const User& u) const {
     j["grants"] = g;
     std::string today = Online::utcDay(Online::unixNow());
     j["canDaily"] = !hasRef(u, "daily:" + today);
+    j["levels"] = levelsJson(u);   // level, XP, streak (ServerLevels.cpp)
     j["playEarnedToday"] = u.playDay == today ? u.playEarned : 0;
     j["uploadsLeft"] = isVerified(u) ? -1
                      : Online::kDailyUploadsUnverified - (u.uploadDay == today ? u.uploadsToday : 0);
@@ -571,6 +573,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             for (size_t i = 0; i < owns.size() && i < 12; ++i) first.push_back(owns[i]);
             r["inventory"] = {{"hidden", !canSee}, {"total", owns.size()}, {"items", first}};
         }
+        r["levels"] = levelsProfile(*u, me);   // level, showcase, wall settings (ServerLevels.cpp)
         return r;
     }
     if (name == "profile.inventory") {   // everything someone owns (catalog items, games, audio...), a page at a time (worker/server.js)
@@ -735,6 +738,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("art.", 0) == 0) return artOp(name, &me, args);   // ServerArt.cpp
     if (name.rfind("audio.", 0) == 0) return audioOp(name, &me, args);   // ServerAudio.cpp
     if (name.rfind("paste.", 0) == 0) return pasteOp(name, &me, args);   // ServerPaste.cpp
+    if (name.rfind("wall.", 0) == 0 || name == "levels.me" || name == "showcase.set") return levelsOp(name, me, args);   // ServerLevels.cpp
     if (name.rfind("leaders.", 0) == 0) return leadersOp(name, args);   // ServerLeaderboards.cpp
     if (name.rfind("video.", 0) == 0) return videoOp(name, &me, args);   // ServerVideo.cpp
     if (name.rfind("stream.", 0) == 0) return streamOp(name, &me, args);   // ServerStream.cpp
@@ -869,9 +873,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         return r;
     }
     if (name == "bolts.daily") {
-        if (hasRef(me, "daily:" + today)) return fail("You already got today's Bolts. Come back tomorrow!");
-        add(me, 25, "Daily reward", "daily:" + today);
-        json r = okay(); r["me"] = meJson(me); r["got"] = 25; return r;
+        return dailyClaim(me, today);   // 25 Bolts and more for a streak (ServerLevels.cpp)
     }
     if (name == "bolts.play") {
         // The app asks every 5 minutes of play; the server checks the timing and the daily cap.
@@ -1953,6 +1955,7 @@ void GbServer::saveUsers() {
         if (u.dnd) all[id]["dnd"] = true;
         if (!u.ratingLimit.empty()) all[id]["ratingLimit"] = u.ratingLimit;
         if (!u.background.empty()) all[id]["background"] = u.background;
+        if (u.levels.is_object() && !u.levels.empty()) all[id]["levels"] = u.levels;
         all[id]["gear"] = u.gear;
         if (!u.emotes.empty()) all[id]["emotes"] = u.emotes;
         if (!u.animPack.empty()) all[id]["animPack"] = u.animPack;
@@ -2181,6 +2184,7 @@ void GbServer::load() {
                 }
                 u.dnd = j.value("dnd", false) == true;
                 u.background = j.contains("background") && j["background"].is_string() ? j["background"].get<std::string>() : std::string();
+                if (j.contains("levels") && j["levels"].is_object()) u.levels = j["levels"];
                 u.ratingLimit = j.contains("ratingLimit") && j["ratingLimit"].is_string() ? j["ratingLimit"].get<std::string>() : std::string();
                 if (j.contains("outfits") && j["outfits"].is_array()) u.outfits = j["outfits"];
                 if (j.contains("inbox") && j["inbox"].is_array()) u.inbox = j["inbox"];
