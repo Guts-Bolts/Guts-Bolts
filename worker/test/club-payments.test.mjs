@@ -167,7 +167,7 @@ test('Manage membership needs a card on file and the Stripe key, and only links 
 test('the Bolts page sells tiers and packs once prices exist, and keeps the teaser until then', () => {
   const app = readFileSync(new URL('../../website/app/app.js', import.meta.url), 'utf8');
   assert.match(app, /fetch\('\/api\/stripe\/prices'\)/);
-  assert.match(app, /onSale \? clubShop\(items, club\) : html`<section class="boltworks-teaser">/);
+  assert.match(app, /onSale \? clubShop\(items, club, btc\) : html`<section class="boltworks-teaser">/);
   assert.match(app, /data-act="clubManage"/);
   assert.match(readFileSync(new URL('../../website/checkout.js', import.meta.url), 'utf8'), /JSON\.stringify\(\{ userId, item \}\)/);
   assert.match(readFileSync(new URL('../index.js', import.meta.url), 'utf8'), /'\/api\/stripe\/prices'/);

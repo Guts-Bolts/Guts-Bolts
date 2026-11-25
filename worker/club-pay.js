@@ -3,7 +3,9 @@
 // The money part is in stripe.js: Stripe tells the Worker a payment went through (the webhook,
 // signature-checked), and the Worker hands the job to this server on https://gb.internal/stripe-event,
 // an address only the Worker can reach. This file:
-//   - adds bought Bolts (once per payment, even if Stripe sends the same event twice),
+//   - adds bought Bolts (once per payment, even if Stripe sends the same event twice), paid by card
+//     or wallet through Stripe, or with Bitcoin through OpenNode (bitcoin.js uses the same address),
+//   - takes bought Bolts back when a card payment is refunded or charged back (never twice),
 //   - keeps each person's paid memberships in u.subs ({ <Stripe subscription id>: { tier, at } }),
 //     so clubOf (server.js) shows their badge, and takes it away when the membership ends,
 //   - answers club.manage: a link to Stripe's own page for changing or cancelling a membership,
@@ -51,12 +53,32 @@ export function installClubPay(Server) {
     if (!u) return fail('No account with user number ' + job.user + '.');   // (no retry: it won't appear later)
     if (job.kind === 'bolts') {
       const n = Number(job.bolts);
-      if (!Number.isInteger(n) || n <= 0 || n > 100000 || typeof job.ref !== 'string' || !job.ref.startsWith('stripe:')) return fail('Bad Bolts job.');
+      // stripe:<checkout session> for cards and wallets, opennode:<charge> for Bitcoin (bitcoin.js).
+      const bitcoin = typeof job.ref === 'string' && /^opennode:[A-Za-z0-9-]{8,80}$/.test(job.ref);
+      if (!Number.isInteger(n) || n <= 0 || n > 100000 || typeof job.ref !== 'string' || !(job.ref.startsWith('stripe:') || bitcoin)) return fail('Bad Bolts job.');
       if (this.hasRef(u, job.ref)) return okay({ already: true });
-      this.add(u, n, 'Bought ' + n + ' Bolts', job.ref);
+      this.add(u, n, 'Bought ' + n + ' Bolts' + (bitcoin ? ' with Bitcoin' : ''), job.ref);
       this.notify(u, 'bolts', 'Thanks! ' + n + ' Bolts were added to your wallet.');
       this.flush();
       return okay();
+    }
+    // A card payment for Bolts was refunded or charged back (stripe.js takeBackWork): take them back.
+    // job.bolts is how many should be gone in total, so repeats and a second partial refund only
+    // take the difference. The balance can go below zero if they were already spent.
+    if (job.kind === 'boltsBack') {
+      const n = Number(job.bolts), pi = String(job.pi || '');
+      if (!Number.isInteger(n) || n <= 0 || n > 100000 || !/^pi_\w+$/.test(pi)) return fail('Bad take-back job.');
+      const tag = 'stripeback:' + pi;
+      const taken = u.ledger.reduce((t, e) => t + (typeof e[3] === 'string' && e[3].startsWith(tag + ':') ? -e[0] : 0), 0);
+      const more = n - taken;
+      if (more <= 0) return okay({ already: true });
+      const chargeback = job.why === 'chargeback';
+      this.add(u, -more, (chargeback ? 'Charged back: ' : 'Refunded: ') + more + ' bought Bolts taken back', tag + ':' + (taken + more));
+      this.notify(u, 'bolts', chargeback
+        ? 'A Bolts payment was charged back by your bank, so ' + more + ' Bolts were taken back. Contact support if this is a mistake.'
+        : 'Your Bolts payment was refunded, so ' + more + ' Bolts were taken back.');
+      this.flush();
+      return okay({ taken: more });
     }
     if (job.kind === 'club') {
       const sub = String(job.sub || ''), tier = String(job.tier || ''), at = Number(job.at) || 0;
