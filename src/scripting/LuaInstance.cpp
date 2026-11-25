@@ -356,7 +356,7 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
     if (n->kind == NodeKind::Constraint && n->legacyJoint)   // Weld / Motor / Motor6D are JointInstances
         return cls == "JointInstance" || (n->legacyJoint == 2 && cls == "Motor") ||
                (n->legacyJoint == 1 && (cls == "ManualWeld" || cls == "Snap"));
-    if (n->kind == NodeKind::Constraint && cls == "Constraint") return true;
+    if (n->kind == NodeKind::Constraint && cls == "Constraint") return !joinsParts(n->constraintType);   // (not Weld/NoCollision, like Roblox)
     if (n->isMover() && cls == (isBodyMover(n->mover.type) ? "BodyMover" : "Constraint")) return true;
     if (n->kind == NodeKind::Tool && cls == "BackpackItem") return true;
     if (n->kind == NodeKind::Value && cls == "ValueBase") return true;
@@ -1288,6 +1288,31 @@ bool jointIndex(lua_State* L, SceneNode* n, const char* k) {
     auto num = [&](float v) { lua_pushnumber(L, v); return true; };
     auto flag = [&](bool v) { lua_pushboolean(L, v); return true; };
     auto act = [&](Actuator a) { lua_pushstring(L, kActuatorNames[(int)a]); return true; };
+    if ((int)t >= (int)ConstraintType::Rigid) {   // the newer ones (see RigidBodies.cpp)
+        if (t == ConstraintType::Universal || t == ConstraintType::TorsionSpring) {
+            if (is(k, "LimitsEnabled")) return flag(p.limitsEnabled);
+            if (is(k, "Restitution"))   return num(p.restitution);
+            if (is(k, "MaxAngle"))      return num(p.maxAngle);
+            if (is(k, "CurrentAngle"))  return num(p.currentAngle);
+            if (t == ConstraintType::Universal && is(k, "Radius")) return num(0.2f);
+            if (t == ConstraintType::TorsionSpring && is(k, "MaxTorque")) return num(p.maxTorque >= 1e30f ? (float)HUGE_VAL : p.maxTorque);
+            if (t == ConstraintType::TorsionSpring && is(k, "Radius")) return num(0.4f);
+            if (t == ConstraintType::TorsionSpring && is(k, "Coils"))  return num(8.0f);
+        }
+        if (t == ConstraintType::Rigid) {
+            if (is(k, "DestructionEnabled")) return flag(p.destructionEnabled);
+            if (is(k, "DestructionForce"))   return num(p.destructionForce);
+            if (is(k, "DestructionTorque"))  return num(p.destructionTorque);
+        }
+        if (t == ConstraintType::LineForce) {
+            if (is(k, "Magnitude"))            return num(p.lineMagnitude);
+            if (is(k, "ApplyAtCenterOfMass"))  return flag(p.applyAtCenterOfMass);
+            if (is(k, "InverseSquareLaw"))     return flag(p.inverseSquareLaw);
+            if (is(k, "ReactionForceEnabled")) return flag(p.reactionForceEnabled);
+            if (is(k, "MaxForce"))             return num(p.lineMaxForce >= 1e30f ? (float)HUGE_VAL : p.lineMaxForce);
+        }
+        return false;
+    }
     if (is(k, "LimitsEnabled")) return flag(p.limitsEnabled);
     if (is(k, "Restitution"))   return num(p.restitution);
     if (t == ConstraintType::BallSocket) {
@@ -1346,6 +1371,28 @@ bool jointNewIndex(lua_State* L, SceneNode* n, const char* k) {
         return true;
     };
     auto flag = [&](bool& out) { out = lua_toboolean(L, 3); return true; };
+    if ((int)t >= (int)ConstraintType::Rigid) {
+        if (t == ConstraintType::Universal || t == ConstraintType::TorsionSpring) {
+            if (is(k, "LimitsEnabled")) return flag(p.limitsEnabled);
+            if (is(k, "Restitution"))   return num(p.restitution, 0.0f, 1.0f);
+            if (is(k, "MaxAngle"))      return num(p.maxAngle, 0.0f, 180.0f);
+            if (is(k, "Radius") || is(k, "Coils")) return true;   // (only how it's drawn in Roblox)
+            if (t == ConstraintType::TorsionSpring && is(k, "MaxTorque")) return num(p.maxTorque, 0.0f);
+        }
+        if (t == ConstraintType::Rigid) {
+            if (is(k, "DestructionEnabled")) return flag(p.destructionEnabled);
+            if (is(k, "DestructionForce"))   return num(p.destructionForce, 0.0f);
+            if (is(k, "DestructionTorque"))  return num(p.destructionTorque, 0.0f);
+        }
+        if (t == ConstraintType::LineForce) {
+            if (is(k, "Magnitude"))            return num(p.lineMagnitude);
+            if (is(k, "ApplyAtCenterOfMass"))  return flag(p.applyAtCenterOfMass);
+            if (is(k, "InverseSquareLaw"))     return flag(p.inverseSquareLaw);
+            if (is(k, "ReactionForceEnabled")) return flag(p.reactionForceEnabled);
+            if (is(k, "MaxForce"))             return num(p.lineMaxForce, 0.0f);
+        }
+        return false;
+    }
     if (is(k, "LimitsEnabled")) return flag(p.limitsEnabled);
     if (is(k, "Restitution"))   return num(p.restitution, 0.0f, 1.0f);
     if (t == ConstraintType::BallSocket) {
@@ -2500,6 +2547,14 @@ int inst_index(lua_State* L) {
     }
     if (n->isAttachment()) {
         if (is(k, "Position"))      { LuaApi::pushVector3(L, n->transform.position); return 1; }
+        if (is(k, "CFrame")) {   // in its part, like Roblox (WorldCFrame is in the world)
+            glm::mat4 m(1.0f);
+            const glm::mat3 r = glm::mat3(n->transform.matrix());
+            for (int i = 0; i < 3; ++i) m[i] = glm::vec4(glm::normalize(r[i] + glm::vec3(1e-12f)), 0.0f);
+            m[3] = glm::vec4(n->transform.position, 1.0f);
+            LuaApi::pushCFrame(L, m);
+            return 1;
+        }
         if (is(k, "WorldPosition")) { LuaApi::pushVector3(L, worldPosition(n)); return 1; }
         // Axis (its X) and SecondaryAxis (its Y), in its part.
         if (is(k, "Axis") || is(k, "SecondaryAxis")) {
@@ -2553,8 +2608,28 @@ int inst_index(lua_State* L) {
         if (is(k, "Restitution"))   { lua_pushnumber(L, n->joint.restitution); return 1; }
     }
     if (n->isConstraint()) {
-        bool weld = n->constraintType == ConstraintType::Weld;
+        bool weld = joinsParts(n->constraintType);
         const bool hingeProps = !usesJointProps(n->constraintType);
+        const ConstraintType ct = n->constraintType;
+        if (ct == ConstraintType::Rope) {   // the winch (RigidBodies.cpp reels it in)
+            const JointProps& p = n->joint;
+            if (is(k, "WinchEnabled"))        { lua_pushboolean(L, p.winchEnabled); return 1; }
+            if (is(k, "WinchTarget"))         { lua_pushnumber(L, p.winchTarget); return 1; }
+            if (is(k, "WinchSpeed"))          { lua_pushnumber(L, p.winchSpeed); return 1; }
+            if (is(k, "WinchForce"))          { lua_pushnumber(L, p.winchForce); return 1; }
+            if (is(k, "WinchResponsiveness")) { lua_pushnumber(L, p.winchResponsiveness); return 1; }
+            if (is(k, "Restitution"))         { lua_pushnumber(L, p.restitution); return 1; }
+        }
+        if ((ct == ConstraintType::Rope || ct == ConstraintType::Rod || ct == ConstraintType::Spring ||
+             ct == ConstraintType::LineForce) && (is(k, "CurrentDistance") || is(k, "CurrentLength"))) {
+            lua_pushnumber(L, n->joint.currentDistance);
+            return 1;
+        }
+        if (ct == ConstraintType::Spring) {
+            if (is(k, "MaxForce"))      { lua_pushnumber(L, HUGE_VAL); return 1; }
+            if (is(k, "LimitsEnabled")) { lua_pushboolean(L, false); return 1; }
+        }
+        if (is(k, "Active")) { lua_pushboolean(L, n->enabled && n->ref0 && n->ref1 && !n->broken); return 1; }
         if ((!weld && is(k, "Attachment0")) || (weld && is(k, "Part0"))) { LuaApi::pushInstance(L, n->ref0); return 1; }
         if ((!weld && is(k, "Attachment1")) || (weld && is(k, "Part1"))) { LuaApi::pushInstance(L, n->ref1); return 1; }
         if (is(k, "Length") || is(k, "FreeLength")) { lua_pushnumber(L, n->length); return 1; }
@@ -2655,7 +2730,7 @@ int inst_index(lua_State* L) {
         if (is(k, "Velocity") || is(k, "AssemblyLinearVelocity")) { LuaApi::pushVector3(L, n->velocity); return 1; }
         if (is(k, "RotVelocity") || is(k, "AssemblyAngularVelocity")) { LuaApi::pushVector3(L, n->angularVelocity); return 1; }
         if (is(k, "Density"))    { lua_pushnumber(L, Physics::densityOf(n)); return 1; }   // (water is 1.3)
-        if (is(k, "Mass") || is(k, "AssemblyMass")) { lua_pushnumber(L, massOf(n)); return 1; }
+        if (is(k, "Mass")) { lua_pushnumber(L, massOf(n)); return 1; }   // (AssemblyMass: RobloxMembers.cpp)
         if (Player::isWater(n)) {   // water parts and FluidVolumes (stored as attributes)
             if (is(k, "FlowVelocity")) { const Attribute* a = n->findAttribute("Flow"); LuaApi::pushVector3(L, a && a->type == Attribute::Vector3 ? a->v : glm::vec3(0.0f)); return 1; }
             if (is(k, "Clarity"))      { lua_pushnumber(L, numAttr(n, "Clarity", std::clamp(0.2f + n->transparency, 0.0f, 1.0f))); return 1; }
@@ -2980,6 +3055,16 @@ int inst_set(lua_State* L) {
     }
     if (n->isAttachment()) {
         if (is(k, "Position"))      { n->transform.position = LuaApi::checkVector3(L, 3); return 0; }
+        if (is(k, "CFrame")) {   // in its part, like Roblox
+            const glm::mat4 cf = LuaApi::checkCFrame(L, 3);
+            glm::mat3 r(cf);
+            for (int i = 0; i < 3; ++i) r[i] = glm::normalize(r[i] + glm::vec3(1e-12f));
+            float z, y, x;
+            glm::extractEulerAngleZYX(glm::mat4(r), z, y, x);
+            n->transform.rotation = glm::degrees(glm::vec3(x, y, z));
+            n->transform.position = glm::vec3(cf[3]);
+            return 0;
+        }
         if (is(k, "WorldPosition")) { setWorldPosition(L, n, LuaApi::checkVector3(L, 3)); return 0; }
         // Axis (the attachment's X) and SecondaryAxis (its Y): another way to turn it.
         if (is(k, "Axis") || is(k, "SecondaryAxis")) {
@@ -3050,8 +3135,18 @@ int inst_set(lua_State* L) {
         if (is(k, "Restitution"))   { n->joint.restitution = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     }
     if (n->isConstraint()) {
-        bool weld = n->constraintType == ConstraintType::Weld;
+        bool weld = joinsParts(n->constraintType);
         const bool hingeProps = !usesJointProps(n->constraintType);
+        if (n->constraintType == ConstraintType::Rope) {
+            JointProps& p = n->joint;
+            auto num = [&](float& out, float lo, float hi) { out = std::clamp((float)luaL_checknumber(L, 3), lo, hi); };
+            if (is(k, "WinchEnabled"))        { p.winchEnabled = lua_toboolean(L, 3); return 0; }
+            if (is(k, "WinchTarget"))         { num(p.winchTarget, 0.0f, 1e9f); return 0; }
+            if (is(k, "WinchSpeed"))          { num(p.winchSpeed, 0.0f, 1e9f); return 0; }
+            if (is(k, "WinchForce"))          { num(p.winchForce, 0.0f, 1e30f); return 0; }
+            if (is(k, "WinchResponsiveness")) { num(p.winchResponsiveness, 0.0f, 200.0f); return 0; }
+            if (is(k, "Restitution"))         { num(p.restitution, 0.0f, 1.0f); return 0; }
+        }
         auto ref = [&](uint64_t& r) {
             SceneNode* t = lua_isnil(L, 3) ? nullptr : LuaApi::checkNode(L, 3);
             r = t ? t->id : 0;
@@ -3647,6 +3742,8 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Constraint);
         n->constraintType = (ConstraintType)(ct - std::begin(kConstraintClassNames));
         n->color = n->constraintType == ConstraintType::Rope ? glm::vec3(0.45f, 0.32f, 0.2f) : glm::vec3(0.6f);
+        if (n->constraintType == ConstraintType::TorsionSpring) { n->stiffness = 100.0f; n->damping = 0.01f; }   // (Roblox's)
+        if ((int)n->constraintType >= (int)ConstraintType::Rigid) n->visible = false;
     } else if (cls == "FluidSystem") {
         n = std::make_unique<SceneNode>(cls, NodeKind::FluidSystem);
         n->color = {0.12f, 0.56f, 1.0f};

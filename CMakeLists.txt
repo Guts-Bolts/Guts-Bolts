@@ -1544,6 +1544,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME RobloxMembersTests COMMAND RobloxMembersTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # The rest of Roblox's constraints, the rope winch and assembly members ("Strings Attached").
+    add_executable(MoreConstraintsTests tests/MoreConstraintsTests.cpp)
+    target_link_libraries(MoreConstraintsTests PRIVATE gb_engine)
+    add_test(NAME MoreConstraintsTests COMMAND MoreConstraintsTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # Roblox classes kept as stand-ins: ObjectValue, Configuration, MeshPart, Atmosphere... (StandIns.h)
     add_executable(StandInClassesTests tests/StandInClassesTests.cpp)
     target_link_libraries(StandInClassesTests PRIVATE gb_engine)

@@ -1169,7 +1169,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         auto owner = [](SceneNode* r) { return r ? (r->isAttachment() && r->parent ? r->parent->name : r->name) : std::string("(missing)"); };
         PG::TextDisabled("Connects %s  <->  %s", owner(r0).c_str(), owner(r1).c_str());
         ConstraintType ct = node->constraintType;
-        if (ct != ConstraintType::Weld) {
+        if (!joinsParts(ct)) {
             // Its two Attachments: pick from every Attachment in the game.
             std::vector<SceneNode*> atts;
             m_scene->forEach([&](SceneNode* n) { if (n->isAttachment()) atts.push_back(n); });
@@ -1196,6 +1196,15 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
             if (PG::Checkbox("Length as placed", &autoLen)) node->length = autoLen ? -1.0f : 4.0f;
             if (!autoLen) PG::DragFloat("Length", &node->length, 0.05f, 0.0f, 500.0f);
         }
+        if (ct == ConstraintType::Rope) {
+            JointProps& p = node->joint;
+            PG::Checkbox("WinchEnabled", &p.winchEnabled);
+            if (p.winchEnabled) {
+                PG::DragFloat("WinchTarget", &p.winchTarget, 0.05f, 0.0f, 500.0f, "%.2f studs");
+                PG::DragFloat("WinchSpeed", &p.winchSpeed, 0.05f, 0.0f, 500.0f, "%.2f studs/s");
+                PG::DragFloat("WinchForce", &p.winchForce, 10.0f, 0.0f, 1e9f);
+            }
+        }
         if (ct == ConstraintType::Spring) {
             PG::DragFloat("Stiffness", &node->stiffness, 1.0f, 0.0f, 100000.0f);
             PG::DragFloat("Damping", &node->damping, 0.1f, 0.0f, 10000.0f);
@@ -1215,7 +1224,35 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
                 if (PG::Combo(label, &v, kActuatorNames, 3)) a = (Actuator)v;
             };
             ImGui::PushTextWrapPos(0);
-            if (ct == ConstraintType::BallSocket) {
+            if (ct == ConstraintType::Rigid) {
+                PG::TextDisabled("Holds two attachments in the same spot, turned the same way, like a weld between attachments.");
+                PG::Checkbox("DestructionEnabled", &p.destructionEnabled);
+                if (p.destructionEnabled) {
+                    PG::DragFloat("DestructionForce", &p.destructionForce, 10.0f, 0.0f, 1e9f);
+                    PG::DragFloat("DestructionTorque", &p.destructionTorque, 10.0f, 0.0f, 1e9f);
+                }
+            } else if (ct == ConstraintType::Plane) {
+                PG::TextDisabled("Keeps Attachment1 on a flat plane through Attachment0 (facing its X). It can still slide and turn on it.");
+            } else if (ct == ConstraintType::Universal || ct == ConstraintType::TorsionSpring) {
+                PG::TextDisabled(ct == ConstraintType::Universal
+                    ? "A joint that bends any way but can't twist: the attachments' Y axes stay at right angles, like a drive shaft."
+                    : "Turns the two attachments' Y axes back into line, like a spring-loaded door.");
+                if (ct == ConstraintType::TorsionSpring) {
+                    PG::DragFloat("Stiffness", &node->stiffness, 1.0f, 0.0f, 1e7f);
+                    PG::DragFloat("Damping", &node->damping, 0.1f, 0.0f, 1e6f);
+                }
+                PG::Checkbox("LimitsEnabled", &p.limitsEnabled);
+                if (p.limitsEnabled) {
+                    PG::DragFloat("MaxAngle", &p.maxAngle, 0.5f, 0.0f, 180.0f, "%.1f deg");
+                    PG::SliderFloat("Restitution", &p.restitution, 0.0f, 1.0f);
+                }
+            } else if (ct == ConstraintType::LineForce) {
+                PG::TextDisabled("Pulls Attachment0 towards Attachment1 along the line between them (a negative Magnitude pushes it away).");
+                PG::DragFloat("Magnitude", &p.lineMagnitude, 10.0f, -1e9f, 1e9f);
+                PG::Checkbox("InverseSquareLaw", &p.inverseSquareLaw);
+                PG::Checkbox("ApplyAtCenterOfMass", &p.applyAtCenterOfMass);
+                PG::Checkbox("ReactionForceEnabled", &p.reactionForceEnabled);
+            } else if (ct == ConstraintType::BallSocket) {
                 PG::TextDisabled("Holds the two attachments together and lets them turn any way, like a shoulder.");
                 PG::Checkbox("LimitsEnabled", &p.limitsEnabled);
                 if (p.limitsEnabled) PG::DragFloat("UpperAngle", &p.upperAngle, 0.5f, 0.0f, 180.0f, "%.1f deg");
@@ -1264,6 +1301,12 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
                 }
             }
             ImGui::PopTextWrapPos();
+        }
+        if (ct == ConstraintType::NoCollision) {
+            ImGui::PushTextWrapPos(0);
+            PG::TextDisabled("Part0 and Part1 pass through each other (they still bump into everything else).");
+            ImGui::PopTextWrapPos();
+            return;
         }
         if (ct != ConstraintType::Weld) {
             PG::ColorEdit3("Color", &node->color.x);
