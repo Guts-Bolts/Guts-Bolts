@@ -144,6 +144,19 @@ private:
     glm::vec3 m_ssrPos{0.0f};
     bool      m_ssrReady = false, m_usedSsr = false;
     void bindReflections(const Camera& camera);   // before drawing the parts
+    // Every picture the lit shader reads that isn't per part (shadow maps, lamp shadows,
+    // bounce light, reflections, last frame's AO), put back on its own unit. The water and
+    // fog passes use those units for their own pictures, so this runs again after them
+    // (otherwise blood, sparks and glass drawn after water read the water's pictures).
+    // The two shadow units read through a comparing sampler (hardware-filtered shadows);
+    // releaseLitSamplers() takes it off again before any other pass uses those units.
+    void bindLitTextures(const Camera& camera);
+    void releaseLitSamplers();
+    unsigned  m_cmpSampler = 0;
+    glm::mat4 m_aoViewProj{1.0f};
+    glm::vec3 m_aoCamPos{0.0f};
+    bool      m_aoReady = false, m_aoInLit = false;
+    long      m_noiseFrame = 0;
     void keepForReflections(const Camera& camera); // after drawing: copy this frame for the next one
     // Volumetric fog (SceneRendererFog.cpp, High and up): fog that takes light, so the
     // sun cuts shafts through it and lamps glow in it, and that drifts in wisps.

@@ -9,8 +9,15 @@ namespace Shaders {
 // "#pragma gb_common" is replaced with this (see Shader.cpp).
 inline const char* common = R"(
 vec3 lin(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }   // colour picker -> linear
-float hash12(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float hash13(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+// Random numbers without sin(): fract(sin(x) * 43758) runs out of precision on graphics
+// cards (phones especially) once x gets big, far from the middle of the map, and shows as
+// blocky repeating patterns. These stay even everywhere ("Hash without Sine", D. Hoskins).
+float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+// Noise that is different every frame and spreads evenly over neighbouring pixels
+// (Jimenez's interleaved gradient noise): the temporal upscaler averages it away into a
+// smooth result, where noise that stays put would be seen as grain.
+float ign(vec2 px, float frame) { px += 5.588238 * mod(frame, 64.0); return fract(52.9829189 * fract(0.06711056 * px.x + 0.00583715 * px.y)); }
 float vnoise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
@@ -203,6 +210,22 @@ uniform mat4      uCascadeSpace[MAX_CASCADES];
 uniform vec2      uCascadeInfo[MAX_CASCADES];   // x: world size of one of its texels, y: world distance its depth 0..1 covers
 uniform vec4      uCascadeRect[MAX_CASCADES];   // its tile in the atlas: corner xy, size zw (z < 0: the base map)
 uniform sampler2D uShadowAtlas;
+// The same two pictures read through the graphics card's own shadow filter: each read
+// compares 4 texels and blends them, so 16 reads give smooth edges instead of steps.
+uniform sampler2DShadow uShadowMapCmp;
+uniform sampler2DShadow uShadowAtlasCmp;
+// Which frame this is (0..63) and whether frames get mixed (temporal upscaler on): then
+// the noise in soft shadows and reflections changes every frame and gets averaged away.
+uniform float uFrame;
+uniform bool  uTemporalNoise;
+// Ambient occlusion (GTAO) from the frame before, laid back onto this one: it only dims
+// the sky light, bounce light and reflections, never direct sun or lamps. rg: how open
+// the spot is, how far it was from that frame's camera (to tell when it saw something else).
+uniform bool      uAoOn;
+uniform sampler2D uAo;
+uniform mat4      uAoViewProj;
+uniform vec3      uAoCamPos;
+uniform float     uAoStrength;
 
 #define MAX_LIGHTS 32
 uniform int  uLightCount;
@@ -267,7 +290,7 @@ float ssrDistance(float depth01) {   // a depth from the depth picture -> studs 
 // how sure that is (0 = it left the screen or found nothing: use the sky instead).
 vec4 screenReflection(vec3 P, vec3 R, vec3 V) {
     float stepLen = 0.3;
-    float jit = uSsrNoise > 0.5 ? fract(sin(dot(gl_FragCoord.xy + vec2(uTime * 37.0, uTime * 11.0), vec2(12.9898, 78.233))) * 43758.5453) : 0.5;
+    float jit = uSsrNoise > 0.5 ? ign(gl_FragCoord.xy, uFrame) : 0.5;
     vec3 prevQ = P;
     vec3 q = P + R * (0.05 + stepLen * jit);
     for (int i = 0; i < 64; ++i) {
@@ -317,7 +340,7 @@ const vec2 POISSON[16] = vec2[](
 // sunlight). `edge` says how close to the side of the map the point is (0 middle, 1 edge).
 // `rect` is the piece of the picture this map lives in (a tile of the atlas; the whole
 // picture is 0, 0, 1, 1): lookups never leave it, so tiles don't bleed into each other.
-float shadowFrom(sampler2D map, mat4 lightSpace, float texelWorld, float depthRange, vec4 rect, vec3 N, vec3 L, out float edge) {
+float shadowFrom(sampler2D map, sampler2DShadow cmap, mat4 lightSpace, float texelWorld, float depthRange, vec4 rect, vec3 N, vec3 L, out float edge) {
     // Normal offset: move the lookup point off the surface a little (more on surfaces
     // turned away from the sun), so a surface never shadows itself ("acne"). Small, so
     // a box sitting on the ground still shadows the ground right up to its edge.
@@ -328,14 +351,18 @@ float shadowFrom(sampler2D map, mat4 lightSpace, float texelWorld, float depthRa
     edge = max(abs(p.x - 0.5), abs(p.y - 0.5)) * 2.0;
     if (p.z > 1.0 || edge > 1.0) { edge = 2.0; return 1.0; }
 
-    float bias  = 0.00004 + 0.0001 * (1.0 - NoL);
+    // Depth bias in studs, sized from this map's own texels: every cascade covers a
+    // different distance, so one fixed number was too little up close (acne) and far too
+    // much far away (shadows floating off things). More where the sun grazes the surface.
+    float tanT  = sqrt(max(1.0 - NoL * NoL, 0.0)) / max(NoL, 0.08);
+    float bias  = texelWorld * (0.25 + 0.5 * min(tanT, 6.0)) / max(depthRange, 1e-3);
     vec2  texel = 1.0 / vec2(textureSize(map, 0));
     vec2  lo = rect.xy + texel * 0.5, hi = rect.xy + rect.zw - texel * 0.5;
     p.xy = rect.xy + p.xy * rect.zw;
     if (uShadowQuality == 0)
-        return texture(map, clamp(p.xy, lo, hi)).r < p.z - bias ? 0.0 : 1.0;
+        return texture(cmap, vec3(clamp(p.xy, lo, hi), p.z - bias));
 
-    float a = hash12(gl_FragCoord.xy) * 6.2831853;
+    float a = (uTemporalNoise ? ign(gl_FragCoord.xy, uFrame) : hash12(gl_FragCoord.xy)) * 6.2831853;
     mat2 rot = mat2(cos(a), sin(a), -sin(a), cos(a));
 
     float radius = 1.0 + 1.5 * uShadowSoftness;          // in texels
@@ -352,11 +379,10 @@ float shadowFrom(sampler2D map, mat4 lightSpace, float texelWorld, float depthRa
         radius = clamp(penumbra, 1.0, 24.0);
     }
 
+    // (Each read is filtered by the graphics card: 4 texels compared and blended.)
     float lit = 0.0;
-    for (int i = 0; i < 16; ++i) {
-        float d = texture(map, clamp(p.xy + rot * POISSON[i] * radius * texel, lo, hi)).r;
-        lit += (p.z - bias > d) ? 0.0 : 1.0;
-    }
+    for (int i = 0; i < 16; ++i)
+        lit += texture(cmap, vec3(clamp(p.xy + rot * POISSON[i] * radius * texel, lo, hi), p.z - bias));
     return lit / 16.0;
 }
 
@@ -368,7 +394,14 @@ float lampVisibility(int i, vec3 N) {
     vec3  lp  = uLightPosRange[i].xyz;
     float far = max(uLightPosRange[i].w, 0.2);
     float near = 0.1;
-    vec3 v = vWorldPos + N * 0.05 - lp;
+    // How big one of the tile's pixels is out here (each side sees 90 degrees, so a tile
+    // spans twice the distance): the lookup is moved off the surface by about that much,
+    // more where the lamp grazes it, and the depth check only needs a small, even margin.
+    // (It used to be 1.5% of the distance, which let light leak under walls far from the lamp.)
+    vec3 v0 = vWorldPos - lp;
+    float texW = 2.0 * length(v0) * uLampTileTexel;
+    float NoLp = clamp(dot(N, -normalize(v0)), 0.0, 1.0);
+    vec3 v = v0 + N * (0.02 + texW * (1.0 + 1.5 * (1.0 - NoLp)));
     vec3 a = abs(v);
     int f;
     vec3 F;
@@ -391,7 +424,7 @@ float lampVisibility(int i, vec3 N) {
             // Back to studs from the lamp, and compare there (even bias near and far).
             float ndc = d * 2.0 - 1.0;
             float stored = 2.0 * far * near / ((far + near) - ndc * (far - near));
-            lit += (dd * 0.985 - 0.04 > stored) ? 0.0 : 1.0;
+            lit += (dd - 0.02 - texW * 0.6 > stored) ? 0.0 : 1.0;
         }
     return lit / 9.0;
 }
@@ -405,8 +438,8 @@ float cascadeEdge(int i) {
 }
 float cascadeShadow(int i, vec3 N, vec3 L, out float edge) {
     vec4 r = uCascadeRect[i];
-    if (r.z < 0.0) return shadowFrom(uShadowMap, uCascadeSpace[i], uCascadeInfo[i].x, uCascadeInfo[i].y, vec4(0.0, 0.0, 1.0, 1.0), N, L, edge);
-    return shadowFrom(uShadowAtlas, uCascadeSpace[i], uCascadeInfo[i].x, uCascadeInfo[i].y, r, N, L, edge);
+    if (r.z < 0.0) return shadowFrom(uShadowMap, uShadowMapCmp, uCascadeSpace[i], uCascadeInfo[i].x, uCascadeInfo[i].y, vec4(0.0, 0.0, 1.0, 1.0), N, L, edge);
+    return shadowFrom(uShadowAtlas, uShadowAtlasCmp, uCascadeSpace[i], uCascadeInfo[i].x, uCascadeInfo[i].y, r, N, L, edge);
 }
 
 // The sun's shadow: from the sharpest cascade this spot is inside, blending into the
@@ -454,7 +487,9 @@ vec3 shade(vec3 N, vec3 V, vec3 L, vec3 albedo, float rough, float metal, vec3 r
 }
 
 vec2 hash22(vec2 p) {
-    return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453);
+    vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));   // (sine-free, see hash12)
+    q += dot(q, q.yzx + 33.33);
+    return fract((q.xx + q.yz) * q.zy);
 }
 // Cells (stones, crystals, crinkles): x = distance to the nearest cell's centre,
 // y = how far from the edge between cells, z = a random number per cell; id = the cell.
@@ -884,6 +919,29 @@ void main() {
         }
     }
 
+    // Specular anti-aliasing (Tokuyoshi & Kaplanyan, as in Filament): where the surface
+    // turns a lot inside one pixel (round or bumpy things, far away), a mirror-smooth
+    // highlight would be one-pixel sparkles that flicker as you move. Make it as rough as
+    // the pixel is wide instead, so it turns into a steady sheen.
+    {
+        vec3 du = dFdx(N), dv = dFdy(N);
+        float variance = 0.15 * (dot(du, du) + dot(dv, dv));
+        float a2 = rough * rough * rough * rough + min(2.0 * variance, 0.2);
+        rough = sqrt(sqrt(clamp(a2, 0.0, 1.0)));
+    }
+    // Ambient occlusion from last frame's GTAO, where it saw this same spot.
+    float ao = 1.0;
+    if (uAoOn) {
+        vec4 ac = uAoViewProj * vec4(vWorldPos, 1.0);
+        vec2 au = ac.xy / ac.w * 0.5 + 0.5;
+        if (ac.w > 0.0 && au.x > 0.0 && au.y > 0.0 && au.x < 1.0 && au.y < 1.0) {
+            vec2 a = texture(uAo, au).rg;
+            float expect = length(vWorldPos - uAoCamPos);
+            float same = 1.0 - smoothstep(0.04, 0.12, abs(a.g - expect) / max(expect, 0.5));
+            ao = mix(1.0, a.r, same * clamp(uAoStrength, 0.0, 2.0) * 0.85);
+        }
+    }
+
     vec3 color;
     float alpha = gAlpha * decalAlpha;
 
@@ -912,7 +970,9 @@ void main() {
             if (uLightColor[i].w > 1.5) {
                 // Bouncy light (BounceLight.h): soft, no shiny spot. It shines out of the
                 // surface it came from (uLightDir = that surface's way out), not back onto it.
-                float lobe = clamp(dot(-Ld, uLightDir[i].xyz) + 0.3, 0.0, 1.0);
+                // (Only to the side it faces: it used to reach 30% behind it too, which
+                // glowed through the floor or wall it bounced off.)
+                float lobe = smoothstep(-0.05, 0.35, dot(-Ld, uLightDir[i].xyz));
                 color += albedo * (1.0 - metal) * uLightColor[i].rgb * fall * 6.0 * lobe * (max(dot(N, Ld), 0.0) * 0.7 + 0.3);
                 continue;
             }
@@ -952,7 +1012,11 @@ void main() {
                 bounced = max(g.rgb, vec3(0.0)) * same;
             }
         }
-        color += albedo * (1.0 - metal) * (hemi * uAmbientIntensity * skyVis + bounced) * matAo;
+        // (AO with a little light bounced back in by bright colours: a white corner doesn't
+        // go as grey as a dark one. Jimenez et al. 2016, "Practical Real-Time Strategies".)
+        vec3 aoAlb = clamp(albedo, 0.0, 0.9);
+        vec3 aoMulti = max(vec3(ao), ((ao * (2.0404 * aoAlb - 0.3324) + (-4.7951 * aoAlb + 0.6417)) * ao + (2.7552 * aoAlb + 0.6903)) * ao);
+        color += albedo * (1.0 - metal) * (hemi * uAmbientIntensity * skyVis + bounced) * matAo * aoMulti;
 
         // Reflections of the sky on shiny surfaces.
         vec3  f0  = mix(vec3(0.04), albedo, metal);
@@ -963,14 +1027,16 @@ void main() {
         vec3  avg = lin((uZenith + uHorizon + uGround) / 3.0);
         env = mix(env, avg, rough) * mix(1.0, skyVis, 0.75);   // (no sky reflected deep in a corner)
         env *= mix(1.0, matAo, 0.75);                          // (...or down in a material's own grooves)
+        // Specular occlusion (Lagarde & de Rousiers 2014): a corner hides most of the sky
+        // a smooth surface would mirror, more so seen at a low angle.
+        env *= clamp(pow(NoV + ao, exp2(-16.0 * rough * rough - 1.0)) - 1.0 + ao, 0.0, 1.0);
         float shine = (gMaterial == 7 ? max(uReflections, 0.8) : gMaterial == 8 ? uReflections * 0.2 : gMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : gMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
         // Smooth, shiny things (metal, glass, ice, polished stone, wet floors) mirror the
         // world around them, not only the sky (High and up; see screenReflection).
         if (uSsrOn && uShading == 0 && rough < 0.45 && shine * max(F.r, max(F.g, F.b)) > 0.004) {
             vec3 Rs = R;
             if (uSsrNoise > 0.5 && rough > 0.05) {   // a little blur on the less smooth ones
-                vec3 h3 = fract(sin(vec3(dot(gl_FragCoord.xy, vec2(127.1, 311.7)), dot(gl_FragCoord.xy, vec2(269.5, 183.3)),
-                                         dot(gl_FragCoord.xy, vec2(419.2, 371.9))) + uTime) * 43758.5453);
+                vec3 h3 = vec3(ign(gl_FragCoord.xy, uFrame), ign(gl_FragCoord.yx + 17.0, uFrame), ign(gl_FragCoord.xy + 41.0, uFrame + 7.0));
                 Rs = normalize(R + (h3 - 0.5) * rough * 0.5);
             }
             vec4 hit = screenReflection(vWorldPos + N * 0.03, Rs, V);
@@ -1388,7 +1454,7 @@ uniform vec3 uSunView;    // the sun's direction, in view space
 uniform vec3 uSunColor;
 uniform vec3 uAmbient;
 out vec4 FragColor;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float hash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
@@ -1521,7 +1587,7 @@ uniform sampler2D uTex;
 uniform bool  uHasTex;
 uniform vec3  uLight;     // the scene's light (unlit particles still dim at night)
 out vec4 FragColor;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float hash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
@@ -1726,7 +1792,8 @@ uniform sampler2D uAO;
 uniform sampler2D uDepth;
 uniform mat4  uInvProj;
 uniform vec2  uTexel;     // one pixel of uAO
-out float FragAO;
+uniform bool  uWithDist;  // also keep how far each pixel is from the camera (g), for the next frame's lit shader
+out vec4 FragAO;
 float viewZ(vec2 uv) {
     float d = texture(uDepth, uv).r;
     vec4 p = uInvProj * vec4(0.0, 0.0, d * 2.0 - 1.0, 1.0);
@@ -1745,7 +1812,13 @@ void main() {
             sum += texture(uAO, uv).r * w;
             wsum += w;
         }
-    FragAO = sum / wsum;
+    float dist = 0.0;
+    if (uWithDist) {
+        float d = texture(uDepth, vUV).r;
+        vec4 p = uInvProj * vec4(vUV * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+        dist = d >= 1.0 ? 60000.0 : length(p.xyz / p.w);
+    }
+    FragAO = vec4(sum / wsum, dist, 0.0, 1.0);
 }
 )";
 
@@ -1754,9 +1827,17 @@ inline const char* bloomPrefilterFrag = R"(#version 410 core
 in vec2 vUV;
 uniform sampler2D uSrc;
 uniform float uThreshold;
+uniform vec2  uTexel;     // one pixel of uSrc
 out vec4 FragColor;
+// Four pixels averaged, each weighted by 1 / (1 + its brightness) (the "Karis average",
+// Call of Duty: Advanced Warfare): one tiny, very bright pixel (a glint) can't make a
+// big blob of glow that pops on and off as it moves.
 void main() {
-    vec3 c = texture(uSrc, vUV).rgb;
+    vec3 a = texture(uSrc, vUV + uTexel * vec2(-0.5, -0.5)).rgb, b = texture(uSrc, vUV + uTexel * vec2(0.5, -0.5)).rgb;
+    vec3 d = texture(uSrc, vUV + uTexel * vec2(-0.5, 0.5)).rgb, e = texture(uSrc, vUV + uTexel * vec2(0.5, 0.5)).rgb;
+    float wa = 1.0 / (1.0 + max(a.r, max(a.g, a.b))), wb = 1.0 / (1.0 + max(b.r, max(b.g, b.b)));
+    float wd = 1.0 / (1.0 + max(d.r, max(d.g, d.b))), we = 1.0 / (1.0 + max(e.r, max(e.g, e.b)));
+    vec3 c = (a * wa + b * wb + d * wd + e * we) / (wa + wb + wd + we);
     float br = max(c.r, max(c.g, c.b));
     float soft = clamp(br - uThreshold + 0.5, 0.0, 1.0);
     soft = soft * soft * 0.5;
@@ -1825,7 +1906,8 @@ float skyLight(vec2 uv) {
 void main() {
     vec2 step = (uSun - vUV) * (0.15 + 0.85 * uSpread) / float(uSamples);
     // Each pixel starts a little further along (no stripes from the steps).
-    vec2 p = vUV + step * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    vec3 hq = fract(vec3(gl_FragCoord.xyx) * 0.1031); hq += dot(hq, hq.yzx + 33.33);
+    vec2 p = vUV + step * fract((hq.x + hq.y) * hq.z);
     float sum = 0.0, w = 1.0;
     for (int i = 0; i < 64; ++i) {
         if (i >= uSamples) break;
@@ -1959,7 +2041,7 @@ float causticsAt(vec2 x, float t) {
     }
     return c / 3.0;
 }
-float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 // Drops of water sliding down the screen after coming up for air: how much each pixel
 // is bent (xy) and how much drop is there (z).
 vec3 screenDrops(vec2 uv, float t) {
@@ -2096,6 +2178,15 @@ void main() {
         vec3 shift = uColorBlind == 3 ? vec3(lost.r + 0.7 * lost.b, lost.g + 0.7 * lost.b, 0.0)
                                       : vec3(0.0, 0.7 * lost.r + lost.g, 0.7 * lost.r + lost.b);
         c = c + shift;
+    }
+    // Dither: the picture ends up with only 256 steps per colour, which shows as stripes
+    // in smooth gradients (sky, fog, dark rooms). A tiny bit of noise (triangle-shaped,
+    // +-1 step, different every frame) hides them without looking noisy (Gjoel, INSIDE).
+    {
+        vec3 q1 = fract(vec3(gl_FragCoord.xyx + fract(uTime * 7.31) * 97.0) * 0.1031); q1 += dot(q1, q1.yzx + 33.33);
+        vec3 q2 = fract(vec3(gl_FragCoord.yxy + fract(uTime * 3.17) * 89.0) * 0.1033); q2 += dot(q2, q2.yzx + 33.33);
+        float n = fract((q1.x + q1.y) * q1.z) + fract((q2.x + q2.y) * q2.z) - 1.0;
+        c += n / 255.0;
     }
     c = clamp(c, 0.0, 1.0);
     FragColor = vec4(c, uLumaAlpha ? dot(c, vec3(0.299, 0.587, 0.114)) : 1.0);

@@ -81,7 +81,7 @@ GLuint Shader::compile(GLenum type, const char* src) {
     size_t at = text.find(desktop);
     if (at != std::string::npos)
         text.replace(at, desktop.size(),
-                     "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;");
+                     "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\nprecision highp sampler2DShadow;");
 #endif
     const char* finalSrc = text.c_str();
     glShaderSource(s, 1, &finalSrc, nullptr);
