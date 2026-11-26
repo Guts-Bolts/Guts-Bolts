@@ -150,6 +150,8 @@ private:
         int         color = 0x3A7BD5;                   // emblem colour (0xRRGGBB)
         bool        open = true;                         // anyone can join (false: ask first)
         std::string lyreto;                              // its Lyreto server's invite link ("" = none)
+        std::string icon, banner;                        // decals for its icon and banner ("" = none; ServerGroupPages.cpp)
+        nlohmann::json news = nlohmann::json::array();   // announcements [{id, by, title, text, time}], newest last
         std::map<std::string, std::string> members;      // account id -> rank id ("Owner", "Admin", "Member" or a custom "r-...")
         nlohmann::json ranks = nlohmann::json::array();  // [{id, name, level, perms}] (empty = the default three)
         std::vector<Entry> ledger;                       // the group's Bolts (game sales in, payouts out)
@@ -295,6 +297,12 @@ private:
     // ServerBackgrounds.cpp: a picture behind your avatar on your profile (worker/backgrounds.js).
     nlohmann::json backgroundOp(User& me, const nlohmann::json& args);
     nlohmann::json backgroundOf(const User& u) const;
+    // ServerGroupPages.cpp: group icons and banners, announcements, members by rank, people cards (worker/group-pages.js).
+    nlohmann::json groupPageOp(const std::string& name, User& me, const nlohmann::json& args, Group& g);
+    nlohmann::json groupPicture(const std::string& id) const;
+    nlohmann::json groupNewsJson(const Group& g) const;
+    nlohmann::json personCard(const User& u, const User& viewer) const;
+    bool peopleShown(const std::string& show, const User& u, const User& viewer) const;
     // ServerRatings.cpp: content levels from a few questions (worker/ratings.js).
     nlohmann::json ratingOp(const std::string& name, User& me, const nlohmann::json& args);
     bool ratingAllowed(const Asset& a, const User& me) const;

@@ -163,7 +163,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Everything else needs a signed-up account (hello just says who we are),
     // except looking around: visitors to the website can browse before signing up.
     // Guests can also play: download games, find and join servers (they can't chat in games).
-    static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
+    static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get", "groups.members",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards", "gamelog.list", "events.list",
                                                     "art.list", "art.get", "art.picture", "audio.list", "audio.get", "audio.listen", "audio.file", "leaders.get", "video.list", "video.get", "stream.list", "stream.get", "paste.list", "paste.get", "wall.list", "image.list", "image.get", "image.picture", "board.list", "board.get", "calendar.list", "calendar.get", "press.list", "press.get", "academy.list", "academy.get", "academy.lesson",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
@@ -647,7 +647,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         for (const auto& [id, u] : m_users)
             if (!u.banned && u.userId > 0 &&
                 (q.empty() || u.userId == wantId || lower(u.name).find(q) != std::string::npos ||
-                 lower(u.username).find(q) != std::string::npos))
+                 lower(u.username).find(q) != std::string::npos) &&
+                peopleShown(str("show"), u, me))   // the People page's tabs (ServerGroupPages.cpp)
                 found.push_back(&u);
         // Exact matches first, then Verified people, then the most recently seen.
         std::sort(found.begin(), found.end(), [&](const User* a, const User* b) {
@@ -660,7 +661,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         json list = json::array();
         for (const User* u : found) {
             if (list.size() >= 50) break;
-            list.push_back(publicUser(*u));
+            list.push_back(personCard(*u, me));   // with avatars and levels (ServerGroupPages.cpp)
         }
         json r = okay(); r["users"] = list; return r;
     }

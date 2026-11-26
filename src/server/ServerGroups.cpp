@@ -110,6 +110,8 @@ json GbServer::publicGroup(const Group& g) const {
             {"members", g.members.size()}, {"color", g.color}, {"open", g.open}, {"created", g.created},
             {"shout", g.shout.text}};
     if (!g.lyreto.empty()) j["lyreto"] = {{"link", g.lyreto}};
+    j["icon"] = groupPicture(g.icon);       // (ServerGroupPages.cpp)
+    j["banner"] = groupPicture(g.banner);
     return j;
 }
 
@@ -198,6 +200,13 @@ json GbServer::groupOp(const std::string& name, User& me, const json& args) {
         r["myRank"] = myRank;
         r["ranks"] = sortedRanks();
         r["requested"] = g.requests.count(me.id) > 0;
+        r["news"] = groupNewsJson(g);   // announcements (ServerGroupPages.cpp)
+        json rankCounts = json::object();
+        for (const auto& [uid, rid] : g.members) {
+            const std::string key = rankIn(g, uid).value("id", std::string("Member"));
+            rankCounts[key] = rankCounts.value(key, 0) + 1;
+        }
+        r["rankCounts"] = rankCounts;
         std::vector<std::pair<std::string, json>> sorted;
         for (const auto& [id, rid] : g.members) sorted.push_back({id, rankIn(g, id)});
         std::stable_sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) { return a.second.value("level", 0) > b.second.value("level", 0); });
@@ -455,6 +464,8 @@ json GbServer::groupOp(const std::string& name, User& me, const json& args) {
         saveGroups();
         return okay();
     }
+    if (name == "groups.pictures" || name == "groups.announce" || name == "groups.announceDelete" || name == "groups.members")
+        return groupPageOp(name, me, args, g);   // ServerGroupPages.cpp
     return fail("The server doesn't know how to do \"" + name + "\". It might need updating.");
 }
 
@@ -474,6 +485,9 @@ void GbServer::saveGroups() {
                    {"shout", {g.shout.by, g.shout.text, g.shout.time}}, {"wall", wall}};
         if (!g.ranks.empty()) all[id]["ranks"] = g.ranks;
         if (!g.lyreto.empty()) all[id]["lyreto"] = g.lyreto;
+        if (!g.icon.empty()) all[id]["icon"] = g.icon;
+        if (!g.banner.empty()) all[id]["banner"] = g.banner;
+        if (g.news.is_array() && !g.news.empty()) all[id]["news"] = g.news;
         if (!g.ledger.empty()) {
             json ledger = json::array();
             for (const Entry& e : g.ledger) ledger.push_back({e.amount, e.reason, e.time, e.ref});
@@ -498,6 +512,9 @@ void GbServer::loadGroups() {
         g.color = j.value("color", 0x3A7BD5);
         g.open = j.value("open", true);
         g.lyreto = j.value("lyreto", std::string());
+        g.icon = j.value("icon", std::string());
+        g.banner = j.value("banner", std::string());
+        if (j.contains("news") && j["news"].is_array()) g.news = j["news"];
         if (j.contains("members") && j["members"].is_object())
             for (auto& [k, v] : j["members"].items()) if (v.is_string()) g.members[k] = v.get<std::string>();
         if (j.contains("requests")) for (const auto& r : j["requests"]) if (r.is_string()) g.requests.insert(r.get<std::string>());
