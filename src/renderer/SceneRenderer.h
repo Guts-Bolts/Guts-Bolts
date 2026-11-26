@@ -7,6 +7,7 @@
 #include "ShadowCascades.h"
 #include "Gtao.h"
 #include "GpuCulling.h"
+#include "Mesh.h"
 #include "../core/FrameArena.h"
 #include "../scene/Weather.h"
 #include "../scene/BounceLight.h"
@@ -152,6 +153,13 @@ private:
     // releaseLitSamplers() takes it off again before any other pass uses those units.
     void bindLitTextures(const Camera& camera);
     void releaseLitSamplers();
+    // Every sun shadow cascade's uniforms (matrix, texel size, depth range, atlas tile),
+    // for the lit, water and liquid shaders alike.
+    void setCascadeUniforms(Shader& s) const;
+    void ensureCmpSampler();
+    // The sun's shadows for the water and liquid shaders (base map + atlas through the
+    // shadow filter on the two units given; glBindSampler(unit, 0) them afterwards).
+    void bindWaterShadows(Shader& s, int baseUnit, int atlasUnit);
     unsigned  m_cmpSampler = 0;
     glm::mat4 m_aoViewProj{1.0f};
     glm::vec3 m_aoCamPos{0.0f};
@@ -241,6 +249,10 @@ private:
     int                     m_shadowRes = 0;
     glm::mat4               m_lightSpace{1.0f};       // (the wide shadow map's, for the water)
     bool                    m_shadowsOn = false;
+    ShadowCascades::Plan    m_cascadePlan;            // (this frame's: for setCascadeUniforms)
+    float                   m_baseTexel = 0.0f, m_baseDepthRange = 0.0f;
+    std::vector<Vertex>     m_waterVerts;             // (kept between frames: no allocation per frame)
+    std::vector<uint32_t>   m_waterIdx;
     bool                    m_wasUnder = false;       // the camera was underwater last frame
     float                   m_drip = 0.0f;            // water running down the screen after surfacing
     double                  m_lastPost = 0.0;
