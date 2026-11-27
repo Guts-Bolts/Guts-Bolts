@@ -55,6 +55,11 @@ class TrainingManifestTests(unittest.TestCase):
         candidate["approval_history"][0]["answer"] = "raw interaction text"
         self.assertTrue(any("raw content field" in e for e in validate(manifest(candidate))))
 
+    def test_rejects_unsafe_source_path(self):
+        candidate = eligible()
+        candidate["source_path"] = "C:\\private\\data"
+        self.assertTrue(any("safe relative" in e for e in validate(manifest(candidate))))
+
     def test_rejects_interaction_sources(self):
         candidate = eligible()
         candidate["source_kind"] = "fyxa_conversation"
