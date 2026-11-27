@@ -72,6 +72,9 @@ GLuint Shader::compile(GLenum type, const char* src) {
     const std::string marker = "#pragma gb_common";
     for (size_t at; (at = text.find(marker)) != std::string::npos;)
         text.replace(at, marker.size(), Shaders::common);   // shared helper functions
+    const std::string sunMarker = "#pragma gb_watersun";
+    for (size_t at; (at = text.find(sunMarker)) != std::string::npos;)
+        text.replace(at, sunMarker.size(), Shaders::waterSun);   // the sun's shadow on water (Shaders.h)
     const std::string rayMarker = "#pragma gb_fluidray";
     for (size_t at; (at = text.find(rayMarker)) != std::string::npos;)
         text.replace(at, rayMarker.size(), Shaders::fluidRay);   // hitting a liquid drop (Shaders.h)
@@ -81,7 +84,7 @@ GLuint Shader::compile(GLenum type, const char* src) {
     size_t at = text.find(desktop);
     if (at != std::string::npos)
         text.replace(at, desktop.size(),
-                     "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;");
+                     "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\nprecision highp sampler2DShadow;");
 #endif
     const char* finalSrc = text.c_str();
     glShaderSource(s, 1, &finalSrc, nullptr);

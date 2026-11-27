@@ -4881,6 +4881,8 @@ int light_index(lua_State* L) {
     if (is(k, "LightRays"))     { lua_pushnumber(L, e.lightRays);       return 1; }
     if (is(k, "AutoExposure"))  { lua_pushboolean(L, e.autoExposure);   return 1; }
     if (is(k, "MotionBlur"))    { lua_pushnumber(L, e.motionBlur);      return 1; }
+    if (is(k, "PhysicalSky"))   { lua_pushboolean(L, e.physicalSky);    return 1; }
+    if (is(k, "ToneMapper"))    { lua_pushstring(L, kToneMapperNames[std::clamp(e.toneMapper, 0, kToneMapperCount - 1)]); return 1; }
     if (is(k, "Name") || is(k, "ClassName")) { lua_pushstring(L, "Lighting"); return 1; }
     if (is(k, "Parent")) { lua_pushnil(L); return 1; }
     if (is(k, "IsA")) { lua_pushcfunction(L, light_isA); return 1; }
@@ -4941,6 +4943,22 @@ int light_newindex(lua_State* L) {
     if (is(k, "LightRays"))     { e.lightRays = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     if (is(k, "AutoExposure"))  { e.autoExposure = lua_toboolean(L, 3); return 0; }
     if (is(k, "MotionBlur"))    { e.motionBlur = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+    if (is(k, "PhysicalSky"))   { e.physicalSky = lua_toboolean(L, 3); return 0; }
+    if (is(k, "ToneMapper")) {   // "AgX", "ACES" or "Neutral" (Enum.ToneMapper.AgX works too)
+        const char* w = luaL_tolstring(L, 3, nullptr);
+        std::string name = w ? w : "";
+        lua_pop(L, 1);
+        if (const size_t dot = name.rfind('.'); dot != std::string::npos) name = name.substr(dot + 1);
+        for (int i = 0; i < kToneMapperCount; ++i) {
+            const std::string want = kToneMapperNames[i];
+            if (name.size() == want.size() &&
+                std::equal(name.begin(), name.end(), want.begin(), [](char a, char b) { return std::tolower((unsigned char)a) == std::tolower((unsigned char)b); })) {
+                e.toneMapper = i;
+                return 0;
+            }
+        }
+        return luaL_error(L, "'%s' isn't a tone mapper (use \"AgX\", \"ACES\" or \"Neutral\")", name.c_str());
+    }
     if (extraSet(L, k)) return 0;
     return luaL_error(L, "'%s' can't be set on Lighting", k);
 }

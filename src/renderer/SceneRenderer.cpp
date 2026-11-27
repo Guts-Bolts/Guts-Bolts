@@ -212,6 +212,7 @@ SceneRenderer::~SceneRenderer() {
     destroyTarget(m_hdr);
     destroyTarget(m_ao);
     destroyTarget(m_aoRaw);
+    if (m_cmpSampler) glDeleteSamplers(1, &m_cmpSampler);
     destroyTarget(m_ldr);
     for (auto& b : m_bloom) destroyTarget(b);
     for (auto& b : m_bdDown) destroyTarget(b);
@@ -447,7 +448,8 @@ void SceneRenderer::buildAxes() {
 void SceneRenderer::ensureTargets(int w, int h) {
     if (m_hdr.w == w && m_hdr.h == h && m_hdr.fbo) return;
     createTarget(m_hdr, w, h, hdrFormat(), true);
-    createTarget(m_ao, w, h, GL_R8, false);
+    createTarget(m_ao, w, h, hdrFormat(), false);   // (g: each pixel's distance, for the lit shader next frame)
+    m_aoReady = false;
     createTarget(m_aoRaw, w, h, GL_R8, false);
     createTarget(m_ldr, w, h, GL_RGBA8, false);
     int bw = w / 2, bh = h / 2;
@@ -525,6 +527,9 @@ void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, 
         for (SceneNode* p = node->parent; p; p = p->parent)   // inside something hidden (a backpack) or a ViewportFrame
             if (!p->shown() || p->isViewportFrame()) return;
         if (node->kind != NodeKind::Part || node->transparency > 0.5f) return;
+        // (Water lets the sun through: its box would shade its own wave troughs and the
+        // pool floor. The water shader soaks up the light by depth instead.)
+        if (Player::isWater(node)) return;
         const glm::mat4 m = node->worldMatrix();
         const float radius = partRadius(m);
         if (tooFar(glm::vec3(m[3]), radius)) return;
@@ -740,6 +745,8 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     if (shadows) { FrameProfile::Scope prof("draw: shadows", true); renderShadowPass(scene, lightSpace, m_shadow); }
     m_lightSpace = lightSpace;
     m_shadowsOn = shadows;
+    m_baseTexel = texel;
+    m_baseDepthRange = baseDepthRange;
     // The other maps: sharper ones inside the base, wider ones outside it.
 #ifdef GB_MOBILE
     const bool phone = true;
@@ -748,12 +755,15 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
 #endif
     const ShadowCascades::Plan cascades = ShadowCascades::plan(extent, shadows ? ShadowCascades::mapsFor(gs.shadowQuality, phone) : 1);
     m_cascadeMaps = shadows ? cascades.count : 0;
+    m_cascadePlan = cascades;
     ++m_shadowFrame;
     for (int i = 0, tile = 0; i < cascades.count; ++i) {
         if (i == cascades.base) continue;
         CascadeTile& t = m_cascadeTile[i];
         // (One-off pictures, like thumbnails, can't lean on the frame before: always redraw.)
-        const bool stale = !temporal || !t.drawn || std::abs(t.extent - cascades.extent[i]) > 1e-3f;
+        // (The two widest only take turns while battery saver is on: taking turns made far
+        // shadows stutter behind anything moving.)
+        const bool stale = !temporal || !t.drawn || std::abs(t.extent - cascades.extent[i]) > 1e-3f || !gs.saverActive();
         if (ShadowCascades::redrawNow(cascades, i, m_shadowFrame, stale)) {
             glm::mat4 view;
             t.extent = cascades.extent[i];
@@ -807,6 +817,8 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         m_sky->setFloat("uCloudSpeed", env.cloudSpeed);
         m_sky->setVec3("uCloudColor", env.cloudColor);
         m_sky->setBool("uStars", env.stars);
+        // Real air: 12 steps along each ray (6 on Low graphics, none on Battery Saver).
+        m_sky->setInt("uAirSteps", !env.physicalSky || gs.saverActive() ? 0 : gs.volumetricClouds() > 0 ? 12 : 6);
         {
             // Real 3D clouds from High graphics up (the flat painted ones below that).
             static const int kSteps[4] = {0, 28, 44, 72};
@@ -958,24 +970,13 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lit->setFloat("uShadowTexelWorld", texel);
     m_lit->setFloat("uShadowDepthRange", baseDepthRange);
     m_lit->setMat4("uLightSpace", lightSpace);
-    m_shadow.bindForRead(0);
     m_lit->setInt("uShadowMap", 0);
+    m_lit->setInt("uShadowMapCmp", 1);
     // Every cascade, smallest first: its matrix, pixel size and depth range, and where
     // its tile is in the atlas (z < 0 = it's the base map, not a tile).
-    m_shadowAtlas.bindForRead(6);
     m_lit->setInt("uShadowAtlas", 6);
-    m_lit->setInt("uCascadeCount", cascades.count);
-    for (int i = 0, tile = 0; i < cascades.count; ++i) {
-        char name[32];
-        const bool base = i == cascades.base;
-        std::snprintf(name, sizeof(name), "uCascadeSpace[%d]", i);
-        m_lit->setMat4(name, base ? lightSpace : m_cascadeTile[i].space);
-        std::snprintf(name, sizeof(name), "uCascadeInfo[%d]", i);
-        m_lit->setVec2(name, base ? glm::vec2(texel, baseDepthRange) : glm::vec2(m_cascadeTile[i].texel, m_cascadeTile[i].depthRange));
-        std::snprintf(name, sizeof(name), "uCascadeRect[%d]", i);
-        m_lit->setVec4(name, base ? glm::vec4(0.0f, 0.0f, -1.0f, -1.0f) : ShadowCascades::tileRect(tile));
-        if (!base) ++tile;
-    }
+    m_lit->setInt("uShadowAtlasCmp", 2);
+    setCascadeUniforms(*m_lit);
 
     // Collect point / spot lights; keep the ones closest to the camera.
     struct LightItem { glm::vec4 pos, col, dir; float dist; const SceneNode* node; };
@@ -1037,13 +1038,25 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
             if (m_lampShadowNodes[k] == lights[i].node) slots[i] = (float)k;
     }
     m_lit->setFloatArray("uLampShadowSlot", slots, count);
-    m_lampShadows.bindForRead(10);
     m_lit->setInt("uLampShadows", 10);
     m_lit->setFloat("uLampTileTexel", m_lampTile > 0 ? 1.0f / (float)m_lampTile : 0.01f);
-    bindBounce(*m_lit);   // last frame's traced bounce light (Medium and up)
-    bindReflections(camera);   // last frame's picture, for shiny parts to mirror (High and up)
+    // Soft-shadow and reflection noise: a new pattern each frame when frames get mixed.
+    ++m_noiseFrame;
+    m_lit->setFloat("uFrame", (float)(m_noiseFrame % 64));
+    m_lit->setBool("uTemporalNoise", m_usedUpscaler);
+    // Last frame's ambient occlusion goes on the sky and bounce light here (not on the
+    // finished picture, where it also darkened direct sunlight).
+    m_aoInLit = m_aoReady && temporal && shading == Shading::Material && !xray && !camera.orthographic &&
+                !camera.useProjection && glm::length(camera.position() - m_aoCamPos) < 8.0f;
+    m_lit->setBool("uAoOn", m_aoInLit);
+    m_lit->setInt("uAo", 3);
+    m_lit->setMat4("uAoViewProj", m_aoViewProj);
+    m_lit->setVec3("uAoCamPos", m_aoCamPos);
+    m_lit->setFloat("uAoStrength", env.aoIntensity);
+    bindLitTextures(camera);   // shadows, lamp shadows, bounce light, reflections, AO
 
     { FrameProfile::Scope prof("draw: parts and water", true); drawGeometry(scene, camera, showGrid); }
+    releaseLitSamplers();
     drawOverlay(view, proj);
     glBindVertexArray(0);
     { FrameProfile::Scope prof("draw: liquid", true); renderLiquid(scene, camera); }
@@ -1067,6 +1080,72 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
 // lit picture and its depth, and the next frame's shiny parts walk their reflected rays
 // through that copy (seen from last frame's camera, so it still lines up when you turn).
 // High and up only (GraphicsSettings::shinyReflections); the main views only.
+void SceneRenderer::ensureCmpSampler() {
+    if (m_cmpSampler) return;
+    // Reads a depth picture as "how much of this spot is lit": the card compares the
+    // 4 nearest texels with the spot's own depth and blends the answers (PCF).
+    glGenSamplers(1, &m_cmpSampler);
+    glSamplerParameteri(m_cmpSampler, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glSamplerParameteri(m_cmpSampler, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    glSamplerParameteri(m_cmpSampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glSamplerParameteri(m_cmpSampler, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glSamplerParameteri(m_cmpSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glSamplerParameteri(m_cmpSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
+void SceneRenderer::bindLitTextures(const Camera& camera) {
+    ensureCmpSampler();
+    m_shadow.bindForRead(0);
+    m_shadow.bindForRead(1);
+    m_shadowAtlas.bindForRead(6);
+    m_shadowAtlas.bindForRead(2);
+    glBindSampler(1, m_cmpSampler);
+    glBindSampler(2, m_cmpSampler);
+    bindTex(3, m_ao.color);
+    m_lampShadows.bindForRead(10);
+    bindBounce(*m_lit);        // last frame's traced bounce light (Medium and up)
+    bindReflections(camera);   // last frame's picture, for shiny parts to mirror (High and up)
+    glActiveTexture(GL_TEXTURE0);
+}
+
+void SceneRenderer::setCascadeUniforms(Shader& s) const {
+    const ShadowCascades::Plan& cascades = m_cascadePlan;
+    s.setInt("uCascadeCount", cascades.count);
+    for (int i = 0, tile = 0; i < cascades.count; ++i) {
+        char name[32];
+        const bool base = i == cascades.base;
+        std::snprintf(name, sizeof(name), "uCascadeSpace[%d]", i);
+        s.setMat4(name, base ? m_lightSpace : m_cascadeTile[i].space);
+        std::snprintf(name, sizeof(name), "uCascadeInfo[%d]", i);
+        s.setVec2(name, base ? glm::vec2(m_baseTexel, m_baseDepthRange) : glm::vec2(m_cascadeTile[i].texel, m_cascadeTile[i].depthRange));
+        std::snprintf(name, sizeof(name), "uCascadeRect[%d]", i);
+        s.setVec4(name, base ? glm::vec4(0.0f, 0.0f, -1.0f, -1.0f) : ShadowCascades::tileRect(tile));
+        if (!base) ++tile;
+    }
+}
+
+// Water and liquid read the sun's shadows through the same filter as the lit shader:
+// the base map on `baseUnit`, the atlas on `atlasUnit` (taken off again by releaseLitSamplers-style
+// glBindSampler(unit, 0) once they're drawn).
+void SceneRenderer::bindWaterShadows(Shader& s, int baseUnit, int atlasUnit) {
+    ensureCmpSampler();
+    m_shadow.bindForRead(baseUnit);
+    m_shadowAtlas.bindForRead(atlasUnit);
+    glBindSampler(baseUnit, m_cmpSampler);
+    glBindSampler(atlasUnit, m_cmpSampler);
+    s.setInt("uShadowMapCmp", baseUnit);
+    s.setInt("uShadowAtlasCmp", atlasUnit);
+    s.setBool("uWaterShadows", m_shadowsOn);
+    s.setFloat("uFrame", (float)(m_noiseFrame % 64));
+    s.setBool("uTemporalNoise", m_usedUpscaler);
+    setCascadeUniforms(s);
+}
+
+void SceneRenderer::releaseLitSamplers() {
+    glBindSampler(1, 0);
+    glBindSampler(2, 0);
+}
+
 void SceneRenderer::bindReflections(const Camera& camera) {
     const GraphicsSettings& gs = GraphicsSettings::get();
     const int level = gs.shinyReflections();
@@ -1360,6 +1439,12 @@ namespace {
 
 // The shape of a water part while its waves move: the wavy top, plus the sides
 // down to the bottom (so a pool looks full from the side too). World space.
+// A colour from a colour picker as light (the shaders' lin()): the water and liquid
+// shaders get the sun and sky light like this, the same as everything else.
+glm::vec3 linearColor(glm::vec3 c) {
+    return glm::pow(glm::max(c, glm::vec3(0.0f)), glm::vec3(2.2f));
+}
+
 void buildWaterMesh(const WaterSystem& ws, const WaterSystem::Body& b, std::vector<Vertex>& verts,
                     std::vector<uint32_t>& idx) {
     verts.clear();
@@ -1452,17 +1537,15 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
     const float t = waves.active() ? waves.time() : (float)(now() - m_startTime);
     w.setFloat("uTime", t);
     w.setVec3("uSunDir", env.sunDirection());
-    w.setVec3("uSunColor", env.sunColor);
+    w.setVec3("uSunColor", linearColor(env.sunColor));   // (linear, like the lit shader's lin())
     w.setFloat("uSunIntensity", std::max(0.0f, env.sunIntensity));
     w.setVec3("uZenith", env.skyZenith);
     w.setVec3("uHorizon", env.skyHorizon);
     w.setVec3("uGround", env.skyGround);
     w.setFloat("uSkyBrightness", env.skyBrightness);
-    w.setVec3("uAmbient", env.ambientColor * env.ambientIntensity);
+    w.setVec3("uAmbient", linearColor(env.ambientColor) * env.ambientIntensity);
     w.setBool("uReflections", gs.waterReflections());
-    w.setBool("uWaterShadows", m_shadowsOn);
-    m_shadow.bindForRead(5); w.setInt("uShadowMap", 5);
-    w.setMat4("uLightSpace", m_lightSpace);
+    bindWaterShadows(w, 5, 4);   // (units 4 and 5: nothing else of the water's uses them)
     w.setFloat("uShadowStrength", env.shadowStrength);
     w.setBool("uFogEnabled", env.fogEnabled);
     w.setVec3("uFogColor", env.fogColor);
@@ -1492,8 +1575,8 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
         w.setVec3("uOcTexel", glm::vec3(OceanWaves::kBand[0].length, OceanWaves::kBand[1].length, OceanWaves::kBand[2].length) / n);
     }
 
-    std::vector<Vertex> verts;
-    std::vector<uint32_t> idx;
+    std::vector<Vertex>& verts = m_waterVerts;
+    std::vector<uint32_t>& idx = m_waterIdx;
     for (const WaterItem& it : waters) {
         SceneNode* node = it.node;
         const WaterSystem::Body* wb = waves.find(node->id);
@@ -1592,6 +1675,8 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             node->mesh->draw();
         }
     }
+    glBindSampler(4, 0);
+    glBindSampler(5, 0);
     glDisable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(0.0f, 0.0f);
     glEnable(GL_CULL_FACE);
@@ -1830,8 +1915,8 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         for (int i = 0; i < 2; ++i) {
             unsigned tex = pics[i]->empty() ? 0 : Textures::get(*pics[i]);
             if (!tex) continue;
-            bindTex(9 + i, tex);
-            m_lit->setInt(names[i], 9 + i);
+            bindTex(i == 0 ? 9 : 4, tex);   // (not 10: that's the lamp shadows)
+            m_lit->setInt(names[i], i == 0 ? 9 : 4);
             has[i] = 1.0f;
         }
         m_lit->setVec4("uVHas", has);
@@ -1848,8 +1933,8 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
             if (orm) ormHas = glm::vec3(got[0] ? 1.0f : 0.0f, got[1] ? 1.0f : 0.0f, got[2] ? 1.0f : 0.0f);
         }
         if (orm) {
-            bindTex(11, orm);
-            m_lit->setInt("uVOrm", 11);
+            bindTex(8, orm);   // (not 11: that's the bounce light)
+            m_lit->setInt("uVOrm", 8);
         }
         m_lit->setVec3("uVOrmHas", ormHas);
         m_lit->setFloat("uVTile", p.studsPerTile * 0.5f);   // (a Roblox stud is half a unit)
@@ -2053,14 +2138,18 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     if (m_fogVolOn) {
         // The fog over the solid things; what's drawn from here on (see-through parts,
         // water, sparks) fogs itself the simple way.
+        releaseLitSamplers();
         { FrameProfile::Scope prof("draw: volumetric fog", true); drawFogVolume(scene, camera); }
         m_lit->bind();
         m_lit->setBool("uFogVolumetric", false);
+        bindLitTextures(camera);
     }
     drawConstraints(scene, editing);
     if (!waters.empty()) {
+        releaseLitSamplers();
         { FrameProfile::Scope prof("draw: water surfaces", true); drawWater(scene, camera, waters); }
         m_lit->bind();
+        bindLitTextures(camera);   // (the water used most of the units for its own pictures)
     }
 
     // --- Particles (blood, oil, gibs, bolts, sparks, fire, smoke) ---
@@ -3111,23 +3200,23 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
     m_fluidShade->setMat4("uInvView", glm::inverse(view));
     m_fluidShade->setVec2("uTexel", texel);
     m_fluidShade->setVec3("uSunDir", env.sunDirection());
-    m_fluidShade->setVec3("uSunColor", env.sunColor);
+    m_fluidShade->setVec3("uSunColor", linearColor(env.sunColor));
     m_fluidShade->setFloat("uSunIntensity", std::max(0.0f, env.sunIntensity));
     m_fluidShade->setVec3("uZenith", env.skyZenith);
     m_fluidShade->setVec3("uHorizon", env.skyHorizon);
     m_fluidShade->setVec3("uGround", env.skyGround);
     m_fluidShade->setFloat("uSkyBrightness", env.skyBrightness);
-    m_fluidShade->setVec3("uAmbient", ambient);
+    m_fluidShade->setVec3("uAmbient", linearColor(env.ambientColor) * env.ambientIntensity);
     m_fluidShade->setBool("uTinted", tinted);
     m_fluidShade->setVec3("uTint", palette[0]);
     bindTex(4, m_fColor.color); m_fluidShade->setInt("uColorTex", 4);
-    m_fluidShade->setBool("uWaterShadows", m_shadowsOn);
-    m_shadow.bindForRead(5); m_fluidShade->setInt("uShadowMap", 5);
-    m_fluidShade->setMat4("uLightSpace", m_lightSpace);
+    bindWaterShadows(*m_fluidShade, 5, 6);
     m_fluidShade->setFloat("uShadowStrength", env.shadowStrength);
     m_fluidShade->setBool("uReflections", gq.waterReflections());
     m_fluidShade->setFloat("uTime", (float)(now() - m_startTime));
     glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindSampler(5, 0);
+    glBindSampler(6, 0);
     glDepthFunc(GL_LESS);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(0);
@@ -3176,7 +3265,15 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
         m_gtaoBlur->setInt("uDepth", 1);
         m_gtaoBlur->setMat4("uInvProj", invProj);
         m_gtaoBlur->setVec2("uTexel", glm::vec2(1.0f / m_aoRaw.w, 1.0f / m_aoRaw.h));
+        const bool keep = temporal && hdrFormat() == (GLenum)GL_RGBA16F;
+        m_gtaoBlur->setBool("uWithDist", keep);
         glDrawArrays(GL_TRIANGLES, 0, 3);
+        // Kept for the next frame's lit shader, with the camera it was seen from.
+        m_aoReady = keep;
+        m_aoViewProj = proj * camera.view();
+        m_aoCamPos = camera.position();
+    } else {
+        m_aoReady = false;
     }
 
     // --- Bloom: bright-pass, then a blur pyramid down and back up. A BloomEffect in
@@ -3194,6 +3291,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
         bindTex(0, m_hdr.color);
         m_bloomPre->setInt("uSrc", 0);
         m_bloomPre->setFloat("uThreshold", bloomThreshold);
+        m_bloomPre->setVec2("uTexel", glm::vec2(1.0f / m_hdr.w, 1.0f / m_hdr.h));
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         m_bloomDown->bind();
@@ -3350,7 +3448,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     m_composite->setInt("uBloom", 1);
     m_composite->setInt("uAO", 2);
     m_composite->setBool("uUseBloom", useBloom);
-    m_composite->setBool("uUseAO", useAO);
+    m_composite->setBool("uUseAO", useAO && !m_aoInLit);   // (already put on the sky light by the lit shader)
     m_composite->setBool("uPost", gs.postFx);
     m_composite->setBool("uLumaAlpha", useFxaa);
     m_composite->setFloat("uSharpen", upscaleSharpen());
@@ -3365,6 +3463,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     m_composite->setFloat("uBloomIntensity", bloomIntensity);
     m_composite->setFloat("uAOIntensity", env.aoIntensity * ao.strength);
     m_composite->setFloat("uContrast", env.contrast);
+    m_composite->setInt("uToneMapper", std::clamp(env.toneMapper, 0, kToneMapperCount - 1));
     m_composite->setFloat("uSaturation", env.saturation);
     m_composite->setFloat("uVignette", env.vignette);
     m_composite->setVec3("uTint", env.tint);

@@ -86,6 +86,8 @@ void EnvironmentPanel::render() {
         PG::ColorEdit3("Below",    &e.skyGround.x);
         PG::SliderFloat("Sky Brightness", &e.skyBrightness, 0.0f, 3.0f);
         ImGui::Checkbox  ("Stars at night", &e.stars);
+        PG::Checkbox("Real air", &e.physicalSky);
+        help("The sky is lit like real air: brighter and whiter round the sun, glowing along the horizon at sunset, deeper blue away from it. The colours above still set the overall look. Scripts: Lighting.PhysicalSky");
     }
 
     if (PG::CollapsingHeader("Clouds", open)) {
@@ -134,6 +136,12 @@ void EnvironmentPanel::render() {
 
     if (PG::CollapsingHeader("Camera & Effects", open)) {
         PG::SliderFloat("Exposure",   &e.exposure, 0.1f, 4.0f);
+        {
+            int tm = std::clamp(e.toneMapper, 0, kToneMapperCount - 1);
+            const char* looks[kToneMapperCount] = {"AgX (like film)", "ACES (punchy, the old look)", "Neutral (true colours)"};
+            if (PG::Combo("Tone mapping", &tm, looks, kToneMapperCount)) e.toneMapper = tm;
+            help("How very bright light is fitted onto the screen. AgX fades the brightest colours towards white like a camera does (no neon skies or orange skin in sunsets). ACES is the old, punchier look. Neutral keeps colours closest to the real ones. Scripts: Lighting.ToneMapper");
+        }
         help("Overall brightness of the picture");
         PG::SliderFloat("Bloom",      &e.bloomIntensity, 0.0f, 3.0f);
         help("Glow around bright things like Neon parts and the sun");

@@ -1492,6 +1492,15 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(GtaoTests PRIVATE gb_engine)
     add_test(NAME GtaoTests COMMAND GtaoTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # Clean Light (graphics overhaul part 1): shadows, lamp leaks, sparkles, AO, banding.
+    add_executable(CleanLightTests tests/CleanLightTests.cpp)
+    target_link_libraries(CleanLightTests PRIVATE gb_engine)
+    add_test(NAME CleanLightTests COMMAND CleanLightTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    # Clear Water (graphics overhaul part 2): water light, shadows, ripples, caustics, glints.
+    add_executable(ClearWaterTests tests/ClearWaterTests.cpp)
+    target_link_libraries(ClearWaterTests PRIVATE gb_engine)
+    add_test(NAME ClearWaterTests COMMAND ClearWaterTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # The ocean's waves: spectrum, FFT, bands, and floating on them.
     add_executable(OceanWavesTests tests/OceanWavesTests.cpp)
     target_link_libraries(OceanWavesTests PRIVATE gb_engine)

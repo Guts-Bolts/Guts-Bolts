@@ -42,6 +42,11 @@ struct Environment {
     float     cloudSpeed = 1.0f;
     glm::vec3 cloudColor = {1.0f, 1.0f, 1.0f};
     bool      stars      = true;        // visible when the sky is dark
+    // Real air (Lighting.PhysicalSky): sunlight scattered by the air (Rayleigh) and haze
+    // (Mie) shapes the sky: bright and whiter round the sun, a glow along the horizon
+    // under it at sunset, deeper blue away from it. The sky colours above still set the
+    // overall colour, so a game's own sky keeps its look.
+    bool      physicalSky = true;
 
     // Atmosphere (exponential distance fog) -----------------------------------
     bool      fogEnabled   = true;
@@ -90,6 +95,11 @@ struct Environment {
     float     lightRays      = 0.35f;   // light shafts from the sun through haze and gaps (0 = off)
     bool      autoExposure   = true;    // eyes adjust: dark places brighten slowly, bright ones dim
     float     motionBlur     = 0.0f;    // 0 off .. 1 a lot (the camera turning fast smears)
+    // How bright light is squeezed into what a screen can show (kToneMapperNames, Lighting.ToneMapper):
+    // 0 AgX (like film: very bright colours fade towards white instead of going neon),
+    // 1 ACES (the old look: punchier, bright colours stay saturated), 2 Neutral (Khronos
+    // PBR Neutral: colours as close to the real ones as it can, for products and art).
+    int       toneMapper     = 0;
 
     // Unit vector pointing from a surface toward the sun.
     glm::vec3 sunDirection() const {
@@ -126,6 +136,8 @@ inline bool isSnowing(int weather) { return weather == (int)Weather::Snow || wea
 enum class CloudType { Auto = 0, Cumulus = 1, Stratus = 2, Cumulonimbus = 3, Supercell = 4 };
 inline constexpr int kCloudTypeCount = 5;
 inline const char* const kCloudTypeNames[kCloudTypeCount] = {"Auto", "Cumulus", "Stratus", "Cumulonimbus", "Supercell"};
+inline constexpr int kToneMapperCount = 3;
+inline const char* const kToneMapperNames[kToneMapperCount] = {"AgX", "ACES", "Neutral"};
 // The shape the sky really has: the chosen one, or the one that goes with the weather.
 inline int cloudShape(int cloudType, int weather, float cloudCover) {
     if (cloudType > 0 && cloudType < kCloudTypeCount) return cloudType;
