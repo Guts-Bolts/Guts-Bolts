@@ -1,0 +1,37 @@
+name: Self-Hosted Hardware Check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  hardware-check:
+    # Manual dispatch only. No pull_request/push triggers and no repository checkout.
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Verify runner host
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
+        run: |
+          Write-Output "Runner host: $env:COMPUTERNAME"
+          Write-Output "Windows: $env:OS"
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture
+          Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors
+          Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum | ForEach-Object { "Installed RAM (GB): {0:N1}" -f ($_.Sum / 1GB) }
+
+      - name: Check NVIDIA GPU availability
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
+        run: |
+          if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+            nvidia-smi
+          } else {
+            Write-Error "nvidia-smi was not found; NVIDIA GPU tooling may not be installed or on PATH."
+            exit 1
+          }
+
+      - name: Check local development tools
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
+        run: |
+          foreach ($tool in @('git', 'python', 'node', 'npm', 'ollama')) {
+            $cmd = Get-Command $tool -ErrorAction SilentlyContinue
+            if ($cmd) { "{0}: {1}" -f $tool, $cmd.Source } else { "{0}: not found" -f $tool }
+          }
