@@ -40,8 +40,22 @@ std::vector<std::string> terms(const std::string& text) {
 }
 
 bool safeRelative(const std::filesystem::path& path) {
-    if (path.empty() || path.is_absolute()) return false;
+    if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory()) return false;
     for (const auto& part : path) if (part == "..") return false;
+    return true;
+}
+
+bool containedWithin(const std::filesystem::path& root, const std::filesystem::path& candidate) {
+    std::error_code ec;
+    const auto canonicalRoot = std::filesystem::weakly_canonical(root, ec);
+    if (ec) return false;
+    const auto canonicalCandidate = std::filesystem::weakly_canonical(candidate, ec);
+    if (ec) return false;
+    auto rootIt = canonicalRoot.begin();
+    auto candidateIt = canonicalCandidate.begin();
+    for (; rootIt != canonicalRoot.end(); ++rootIt, ++candidateIt) {
+        if (candidateIt == canonicalCandidate.end() || *rootIt != *candidateIt) return false;
+    }
     return true;
 }
 
@@ -118,7 +132,7 @@ json FyxaKnowledge::search(const std::string& query, std::size_t limit, std::str
                     const std::string pathText = source.contains("path") && source["path"].is_string()
                         ? source["path"].get<std::string>() : std::string();
                     const std::filesystem::path relative(pathText);
-                    if (id.empty() || pathText.empty() || !safeRelative(relative) ||
+                    if (id.empty() || pathText.empty() || !safeRelative(relative) || !containedWithin(m_root, m_root / relative) ||
                         !sourceIds.insert(id).second || !sourcePaths.insert(pathText).second) continue;
                     std::string content;
                     if (!readBounded(m_root / relative, content)) continue;
