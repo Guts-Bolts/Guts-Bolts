@@ -6,11 +6,13 @@
 #include <iterator>
 #include <set>
 #include <sstream>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
 namespace {
 using json = nlohmann::json;
+std::mutex g_knowledgeMutex;
 constexpr std::size_t kMaxManifestBytes = 128 * 1024;
 constexpr std::size_t kMaxSourceBytes = 512 * 1024;
 constexpr std::size_t kMaxChunksPerSource = 512;
@@ -62,6 +64,13 @@ std::vector<std::string> splitChunks(const std::string& content) {
     std::istringstream in(content);
     std::string line;
     while (std::getline(in, line)) {
+        if (line.size() > kChunkChars) {
+            if (!current.empty()) { chunks.push_back(std::move(current)); current.clear(); }
+            for (std::size_t offset = 0; offset < line.size() && chunks.size() < kMaxChunksPerSource; offset += kChunkChars)
+                chunks.push_back(line.substr(offset, kChunkChars));
+            if (chunks.size() >= kMaxChunksPerSource) break;
+            continue;
+        }
         if (!current.empty() && current.size() + line.size() + 1 > kChunkChars) {
             chunks.push_back(std::move(current));
             current.clear();
@@ -82,39 +91,44 @@ json FyxaKnowledge::search(const std::string& query, std::size_t limit, std::str
     error.clear();
     if (query.size() < 2 || query.size() > 512) { error = "Query must contain 2 to 512 characters."; return json::array(); }
     if (limit == 0 || limit > 12) { error = "Result limit must be between 1 and 12."; return json::array(); }
-    std::string manifestText;
-    if (!readBounded(m_manifest, manifestText)) { error = "Knowledge source manifest is unavailable or exceeds its size limit."; return json::array(); }
-    const json manifest = json::parse(manifestText, nullptr, false);
-    if (manifest.is_discarded() || !manifest.is_object() || manifest.value("schema_version", 0) != 1 ||
-        manifest.value("purpose", std::string()) != "reference_only" ||
-        !manifest.contains("sources") || !manifest["sources"].is_array()) {
-        error = "Knowledge manifest is invalid; retrieval is disabled.";
-        return json::array();
-    }
     const auto queryTerms = terms(query);
     if (queryTerms.empty()) { error = "Query contains no searchable terms."; return json::array(); }
 
-    std::vector<Chunk> chunks;
-    std::set<std::string> sourceIds, sourcePaths;
-    for (const auto& source : manifest["sources"]) {
-        if (!source.is_object() || source.value("authority", std::string()) != "first_party_repository" ||
-            source.value("index_policy", std::string()) != "reference_only") continue;
-        const std::string id = source.value("source_id", std::string());
-        const std::string pathText = source.value("path", std::string());
-        const std::filesystem::path relative(pathText);
-        if (id.empty() || pathText.empty() || !safeRelative(relative) ||
-            !sourceIds.insert(id).second || !sourcePaths.insert(pathText).second) continue;
-        std::string content;
-        if (!readBounded(m_root / relative, content)) continue;
-        const auto sourceChunks = splitChunks(content);
-        for (std::size_t i = 0; i < sourceChunks.size(); ++i)
-            chunks.push_back({id, pathText, sourceChunks[i], i});
+    std::lock_guard lock(g_knowledgeMutex);
+    if (!m_indexReady) {
+        m_indexReady = true;
+        std::string manifestText;
+        if (!readBounded(m_manifest, manifestText)) m_indexError = "Knowledge source manifest is unavailable or exceeds its size limit.";
+        else {
+            const json manifest = json::parse(manifestText, nullptr, false);
+            if (manifest.is_discarded() || !manifest.is_object() || manifest.value("schema_version", 0) != 1 ||
+                manifest.value("purpose", std::string()) != "reference_only" ||
+                !manifest.contains("sources") || !manifest["sources"].is_array()) {
+                m_indexError = "Knowledge manifest is invalid; retrieval is disabled.";
+            } else {
+                std::set<std::string> sourceIds, sourcePaths;
+                for (const auto& source : manifest["sources"]) {
+                    if (!source.is_object() || source.value("authority", std::string()) != "first_party_repository" ||
+                        source.value("index_policy", std::string()) != "reference_only") continue;
+                    const std::string id = source.value("source_id", std::string());
+                    const std::string pathText = source.value("path", std::string());
+                    const std::filesystem::path relative(pathText);
+                    if (id.empty() || pathText.empty() || !safeRelative(relative) ||
+                        !sourceIds.insert(id).second || !sourcePaths.insert(pathText).second) continue;
+                    std::string content;
+                    if (!readBounded(m_root / relative, content)) continue;
+                    const auto sourceChunks = splitChunks(content);
+                    for (std::size_t i = 0; i < sourceChunks.size(); ++i)
+                        m_index.push_back({{"source_id", id}, {"path", pathText}, {"chunk", i}, {"text", sourceChunks[i]}});
+                }
+            }
+        }
     }
-
+    if (!m_indexError.empty()) { error = m_indexError; return json::array(); }
     struct Ranked { json value; double score = 0; };
     std::vector<Ranked> ranked;
-    for (const auto& chunk : chunks) {
-        const auto docTerms = terms(chunk.text);
+    for (const auto& chunk : m_index) {
+        const auto docTerms = terms(chunk.value("text", std::string()));
         if (docTerms.empty()) continue;
         std::unordered_map<std::string, int> freq;
         for (const auto& term : docTerms) ++freq[term];
@@ -124,10 +138,10 @@ json FyxaKnowledge::search(const std::string& query, std::size_t limit, std::str
             if (found != freq.end()) score += 2.0 + std::min(found->second, 3) * 0.35;
         }
         if (score <= 0) continue;
-        std::string snippet = chunk.text;
+        std::string snippet = chunk.value("text", std::string());
         if (snippet.size() > 640) snippet.resize(640);
-        ranked.push_back({{{"source_id", chunk.sourceId}, {"path", chunk.path},
-                          {"chunk", chunk.index}, {"score", score}, {"snippet", snippet}}, score});
+        ranked.push_back({{{"source_id", chunk.value("source_id", std::string())}, {"path", chunk.value("path", std::string())},
+                          {"chunk", chunk.value("chunk", 0)}, {"score", score}, {"snippet", snippet}}, score});
     }
     std::stable_sort(ranked.begin(), ranked.end(), [](const Ranked& a, const Ranked& b) { return a.score > b.score; });
     json result = json::array();
