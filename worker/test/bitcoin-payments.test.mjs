@@ -88,8 +88,10 @@ test('payment status check credits once and keeps provider failures retryable', 
 
 test('the Bitcoin widget page and worker route are wired in', () => {
   const page = readFileSync(new URL('../../website/bitcoin-checkout.html', import.meta.url), 'utf8');
-  assert.match(page, /Blockonomics\.checkout/);
-  assert.match(page, /intent_id: id/);
+  const checkout = readFileSync(new URL('../../website/bitcoin-checkout.js', import.meta.url), 'utf8');
+  assert.match(page, /checkout\.js/);
+  assert.match(checkout, /Blockonomics\.checkout/);
+  assert.match(checkout, /intent_id: id/);
   const app = readFileSync(new URL('../../website/app/app.js', import.meta.url), 'utf8');
   assert.match(app, /data-act="bitcoinBuy"/);
   assert.match(app, /fetch\('\/api\/bitcoin\/check'/);
