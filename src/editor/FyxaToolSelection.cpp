@@ -110,7 +110,7 @@ int lexicalScore(const std::string& query, const std::string& haystack) {
             }
         }
         if (!matched) {
-            const alias = aliases.find(term);
+            const auto alias = aliases.find(term);
             if (alias != aliases.end()) {
                 for (const auto& synonym : alias->second) {
                     if (std::find(available.begin(), available.end(), synonym) != available.end()) {
