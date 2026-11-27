@@ -83,7 +83,7 @@ bool readStore(const std::filesystem::path& file, json& entries, std::string& er
     std::ifstream in(file, std::ios::binary);
     if (!in) { error = "Cannot open project memory."; return false; }
     json root = json::parse(in, nullptr, false);
-    if (root.is_discarded() || !root.is_object() || root.value("version", 0) != 1 ||
+    if (root.is_discarded() || !root.is_object() || !root["version"].is_number_integer() || root["version"] != 1 ||
         !root.contains("entries") || !root["entries"].is_array()) { error = "Project memory is invalid; it was left untouched."; return false; }
     for (const auto& item : root["entries"]) {
         if (!item.is_object() || !item.contains("id") || !item["id"].is_string() ||
@@ -134,8 +134,8 @@ json FyxaMemoryStore::search(const std::string& project,const std::string& query
 }
 json FyxaMemoryStore::save(const std::string& project,const std::string& title,const std::string& content,std::string& error){
     error.clear();if(!validText(project,kMaxProject)||!validText(title,kMaxTitle)||!validText(content,kMaxContent)){error="Project, title, and memory content must be non-empty and within size limits.";return nullptr;}
-    std::lock_guard lock(g_memoryMutex);MemoryFileLock fileLock(m_file,error);if(!fileLock.locked()==false)return nullptr;json entries;if(!readStore(m_file,entries,error))return nullptr;if(entries.size()>=kMaxEntries){error="Project memory has reached its 500-entry limit.";return nullptr;}
-    const auto id="memory-"+timestamp()+"-"+std::to_string(g_memorySeq.fetch_add(1));json item={{"id",id},{"project",trim(project)},{"title",trim(title)},{"content",trim(content)},{"created_at",timestamp()}};entries.push_back(item);if(!writeStore(m_file,entries,error))return nullptr;return item;
+    std::lock_guard lock(g_memoryMutex);MemoryFileLock fileLock(m_file,error);if(!fileLock.locked())return nullptr;json entries;if(!readStore(m_file,entries,error))return nullptr;if(entries.size()>=kMaxEntries){error="Project memory has reached its 500-entry limit.";return nullptr;}
+    const auto id="memory-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())+"-"+std::to_string(g_memorySeq.fetch_add(1));json item={{"id",id},{"project",trim(project)},{"title",trim(title)},{"content",trim(content)},{"created_at",timestamp()}};entries.push_back(item);if(!writeStore(m_file,entries,error))return nullptr;return item;
 }
 bool FyxaMemoryStore::remove(const std::string& project,const std::string& id,std::string& error){
     error.clear();if(!validText(project,kMaxProject)||!validText(id,96)){error="Project and memory ID are required.";return false;}
