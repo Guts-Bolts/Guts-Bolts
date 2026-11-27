@@ -10,6 +10,7 @@
 #include <sstream>
 #include <system_error>
 #include <utility>
+#include <vector>
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
 #include <fcntl.h>
 #include <sys/file.h>
