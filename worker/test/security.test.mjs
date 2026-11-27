@@ -14,7 +14,7 @@ test('HTML responses receive a restrictive CSP and baseline security headers', (
   assert.match(csp, /script-src-attr 'none'/);
   assert.match(csp, /object-src 'none'/);
   assert.match(csp, /frame-ancestors 'none'/);
-  assert.match(csp, /https:\\/\\/\\/\\*\\.blockonomics\\.co/);
+  assert.ok(csp.includes('https://*.blockonomics.co'));
   assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline/);
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('x-frame-options'), 'DENY');
