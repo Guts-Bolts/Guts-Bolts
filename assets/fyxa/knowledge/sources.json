@@ -421,6 +421,59 @@
         "grounding"
       ],
       "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-041",
+      "path": "assets/fyxa/evals/README.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "benchmark",
+        "evaluation"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-042",
+      "path": "tools/evaluate_fyxa_retrieval.py",
+      "content_kind": "tooling",
+      "authority": "first_party_repository",
+      "topics": [
+        "retrieval-evaluation"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-043",
+      "path": "tools/validate_fyxa_training_manifest.py",
+      "content_kind": "tooling",
+      "authority": "first_party_repository",
+      "topics": [
+        "training-governance"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-044",
+      "path": "docs/operations/fyxa-intelligence-upgrade.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "agent-planning",
+        "memory",
+        "governance"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-045",
+      "path": "worker/fyxa-dataset-screening.js",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "training-screening"
+      ],
+      "index_policy": "reference_only"
     }
   ]
 }
