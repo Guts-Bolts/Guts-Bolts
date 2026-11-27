@@ -36,7 +36,7 @@ jobs:
         run: node worker/gather-updates.mjs
       - name: Validate Fyxa knowledge fixtures, retrieval, and training gates
         run: |
-          python3 -m py_compile tools/validate_fyxa_eval.py tools/evaluate_fyxa_retrieval.py tools/validate_fyxa_training_manifest.py tests/test_fyxa_training_manifest.py
+          python3 -m py_compile tools/validate_fyxa_eval.py tools/evaluate_fyxa_retrieval.py tools/validate_fyxa_training_manifest.py tools/evaluate_fyxa_models.py tests/test_fyxa_training_manifest.py
           python3 tools/validate_fyxa_eval.py
           python3 tools/evaluate_fyxa_retrieval.py
           python3 tests/test_fyxa_training_manifest.py
