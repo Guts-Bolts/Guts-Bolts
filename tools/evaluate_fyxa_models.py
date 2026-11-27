@@ -109,7 +109,7 @@ def main() -> int:
     parser.add_argument("--host", default="http://127.0.0.1:11434")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--rounds", type=int, default=4)
-    parser.add_argument("--limit", type=int, default=19)
+    parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--output", type=Path, help="Optional JSON report file.")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
