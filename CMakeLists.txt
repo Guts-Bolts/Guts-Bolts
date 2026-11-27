@@ -1344,11 +1344,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME FyxaToolSelectionTests COMMAND FyxaToolSelectionTests)
     add_executable(FyxaKnowledgeTests tests/FyxaKnowledgeTests.cpp src/editor/FyxaKnowledge.cpp)
     target_include_directories(FyxaKnowledgeTests PRIVATE src/)
-    target_link_libraries(FyxaKnowledgeTests PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(FyxaKnowledgeTests PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
     add_test(NAME FyxaKnowledgeTests COMMAND FyxaKnowledgeTests)
     add_executable(FyxaMemoryStoreTests tests/FyxaMemoryStoreTests.cpp src/editor/FyxaMemoryStore.cpp)
     target_include_directories(FyxaMemoryStoreTests PRIVATE src/)
-    target_link_libraries(FyxaMemoryStoreTests PRIVATE nlohmann_json::nlohmann_json Threads::Threads
+    target_link_libraries(FyxaMemoryStoreTests PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
     add_test(NAME FyxaMemoryStoreTests COMMAND FyxaMemoryStoreTests)
 endif()
 
