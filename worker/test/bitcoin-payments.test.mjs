@@ -63,7 +63,7 @@ test('callback secret is required and fulfillment relies on the API status, not 
   });
   assert.equal(fetches, 1);
   assert.equal(delivered.length, 0);
-  await withFetch(async () => new Response(JSON.stringify({ data: intent() })), async () => {
+  await withFetch(async () => new Response(JSON.stringify({ data: paidIntent })), async () => {
     const good = await handleBitcoin(new Request('https://gutsandbolts.net/api/bitcoin/webhook?secret=callback-secret&id=pi_Abcdef12345678'), env, at('/api/bitcoin/webhook'), deliver);
     assert.equal(good.status, 200);
   });
@@ -72,6 +72,7 @@ test('callback secret is required and fulfillment relies on the API status, not 
 
 test('payment status check credits once and keeps provider failures retryable', async () => {
   const s = makeServer(), user = s.signUp('Builder');
+  const paidIntent = intent({ extra_data: orderData(String(user.userId), 'bolts_500', 'nonce123') });
   const delivered = async (env, job) => s.stripeEvent(job);
   await withFetch(async () => new Response(JSON.stringify({ data: intent() })), async () => {
     const first = await (await handleBitcoin(post('/api/bitcoin/check', { id: 'pi_Abcdef12345678' }), env, at('/api/bitcoin/check'), delivered)).json();
