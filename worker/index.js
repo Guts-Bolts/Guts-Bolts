@@ -275,7 +275,7 @@ async function route(request, env, ctx) {
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
     // Stripe's own servers call this (signature-checked in stripe.js), so it skips the bot check.
     if (url.pathname === '/api/stripe/webhook') return handleStripe(request, env, url);
-    // OpenNode's servers call this one (checked in bitcoin.js), so it skips the bot check too.
+    // Blockonomics calls this endpoint (callback secret checked and payment intent re-fetched in bitcoin.js), so it skips the bot check too.
     if (url.pathname === '/api/bitcoin/webhook') return handleBitcoin(request, env, url);
     const stripePath = url.pathname === '/api/stripe/checkout' || url.pathname === '/api/stripe/config' || url.pathname === '/api/stripe/prices'
       || url.pathname === '/api/bitcoin/checkout' || url.pathname === '/api/bitcoin/prices' || url.pathname === '/api/bitcoin/check';
