@@ -105,7 +105,7 @@ json FyxaKnowledge::search(const std::string& query, std::size_t limit, std::str
             if (manifest.is_discarded() || !manifest.is_object() || !manifest.contains("schema_version") ||
                 !manifest["schema_version"].is_number_integer() || manifest["schema_version"] != 1 ||
                 !manifest.contains("purpose") || !manifest["purpose"].is_string() || manifest["purpose"] != "reference_only" ||
-                !manifest.contains("sources") || !manifest["sources"].is_array) {
+                !manifest.contains("sources") || !manifest["sources"].is_array()) {
                 m_indexError = "Knowledge manifest is invalid; retrieval is disabled.";
             } else {
                 std::set<std::string> sourceIds, sourcePaths;
