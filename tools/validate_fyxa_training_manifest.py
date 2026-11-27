@@ -53,12 +53,12 @@ def validate(manifest: dict) -> list[str]:
                 or PurePosixPath(source_path).is_absolute() or "\\" in source_path
                 or re.match(r"^[A-Za-z]:", source_path) or ".." in PurePosixPath(source_path).parts):
             errors.append(f"candidate {i}: source_path must be a safe relative provenance path")
-        if item.get("source_kind") not in ALLOWED_KINDS: errors.append(f"candidate {i}: private/interaction/unknown sources are not allowed")
+        if item.get("source_kind") not in ALLOWED_KINDS: errors.append(f"candidate {i}: source_kind must be public_game or public_creator_upload; private and interaction sources are prohibited")
         if not isinstance(item.get("content_sha256"), str) or not re.fullmatch(r"[0-9a-fA-F]{64}", item.get("content_sha256", "")): errors.append(f"candidate {i}: content_sha256 must be 64 hex chars")
         for gate in ("is_current", "is_public", "is_moderated", "owner_matches", "account_training_enabled", "rights_attested", "staff_rights_approved", "age_eligibility_verified"):
             if item.get(gate) is not True: errors.append(f"candidate {i}: gate {gate} is not true")
-        if item.get("content_training_excluded") is not False: errors.append(f"candidate {i}: content is excluded or exclusion is unknown")
-        if item.get("screening_status") != "approved": errors.append(f"candidate {i}: screening must be approved (automated scan alone is not approval)")
+        if item.get("content_training_excluded") is not False: errors.append(f"candidate {i}: content_training_excluded must be false")
+        if item.get("screening_status") != "approved": errors.append(f"candidate {i}: screening_status must be approved (automated scan alone is not approval)")
         for field in ("policy_version", "dataset_version"):
             if not isinstance(item.get(field), str) or not item[field].strip(): errors.append(f"candidate {i}: {field} required")
         history = item.get("approval_history")
