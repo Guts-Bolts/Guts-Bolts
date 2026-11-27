@@ -34,7 +34,7 @@ public:
         std::error_code ec;
         if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path(), ec);
         if (ec) { error = "Cannot create memory lock directory: " + ec.message(); return; }
-        const lockStatus = std::filesystem::symlink_status(path, ec);
+        const auto lockStatus = std::filesystem::symlink_status(path, ec);
         if (!ec && std::filesystem::is_symlink(lockStatus)) { error = "Memory lock file cannot be a symlink."; return; }
         if (ec != std::errc::no_such_file_or_directory && ec) { error = "Cannot inspect memory lock file: " + ec.message(); return; }
         ec.clear();
