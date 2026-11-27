@@ -1,4 +1,7 @@
 import unittest
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.validate_fyxa_training_manifest import validate
 
 def eligible():
