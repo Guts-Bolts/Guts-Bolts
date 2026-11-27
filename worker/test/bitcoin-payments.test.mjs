@@ -74,7 +74,7 @@ test('payment status check credits once and keeps provider failures retryable', 
   const s = makeServer(), user = s.signUp('Builder');
   const paidIntent = intent({ extra_data: orderData(String(user.userId), 'bolts_500', 'nonce123') });
   const delivered = async (env, job) => s.stripeEvent(job);
-  await withFetch(async () => new Response(JSON.stringify({ data: intent() })), async () => {
+  await withFetch(async () => new Response(JSON.stringify({ data: paidIntent })), async () => {
     const first = await (await handleBitcoin(post('/api/bitcoin/check', { id: 'pi_Abcdef12345678' }), env, at('/api/bitcoin/check'), delivered)).json();
     const second = await (await handleBitcoin(post('/api/bitcoin/check', { id: 'pi_Abcdef12345678' }), env, at('/api/bitcoin/check'), delivered)).json();
     assert.equal(first.paid, true);
