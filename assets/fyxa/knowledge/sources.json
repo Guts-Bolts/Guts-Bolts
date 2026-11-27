@@ -474,6 +474,36 @@
         "training-screening"
       ],
       "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-046",
+      "path": "src/editor/FyxaToolSelection.h",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "tool-routing"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-047",
+      "path": "src/editor/FyxaProviderCapabilities.h",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "provider-capabilities"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-048",
+      "path": "assets/fyxa/knowledge/sources.json",
+      "content_kind": "reference_manifest",
+      "authority": "first_party_repository",
+      "topics": [
+        "knowledge-index"
+      ],
+      "index_policy": "reference_only"
     }
   ]
 }
