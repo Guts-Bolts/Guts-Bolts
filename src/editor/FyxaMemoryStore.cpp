@@ -127,7 +127,7 @@ std::vector<std::string> terms(const std::string& text) {
     auto flush=[&]{ if(word.size()>1) out.push_back(word); word.clear(); };
     for(unsigned char ch:text){ if(std::isalnum(ch)) word.push_back((char)std::tolower(ch)); else flush(); } flush(); return out;
 }
-bool matchesProject(const json& entry,const std::string& project){return entry.value("project",std::string())==project;}
+bool matchesProject(const json& entry,const std::string& project){return entry.value("project",std::string())==trim(project);}
 }
 FyxaMemoryStore::FyxaMemoryStore(std::filesystem::path file):m_file(std::move(file)){}
 json FyxaMemoryStore::list(const std::string& project,std::string& error)const{
