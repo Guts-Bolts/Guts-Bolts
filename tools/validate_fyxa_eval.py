@@ -20,6 +20,7 @@ def main() -> int:
     errors: list[str] = []
     seen: set[str] = set()
     count = 0
+    case_source_paths: set[str] = set()
 
     try:
         lines = DATASET.read_text(encoding="utf-8").splitlines()
@@ -63,6 +64,8 @@ def main() -> int:
                 continue
             if field == "source_paths":
                 for source in value:
+                    if isinstance(source, str) and source.strip():
+                        case_source_paths.add(source)
                     if not isinstance(source, str) or not source.strip():
                         errors.append(f"line {line_no}: source paths must be non-empty strings")
                     elif not (ROOT / source).is_file():
@@ -110,6 +113,8 @@ def main() -> int:
                     errors.append(f"manifest source {index}: only first-party repository sources are allowed")
                 if source.get("index_policy") != "reference_only":
                     errors.append(f"manifest source {index}: seed corpus must remain reference_only")
+            for source_path in sorted(case_source_paths - manifest_paths):
+                errors.append(f"evaluation source is not in the retrieval allowlist: {source_path}")
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"cannot read source manifest: {exc}")
 
