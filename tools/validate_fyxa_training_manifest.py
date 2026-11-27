@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REQUIRED = {
     "source_id", "source_path", "content_sha256", "source_kind", "is_current", "is_public",
@@ -36,17 +36,22 @@ def validate(manifest: dict) -> list[str]:
         return ["manifest must use schema_version=1 and purpose=training_candidate_manifest"]
     candidates = manifest.get("candidates")
     if not isinstance(candidates, list): return ["candidates must be an array"]
+    if len(candidates) > 5000: return ["candidate manifest exceeds the 5000-record limit"]
     seen = set()
     for i, item in enumerate(candidates, 1):
         if not isinstance(item, dict): errors.append(f"candidate {i}: expected object"); continue
         missing = REQUIRED - item.keys()
         if missing: errors.append(f"candidate {i}: missing fields {sorted(missing)}")
+        extra = item.keys() - REQUIRED
+        if extra: errors.append(f"candidate {i}: unexpected metadata fields {sorted(extra)}")
         find_forbidden_payload(item, "candidate", errors, i)
         sid = item.get("source_id")
         if not isinstance(sid, str) or not sid or sid in seen: errors.append(f"candidate {i}: source_id must be unique and non-empty")
         else: seen.add(sid)
         source_path = item.get("source_path")
-        if not isinstance(source_path, str) or not source_path.strip() or Path(source_path).is_absolute() or ".." in Path(source_path).parts:
+        if (not isinstance(source_path, str) or not source_path.strip() or Path(source_path).is_absolute()
+                or PurePosixPath(source_path).is_absolute() or "\\" in source_path
+                or re.match(r"^[A-Za-z]:", source_path) or ".." in PurePosixPath(source_path).parts):
             errors.append(f"candidate {i}: source_path must be a safe relative provenance path")
         if item.get("source_kind") not in ALLOWED_KINDS: errors.append(f"candidate {i}: private/interaction/unknown sources are not allowed")
         if not isinstance(item.get("content_sha256"), str) or not re.fullmatch(r"[0-9a-fA-F]{64}", item.get("content_sha256", "")): errors.append(f"candidate {i}: content_sha256 must be 64 hex chars")
@@ -59,6 +64,8 @@ def validate(manifest: dict) -> list[str]:
         history = item.get("approval_history")
         if not isinstance(history, list) or not history:
             errors.append(f"candidate {i}: approval_history must be non-empty")
+        elif len(history) > 50:
+            errors.append(f"candidate {i}: approval_history exceeds the 50-review limit")
         else:
             for review_index, review in enumerate(history, 1):
                 if not isinstance(review, dict):
@@ -74,8 +81,10 @@ def validate(manifest: dict) -> list[str]:
 
 def main() -> int:
     p = argparse.ArgumentParser(); p.add_argument("manifest", type=Path); args = p.parse_args()
-    try: data = json.loads(args.manifest.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e: print(f"Cannot read manifest: {e}"); return 2
+    try:
+        if args.manifest.stat().st_size > 1024 * 1024: raise ValueError("manifest exceeds the 1 MiB limit")
+        data = json.loads(args.manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError) as e: print(f"Cannot read manifest: {e}"); return 2
     errors = validate(data)
     if errors:
         print("Training candidate manifest rejected:")
