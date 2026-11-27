@@ -8,7 +8,7 @@ const GOOGLE_ADS = 'https://pagead2.googlesyndication.com https://*.googlesyndic
 const STRIPE = 'https://js.stripe.com https://*.stripe.com';
 
 // Blockonomics checkout widget (website/bitcoin-checkout.html).
-const BLOCKONOMICS = 'https://www.blockonomics.co';
+const BLOCKONOMICS = 'https://www.blockonomics.co https://*.blockonomics.co';
 
 // KLIPY (website/app/media-picker.js): the GIF and sticker search in chats and the forum. Its
 // rules say the search runs from the visitor's browser, so the page talks to it straight.
@@ -26,7 +26,7 @@ const CSP = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net wss://pfpzmmsosyetkcoymoct.supabase.co " + KLIPY + ' ' + GOOGLE_ADS + ' ' + STRIPE + ' ' + BLOCKONOMICS,
-  "frame-src https://challenges.cloudflare.com " + GOOGLE_ADS + ' ' + STRIPE,
+  "frame-src https://challenges.cloudflare.com " + GOOGLE_ADS + ' ' + STRIPE + ' ' + BLOCKONOMICS,
   "media-src 'self' blob: https:",
   "worker-src 'self' blob:",
   "manifest-src 'self'",
