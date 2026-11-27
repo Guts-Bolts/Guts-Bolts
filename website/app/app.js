@@ -3998,7 +3998,7 @@ function clubShop(items, club, btc = {}) {
         ? html`<a class="bolts-pack" href="${buyLink(k)}"><strong>${items[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(items[k]) || 'Buy'}</b></a>`
         : html`<div class="bolts-pack"><strong>${btc[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(btc[k])}</b></div>`}
         ${btc[k] ? html`<button class="btn small bolts-btc" data-act="bitcoinBuy" data-item="${k}">₿ Pay with Bitcoin</button>` : ''}</div>`)}</div>
-      <p class="small muted">Paid once.${anyCard ? ' Card, Apple Pay, Google Pay and the other options in the payment form go through Stripe.' : ''}${anyBtc ? ' Bitcoin () goes through Blockonomics; Bitcoin payments can\'t be undone, so check the pack before you pay.' : ''} See <a href="#/terms">the Terms</a>, section 4.</p></section>` : ''}`;
+      <p class="small muted">Paid once.${anyCard ? ' Card, Apple Pay, Google Pay and the other options in the payment form go through Stripe.' : ''}${anyBtc ? ' Bitcoin payments go through Blockonomics; Bitcoin payments can\'t be undone, so check the pack before you pay.' : ''} See <a href="#/terms">the Terms</a>, section 4.</p></section>` : ''}`;
 }
 
 pages.bolts = async () => {
