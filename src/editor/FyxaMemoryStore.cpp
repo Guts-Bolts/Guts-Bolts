@@ -33,6 +33,10 @@ public:
         std::error_code ec;
         if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path(), ec);
         if (ec) { error = "Cannot create memory lock directory: " + ec.message(); return; }
+        const lockStatus = std::filesystem::symlink_status(path, ec);
+        if (!ec && std::filesystem::is_symlink(lockStatus)) { error = "Memory lock file cannot be a symlink."; return; }
+        if (ec != std::errc::no_such_file_or_directory && ec) { error = "Cannot inspect memory lock file: " + ec.message(); return; }
+        ec.clear();
 #ifdef _WIN32
         m_handle = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                               nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -78,7 +82,13 @@ std::string trim(std::string s) {
 bool validText(const std::string& value, std::size_t max) { return !trim(value).empty() && value.size() <= max; }
 bool readStore(const std::filesystem::path& file, json& entries, std::string& error) {
     std::error_code ec;
-    if (!std::filesystem::exists(file, ec)) { if (ec) { error = "Cannot check memory file: " + ec.message(); return false; } entries = json::array(); return true; }
+    const auto status = std::filesystem::symlink_status(file, ec);
+    if (ec == std::errc::no_such_file_or_directory) { ec.clear(); entries = json::array(); return true; }
+    if (ec) { error = "Cannot inspect project memory: " + ec.message(); return false; }
+    if (std::filesystem::is_symlink(status) || !std::filesystem::is_regular_file(status)) {
+        error = "Project memory must be a regular, non-symlink file.";
+        return false;
+    }
     const auto size = std::filesystem::file_size(file, ec);
     if (ec || size > 2 * 1024 * 1024) { error = "Memory file is unreadable or exceeds 2 MiB; it was not modified."; return false; }
     std::ifstream in(file, std::ios::binary);
