@@ -4071,8 +4071,7 @@ async function storePrices() {
 async function bitcoinPrices() {
   try { const r = await fetch('/api/bitcoin/prices'); return r.ok ? ((await r.json()).items || {}) : {}; } catch { return {}; }
 }
-// Bitcoin payments started from this browser, so coming back from OpenNode's page can check on them
-// (in case the webhook is slow). Kept for a day; the server never gives the Bolts twice.
+// Bitcoin payments started from this browser. Blockonomics intents are checked again when returning.
 const BTC_KEY = 'gb.bitcoinPending';
 const btcPending = () => { try { return (JSON.parse(localStorage.getItem(BTC_KEY) || '[]') || []).filter((p) => p && p.id && Date.now() - p.at < 86400000); } catch { return []; } };
 const btcSave = (list) => { try { localStorage.setItem(BTC_KEY, JSON.stringify(list.slice(-10))); } catch {} };
@@ -4083,7 +4082,7 @@ async function btcCheckPending() {
     const r = await fetch('/api/bitcoin/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: p.id }) })
       .then((x) => x.json()).catch(() => ({}));
     if (r.paid) got += r.bolts || 0;
-    else if (!/^(expired|failed|refunded)$/.test(r.status || '')) left.push(p);   // still waiting for the Bitcoin network
+    else left.push(p);
   }
   btcSave(left);
   return { got, waiting: left.length };
@@ -4122,7 +4121,7 @@ function clubShop(items, club, btc = {}) {
         ? html`<a class="bolts-pack" href="${buyLink(k)}"><strong>${items[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(items[k]) || 'Buy'}</b></a>`
         : html`<div class="bolts-pack"><strong>${btc[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(btc[k])}</b></div>`}
         ${btc[k] ? html`<button class="btn small bolts-btc" data-act="bitcoinBuy" data-item="${k}">₿ Pay with Bitcoin</button>` : ''}</div>`)}</div>
-      <p class="small muted">Paid once.${anyCard ? ' Card, Apple Pay, Google Pay and the other options in the payment form go through Stripe.' : ''}${anyBtc ? ' Bitcoin (including Lightning) goes through OpenNode; Bitcoin payments can\'t be undone, so check the pack before you pay.' : ''} See <a href="#/terms">the Terms</a>, section 4.</p></section>` : ''}`;
+      <p class="small muted">Paid once.${anyCard ? ' Card, Apple Pay, Google Pay and the other options in the payment form go through Stripe.' : ''}${anyBtc ? ' Bitcoin () goes through Blockonomics; Bitcoin payments can\'t be undone, so check the pack before you pay.' : ''} See <a href="#/terms">the Terms</a>, section 4.</p></section>` : ''}`;
 }
 
 pages.bolts = async () => {
@@ -4569,10 +4568,10 @@ pages.terms = async () => {
         yearly) or <b>packs of Bolts</b> (paid once) on the <a href="#/bolts">Bolts</a> page. Prices are shown there
         before you pay.</li>
       <li>Payments are handled by <b>Stripe</b> (cards, and wallets like Apple Pay or Google Pay). Guts&amp;Bolts never sees or keeps your card number.</li>
-      <li><b>Bitcoin:</b> Bolts packs (not memberships) can also be paid for with Bitcoin, handled by <b>OpenNode</b>.
-        The price is set in US dollars and OpenNode shows how much Bitcoin that is when you pay. Bitcoin payments
+      <li><b>Bitcoin:</b> Bolts packs (not memberships) can also be paid for with Bitcoin, handled by <b>Blockonomics</b>.
+        The price is set in US dollars and Blockonomics shows how much Bitcoin that is when you pay. Bitcoin payments
         can't be reversed, so check what you're buying first. If you send too little, or the payment expires before
-        it arrives, no Bolts are added; contact OpenNode or support about getting it back.</li>
+        it arrives, no Bolts are added; contact Blockonomics or support about getting it back.</li>
       <li><b>Memberships renew by themselves</b> every month or year, at the price shown when you joined, until you
         cancel. If the price changes, we'll say so on the <a href="#/updates">Updates</a> page before your next
         renewal.</li>
@@ -4841,8 +4840,7 @@ const actions = {
     toast('It\'s yours! Wear it on the Avatar page.');
     render();
   },
-  // Stripe's own page for changing tier, the card, or cancelling (club-pay.js makes the link).
-  // Bolts pack paid with Bitcoin: OpenNode's own payment page (worker/bitcoin.js).
+  // Bolts packs paid with Bitcoin: Blockonomics Payment Intents and its checkout widget.
   async bitcoinBuy(d) {
     if (!signedIn()) { location.hash = '#/login'; return; }
     const r = await fetch('/api/bitcoin/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: me.userId, item: d.item }) })
