@@ -4,7 +4,7 @@
 // signature-checked), and the Worker hands the job to this server on https://gb.internal/stripe-event,
 // an address only the Worker can reach. This file:
 //   - adds bought Bolts (once per payment, even if Stripe sends the same event twice), paid by card
-//     or wallet through Stripe, or with Bitcoin through OpenNode (bitcoin.js uses the same address),
+//     or wallet through Stripe, or with Bitcoin through Blockonomics (bitcoin.js uses the same address),
 //   - takes bought Bolts back when a card payment is refunded or charged back (never twice),
 //   - keeps each person's paid memberships in u.subs ({ <Stripe subscription id>: { tier, at } }),
 //     so clubOf (server.js) shows their badge, and takes it away when the membership ends,
