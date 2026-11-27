@@ -158,7 +158,7 @@ AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::st
         const query = stringArg("query");
         const int requestedLimit = args.contains("limit") && args["limit"].is_number_integer()
             ? args["limit"].get<int>() : 8;
-        FyxaKnowledge knowledge(Paths::appFolder(), Paths::file("assets/fyxa/knowledge/sources.json"));
+        static FyxaKnowledge knowledge(Paths::appFolder(), Paths::file("assets/fyxa/knowledge/sources.json"));
         std::string error;
         const json found = knowledge.search(query, requestedLimit < 1 || requestedLimit > 12 ? 8 : (std::size_t)requestedLimit, error);
         if (!error.empty()) return fail(error);
