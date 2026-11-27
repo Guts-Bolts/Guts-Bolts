@@ -71,8 +71,6 @@ bool readBounded(const std::filesystem::path& path, std::string& out) {
     return out.size() == size && out.size() <= kMaxSourceBytes;
 }
 
-struct Chunk { std::string sourceId, path, text; std::size_t index = 0; };
-
 std::vector<std::string> splitChunks(const std::string& content) {
     std::vector<std::string> chunks;
     std::string current;
