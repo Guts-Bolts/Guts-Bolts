@@ -255,17 +255,6 @@
       "index_policy": "reference_only"
     },
     {
-      "source_id": "gb-024",
-      "path": "src/scripting/ScriptHelp.cpp",
-      "content_kind": "source_code",
-      "authority": "first_party_repository",
-      "topics": [
-        "scripting",
-        "api-reference"
-      ],
-      "index_policy": "reference_only"
-    },
-    {
       "source_id": "gb-025",
       "path": "src/scripting/ScriptCheck.cpp",
       "content_kind": "source_code",
