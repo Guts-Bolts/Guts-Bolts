@@ -1,0 +1,21 @@
+
+name: Self-Hosted Runner Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-runner:
+    runs-on: [self-hosted, Windows, X64]
+
+    steps:
+      - name: Verify runner
+        run: |
+          echo "Runner is working!"
+          echo "Computer: $env:COMPUTERNAME"
+          echo "OS: $env:OS"
+
+      - name: Check PowerShell
+        shell: powershell
+        run: |
+          $PSVersionTable
