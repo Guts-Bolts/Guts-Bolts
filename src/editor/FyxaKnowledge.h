@@ -15,4 +15,7 @@ public:
 private:
     std::filesystem::path m_root;
     std::filesystem::path m_manifest;
+    mutable nlohmann::json m_index = nlohmann::json::array();
+    mutable bool m_indexReady = false;
+    mutable std::string m_indexError;
 };
