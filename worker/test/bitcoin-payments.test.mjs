@@ -63,7 +63,7 @@ test('callback secret is required and fulfillment relies on the API status, not 
   });
   assert.equal(fetches, 1);
   assert.equal(delivered.length, 0);
-  await withFetch(async () => new Response(JSON.stringify({ data: paidIntent })), async () => {
+  await withFetch(async () => new Response(JSON.stringify({ data: intent() })), async () => {
     const good = await handleBitcoin(new Request('https://gutsandbolts.net/api/bitcoin/webhook?secret=callback-secret&id=pi_Abcdef12345678'), env, at('/api/bitcoin/webhook'), deliver);
     assert.equal(good.status, 200);
   });
