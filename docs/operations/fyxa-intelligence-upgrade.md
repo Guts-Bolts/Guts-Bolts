@@ -17,6 +17,7 @@ The system guide directs multi-object builds to use a task plan, inspect the cur
 
 - Stored in `fyxa-project-memory.json` next to the Studio app data.
 - Scoped by a project label, with bounded titles/content, maximum 500 records, and an atomic replacement write.
+- Stored as local plaintext JSON; do not save secrets or sensitive personal information.
 - Search/list/save/delete are local tools. Saving is permitted only when the user explicitly asks Fyxa to remember something; deletion is only on request.
 - Memory is not sent to G&B servers or training through this implementation. Avoid credentials, sensitive personal information, and private content.
 
