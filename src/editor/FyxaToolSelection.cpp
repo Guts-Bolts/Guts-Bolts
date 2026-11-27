@@ -86,7 +86,7 @@ int lexicalScore(const std::string& query, const std::string& haystack) {
     const auto wanted = tokens(query);
     const auto available = tokens(haystack);
     static const std::unordered_map<std::string, std::vector<std::string>> aliases = {
-        {"city", {"cityscape","urban","district","street","road","building","skyline","terrain"}},
+        {"city", {"cityscape","urban","district","street","road","building","skyline","terrain","object","objects"}},
         {"map", {"world","terrain","layout","level","road","region"}},
         {"road", {"roads","street","lane","path","route","waypoint"}},
         {"building", {"buildings","structure","house","tower","skyscraper","model","part"}},
