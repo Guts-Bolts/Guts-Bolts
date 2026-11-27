@@ -25,6 +25,16 @@ MOCK_TOOLS = [
     {"type":"function","function":{"name":"plan_task","description":"Create a mock task record for an agent build plan.","parameters":{"type":"object","properties":{"title":{"type":"string"},"steps":{"type":"array","items":{"type":"string"}}},"required":["title","steps"]}}}
 ]
 ALLOWED = {tool["function"]["name"] for tool in MOCK_TOOLS}
+REQUIRED_ARGUMENTS = {
+    "search_engine_docs": {"query"}, "inspect_scene": set(), "list_objects": {"service"},
+    "create_parts": {"parts"}, "generate_terrain": {"description"}, "capture_screenshot": set(),
+    "validate_script": {"script"}, "search_project_memory": {"project", "query"},
+    "save_project_memory": {"project", "title", "content"}, "plan_task": {"title", "steps"},
+}
+
+def valid_mock_call(name: str, args: object) -> bool:
+    return name in ALLOWED and isinstance(args, dict) and REQUIRED_ARGUMENTS[name].issubset(args.keys())
+
 
 def read_sources(root: Path, paths: list[str], max_chars: int = 2400) -> str:
     pieces = []
@@ -79,13 +89,14 @@ def run_case(host: str, model: str, case: dict, root: Path, timeout: int, rounds
                 try: args = json.loads(args)
                 except json.JSONDecodeError: args = {}
             calls += 1
-            if name not in ALLOWED: invalid += 1
-            messages.append({"role":"tool","name":name,"content":json.dumps(mock_result(name,args if isinstance(args,dict) else {}))})
+            if not valid_mock_call(name, args): invalid += 1
+            mock = mock_result(name,args if isinstance(args,dict) else {}) if name in ALLOWED else {"mock":True,"success":False,"error":"Unknown or malformed mock tool call."}
+            messages.append({"role":"tool","name":name,"content":json.dumps(mock)})
     action_required = case.get("tool_intent") == "studio_action"
     result = {
         "model": model, "case_id": case["id"], "category": case.get("category"),
         "action_required": action_required, "tool_calls": calls, "invalid_tool_calls": invalid,
-        "tool_behavior": "pass" if (calls > 0 and invalid == 0) if action_required else ("pass" if calls == 0 else "unexpected_tool_calls"),
+        "tool_behavior": ("pass" if calls > 0 and invalid == 0 else "missing_or_invalid_tool_calls") if action_required else ("pass" if calls == 0 else "unexpected_tool_calls"),
         "response": output, "error": error,
     }
     return result
