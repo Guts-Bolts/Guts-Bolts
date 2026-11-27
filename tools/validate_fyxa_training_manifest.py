@@ -18,7 +18,17 @@ REQUIRED = {
     "dataset_version", "approval_history",
 }
 ALLOWED_KINDS = {"public_game", "public_creator_upload"}
-FORBIDDEN_PAYLOAD = {"text", "content", "prompt", "answer", "tool_arguments", "tool_results", "project_files", "screenshots", "messages"}
+FORBIDDEN_PAYLOAD = {"text", "content", "prompt", "answer", "tool_arguments", "tool_results", "project_files", "screenshots", "messages", "conversation", "user_prompt", "assistant_response", "raw_text", "asset_content"}
+
+def find_forbidden_payload(value, path: str, errors: list[str], candidate_number: int) -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key.lower() in FORBIDDEN_PAYLOAD:
+                errors.append(f"candidate {candidate_number}: raw content field {path + '.' + key!r} is prohibited")
+            find_forbidden_payload(child, path + "." + str(key), errors, candidate_number)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            find_forbidden_payload(child, f"{path}[{index}]", errors, candidate_number)
 
 def validate(manifest: dict) -> list[str]:
     errors = []
@@ -31,8 +41,7 @@ def validate(manifest: dict) -> list[str]:
         if not isinstance(item, dict): errors.append(f"candidate {i}: expected object"); continue
         missing = REQUIRED - item.keys()
         if missing: errors.append(f"candidate {i}: missing fields {sorted(missing)}")
-        for key in item:
-            if key.lower() in FORBIDDEN_PAYLOAD: errors.append(f"candidate {i}: raw content field {key!r} is prohibited")
+        find_forbidden_payload(item, "candidate", errors, i)
         sid = item.get("source_id")
         if not isinstance(sid, str) or not sid or sid in seen: errors.append(f"candidate {i}: source_id must be unique and non-empty")
         else: seen.add(sid)
@@ -44,7 +53,20 @@ def validate(manifest: dict) -> list[str]:
         if item.get("screening_status") != "approved": errors.append(f"candidate {i}: screening must be approved (automated scan alone is not approval)")
         for field in ("policy_version", "dataset_version"):
             if not isinstance(item.get(field), str) or not item[field].strip(): errors.append(f"candidate {i}: {field} required")
-        if not isinstance(item.get("approval_history"), list) or not item["approval_history"]: errors.append(f"candidate {i}: approval_history must be non-empty")
+        history = item.get("approval_history")
+        if not isinstance(history, list) or not history:
+            errors.append(f"candidate {i}: approval_history must be non-empty")
+        else:
+            for review_index, review in enumerate(history, 1):
+                if not isinstance(review, dict):
+                    errors.append(f"candidate {i}: approval_history entry {review_index} must be an object")
+                    continue
+                if review.get("decision") != "approved":
+                    errors.append(f"candidate {i}: approval_history entry {review_index} is not approved")
+                if not isinstance(review.get("reviewer"), str) or not review["reviewer"].strip():
+                    errors.append(f"candidate {i}: approval_history entry {review_index} needs reviewer provenance")
+                if not isinstance(review.get("reviewed_at"), str) or not review["reviewed_at"].strip():
+                    errors.append(f"candidate {i}: approval_history entry {review_index} needs reviewed_at provenance")
     return errors
 
 def main() -> int:
