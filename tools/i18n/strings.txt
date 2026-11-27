@@ -6391,3 +6391,8 @@
 "🔥 Hot"
 "🔨 Auction:"
 "🤝 Partner"
+"'Bitcoin checkout couldn't load'"
+"'Payment detected. Waiting for Blockonomics confirmation before Bolts are added.'"
+"'Buy Bolts with Bitcoin'"
+"'This checkout link is invalid. Please start again from the Bolts page.'"
+"'Complete the payment below. Bolts are credited after Blockonomics confirms the payment. Confirmed Bitcoin transactions cannot be reversed.'"
