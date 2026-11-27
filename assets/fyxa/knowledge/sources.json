@@ -504,6 +504,17 @@
         "knowledge-index"
       ],
       "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-049",
+      "path": "tools/evaluate_fyxa_models.py",
+      "content_kind": "tooling",
+      "authority": "first_party_repository",
+      "topics": [
+        "model-evaluation",
+        "tool-use"
+      ],
+      "index_policy": "reference_only"
     }
   ]
 }
