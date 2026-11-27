@@ -8,7 +8,8 @@ permissions:
 
 jobs:
   windows-build:
-    # Manual dispatch only; never run this workflow on public pull requests.
+    # Restrict execution to the trusted main branch. No PR or push triggers.
+    if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 60
     defaults:
