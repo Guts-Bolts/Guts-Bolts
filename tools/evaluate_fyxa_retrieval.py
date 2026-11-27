@@ -17,6 +17,10 @@ def tokens(text: str) -> list[str]:
 def chunks(text: str, size: int = 1200) -> list[str]:
     out, current = [], ""
     for line in text.splitlines():
+        if len(line) > size:
+            if current: out.append(current); current = ""
+            out.extend(line[offset:offset + size] for offset in range(0, len(line), size))
+            continue
         if current and len(current) + len(line) + 1 > size:
             out.append(current); current = ""
         current += ("\n" if current else "") + line
@@ -48,15 +52,13 @@ def main() -> int:
         query = tokens(case["prompt"])
         ranked = []
         for path, pieces in source_texts.items():
-            score = 0.0
-            for piece in pieces:
+            for chunk_index, piece in enumerate(pieces):
                 terms = tokens(piece)
                 freq = {term: terms.count(term) for term in set(terms)}
                 piece_score = sum(2.0 + min(freq.get(term, 0), 3) * 0.35 for term in query if freq.get(term, 0))
-                if piece_score > score: score = piece_score
-            if score: ranked.append((score, path))
+                if piece_score: ranked.append((piece_score, path, chunk_index))
         ranked.sort(key=lambda row: row[0], reverse=True)
-        top = [path for _, path in ranked[:args.top_k]]
+        top = [path for _, path, _ in ranked[:args.top_k]]
         expected = set(case.get("source_paths", []))
         hits = len(expected.intersection(top))
         recall = hits / max(1, len(expected))
