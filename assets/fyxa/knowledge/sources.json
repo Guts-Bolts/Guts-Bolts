@@ -364,6 +364,63 @@
         "skills"
       ],
       "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-036",
+      "path": "src/editor/panels/AssistantPanel.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "agent-orchestration",
+        "planning",
+        "memory",
+        "retrieval"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-037",
+      "path": "src/editor/FyxaKnowledge.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "retrieval",
+        "grounding"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-038",
+      "path": "src/editor/FyxaMemoryStore.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "project-memory",
+        "memory"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-039",
+      "path": "src/editor/FyxaMemoryStore.h",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "project-memory",
+        "memory"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-040",
+      "path": "src/editor/FyxaKnowledge.h",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "retrieval",
+        "grounding"
+      ],
+      "index_policy": "reference_only"
     }
   ]
 }
