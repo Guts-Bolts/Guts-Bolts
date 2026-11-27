@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "reference_only",
-  "description": "Seed allowlist of first-party Guts & Bolts sources used by Fyxa's initial grounded evaluation set. This is not a model-training dataset.",
+  "description": "Expanded, first-party, reference-only corpus for source-grounded Fyxa retrieval. This is not a model-training dataset.",
   "sources": [
     {
       "source_id": "gb-001",
@@ -120,6 +120,248 @@
       "authority": "first_party_repository",
       "topics": [
         "physics"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-012",
+      "path": "docs/engine/GORE_SIMULATION_OVERHAUL.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "physics",
+        "simulation"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-013",
+      "path": "docs/engine/LUA_DEBUGGER.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "debugging",
+        "scripting"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-014",
+      "path": "src/editor/AiTools.h",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "studio-tools",
+        "tool-use"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-015",
+      "path": "src/editor/AiToolsRun.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "studio-tools",
+        "tool-execution"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-016",
+      "path": "src/editor/AiGameTools.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "game-generation",
+        "studio-tools"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-017",
+      "path": "src/editor/EditorLevelGen.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "terrain",
+        "level-generation"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-018",
+      "path": "src/editor/LevelGen.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "terrain",
+        "level-generation"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-019",
+      "path": "src/editor/FyxaToolSelection.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "tool-routing"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-020",
+      "path": "src/editor/FyxaProviderCapabilities.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "model-capabilities",
+        "tool-use"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-021",
+      "path": "src/editor/FyxaSkills.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "skills",
+        "workflow"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-022",
+      "path": "src/editor/FyxaTaskStore.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "planning",
+        "tasks"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-023",
+      "path": "src/scripting/ScriptEngine.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "scripting",
+        "runtime"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-024",
+      "path": "src/scripting/ScriptHelp.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "scripting",
+        "api-reference"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-025",
+      "path": "src/scripting/ScriptCheck.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "scripting",
+        "validation"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-026",
+      "path": "src/scripting/ScriptActions.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "scripting",
+        "execution"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-027",
+      "path": "src/scripting/Luau.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "scripting",
+        "compatibility"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-028",
+      "path": "src/scripting/RobloxMembers.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "compatibility",
+        "api"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-029",
+      "path": "src/scripting/Shapecasts.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "physics",
+        "spatial"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-030",
+      "path": "src/scripting/ServerMemory.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "networking",
+        "server-state"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-031",
+      "path": "src/scene/Disasters.cpp",
+      "content_kind": "source_code",
+      "authority": "first_party_repository",
+      "topics": [
+        "world-simulation",
+        "environment"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-034",
+      "path": "docs/superpowers/specs/2026-11-08-fyxa-platform-agent-design.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "agent-design",
+        "tool-use"
+      ],
+      "index_policy": "reference_only"
+    },
+    {
+      "source_id": "gb-035",
+      "path": "docs/superpowers/plans/2026-11-08-fyxa-tasks-and-skills.md",
+      "content_kind": "documentation",
+      "authority": "first_party_repository",
+      "topics": [
+        "planning",
+        "tasks",
+        "skills"
       ],
       "index_policy": "reference_only"
     }
