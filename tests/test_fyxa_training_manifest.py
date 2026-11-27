@@ -18,7 +18,7 @@ def eligible():
         "screening_status": "approved",
         "policy_version": "policy-1",
         "dataset_version": "dataset-1",
-        "approval_history": [{"decision": "approved", "review": "rights-and-age"}],
+        "approval_history": [{"decision": "approved", "reviewer": "staff-reviewer", "reviewed_at": "2026-11-27T00:00:00Z", "review": "rights-and-age"}],
     }
 
 def manifest(candidate):
@@ -48,7 +48,7 @@ class TrainingManifestTests(unittest.TestCase):
 
     def test_rejects_raw_text_payload(self):
         candidate = eligible()
-        candidate["answer"] = "raw interaction text"
+        candidate["approval_history"][0]["answer"] = "raw interaction text"
         self.assertTrue(any("raw content field" in e for e in validate(manifest(candidate))))
 
     def test_rejects_interaction_sources(self):
