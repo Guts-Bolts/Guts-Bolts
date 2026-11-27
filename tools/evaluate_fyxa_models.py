@@ -84,13 +84,19 @@ def run_case(host: str, model: str, case: dict, root: Path, timeout: int, rounds
         if not tool_calls: break
         messages.append(message)
         for call in tool_calls:
+            calls += 1
+            if not isinstance(call, dict):
+                invalid += 1
+                continue
             fn = call.get("function", {})
+            if not isinstance(fn, dict):
+                invalid += 1
+                fn = {}
             name = fn.get("name", "")
             args = fn.get("arguments", {})
             if isinstance(args, str):
                 try: args = json.loads(args)
                 except json.JSONDecodeError: args = {}
-            calls += 1
             if not valid_mock_call(name, args): invalid += 1
             mock = mock_result(name,args if isinstance(args,dict) else {}) if name in ALLOWED else {"mock":True,"success":False,"error":"Unknown or malformed mock tool call."}
             messages.append({"role":"tool","name":name,"content":json.dumps(mock)})
