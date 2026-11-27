@@ -116,6 +116,16 @@ std::string externalName(const json& tool) { return tool.value("qualifiedName", 
 
 } // namespace
 
+bool looksLikePseudoToolOutput(const std::string& response) {
+    const std::string p = lower(response);
+    // Narrow detection of tool-like command formats, not ordinary conversational prose.
+    return hasAny(p, {"[build parts:", "[terrain generate:", "[create_ui:", "[add_game_system:",
+                        "[run_lua:", "[insert_object:", "[set_property:", "[create_script:",
+                        "[build,", "[terrain generate,", "[get_game_tree,", "[screenshot]"}) ||
+           (p.find("[build") != std::string::npos && p.find("position:") != std::string::npos &&
+            p.find("size:") != std::string::npos);
+}
+
 json selectNative(const json& catalog, const std::string& prompt,
                   const std::vector<std::string>& discovered, size_t limit) {
     json out = json::array();
