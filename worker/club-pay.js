@@ -53,8 +53,8 @@ export function installClubPay(Server) {
     if (!u) return fail('No account with user number ' + job.user + '.');   // (no retry: it won't appear later)
     if (job.kind === 'bolts') {
       const n = Number(job.bolts);
-      // stripe:<checkout session> for cards and wallets, opennode:<charge> for Bitcoin (bitcoin.js).
-      const bitcoin = typeof job.ref === 'string' && /^opennode:[A-Za-z0-9-]{8,80}$/.test(job.ref);
+      // stripe:<checkout session> for cards and wallets, blockonomics:<intent> for Bitcoin (bitcoin.js).
+      const bitcoin = typeof job.ref === 'string' && /^blockonomics:pi_[A-Za-z0-9]{8,80}$/.test(job.ref);
       if (!Number.isInteger(n) || n <= 0 || n > 100000 || typeof job.ref !== 'string' || !(job.ref.startsWith('stripe:') || bitcoin)) return fail('Bad Bolts job.');
       if (this.hasRef(u, job.ref)) return okay({ already: true });
       this.add(u, n, 'Bought ' + n + ' Bolts' + (bitcoin ? ' with Bitcoin' : ''), job.ref);
