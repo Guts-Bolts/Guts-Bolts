@@ -9,7 +9,7 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, 
 const keyOf = (env) => String(env.BLOCKONOMICS_API_KEY || '').trim();
 const userOk = (v) => /^\d{1,12}$/.test(String(v || ''));
 const intentIdOk = (v) => /^pi_[A-Za-z0-9]{8,80}$/.test(String(v || ''));
-const nonce = () => Math.random().toString(36).slice(2, 10);
+const nonce = () => Math.random().toString(36).slice(2, 10) || 'nonce';
 export function orderData(user, item, n = nonce()) { return 'gb-' + user + '-' + item + '-' + n; }
 export function parseOrder(data) {
   const m = /^gb-(\d{1,12})-(bolts_\d+)-[a-z0-9]{1,12}$/.exec(String(data || ''));
@@ -37,6 +37,7 @@ async function toServer(env, job) {
 }
 async function settle(env, id, deliver) {
   const intent = await getIntent(env, id);
+  if (!intent || intent.id !== id) throw new Error('Blockonomics returned no matching payment intent');
   const job = bitcoinWork(intent);
   if (!job) return { paid: false, status: String(intent && intent.status || 'unknown') };
   const r = await deliver(env, job);
