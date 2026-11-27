@@ -71,6 +71,11 @@ int main() {
     const json bounded = FyxaToolSelection::selectNative(native, "Build a game with scripts and publish it", {}, 3);
     CHECK(bounded.size() <= 3);
 
+    CHECK(FyxaToolSelection::looksLikePseudoToolOutput("[build parts: { shape: Block, position: [0, 10, 0], size: [100, 10, 100] }]"));
+    CHECK(FyxaToolSelection::looksLikePseudoToolOutput("[build, terrain generate, get_game_tree, screenshot]"));
+    CHECK(!FyxaToolSelection::looksLikePseudoToolOutput("I will build a city with roads and buildings."));
+    CHECK(!FyxaToolSelection::looksLikePseudoToolOutput("The build tool is available."));
+
     std::cout << "Fyxa dynamic tool selection tests passed\n";
     return EXIT_SUCCESS;
 }

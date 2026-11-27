@@ -15,6 +15,9 @@ nlohmann::json selectNative(const nlohmann::json& catalog, const std::string& pr
 nlohmann::json selectExternal(const nlohmann::json& catalog, const std::string& prompt,
                                const std::vector<std::string>& discovered = {}, size_t limit = 12);
 
+// Detect model outputs that imitate tool calls in ordinary text (never execute them).
+bool looksLikePseudoToolOutput(const std::string& response);
+
 // Search the complete native and connected external catalogs. Results are metadata only;
 // callers decide which returned names to expose as callable tools on the next model turn.
 nlohmann::json discover(const nlohmann::json& nativeCatalog, const nlohmann::json& externalCatalog,

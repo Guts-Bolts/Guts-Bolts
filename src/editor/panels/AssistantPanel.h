@@ -32,6 +32,7 @@ private:
     void handleReply(int status, const std::string& body, const std::string& error);
     void handleClaudeReply(int status, const std::string& body, const std::string& error);
     void handleOllamaReply(int status, const std::string& body, const std::string& error);
+    bool retryPseudoToolOutput(const std::string& response);
     void refreshMcpServers();
     void authorizeMcpServer(const std::string& name);
     nlohmann::json externalMcpTools() const;
@@ -110,6 +111,7 @@ private:
     bool m_deferredExternalOllama = false;
     bool m_externalApprovalPending = false;
     bool m_externalApprovalGranted = false;
+    int         m_pseudoToolRetries = 0;
     int         m_rounds = 0;
     bool        m_stopAsked = false;
     bool        m_scrollDown = false;
