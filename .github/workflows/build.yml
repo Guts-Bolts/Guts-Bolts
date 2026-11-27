@@ -39,7 +39,7 @@ jobs:
           python3 -m py_compile tools/validate_fyxa_eval.py tools/evaluate_fyxa_retrieval.py tools/validate_fyxa_training_manifest.py tests/test_fyxa_training_manifest.py
           python3 tools/validate_fyxa_eval.py
           python3 tools/evaluate_fyxa_retrieval.py
-          python3 -m unittest tests/test_fyxa_training_manifest.py
+          python3 tests/test_fyxa_training_manifest.py
       - name: Run the tests
         run: node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.test.mjs'
 
