@@ -10,12 +10,13 @@ jobs:
 
     steps:
       - name: Verify runner
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
         run: |
-          echo "Runner is working!"
-          echo "Computer: $env:COMPUTERNAME"
-          echo "OS: $env:OS"
+          Write-Output "Runner is working!"
+          Write-Output "Computer: $env:COMPUTERNAME"
+          Write-Output "OS: $env:OS"
 
       - name: Check PowerShell
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
         run: |
           $PSVersionTable
