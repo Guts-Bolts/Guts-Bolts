@@ -109,42 +109,26 @@ picks a list of methods. To add more:
 2. **Apple Pay only:** Stripe Dashboard > Settings > Payment methods > **Payment method domains** >
    Add `gutsandbolts.net`. Without that, the Apple Pay button never shows up on iPhones and Macs.
 3. **Crypto through Stripe:** if your account shows **Stablecoins and crypto** on that page, turning it
-   on lets people pay with stablecoins (USDC and similar, which are pegged to the US dollar). That's
-   not Bitcoin, which is why Bitcoin goes through OpenNode (below).
+   on lets people pay with stablecoins (USDC and similar, which are pegged to the US dollar). Bitcoin checkout is handled separately by Blockonomics (below).
 4. **Bank payments** (like ACH in the US) also work: the Bolts or the tier only arrive once the bank
    payment clears, which can take a few days. Skip "buy now, pay later" ones (Klarna, Afterpay) for
    small Bolts packs; they cost more per payment.
 
 Each method has its own fee; Stripe shows it on that page.
 
-## Bitcoin (through OpenNode)
+## Bitcoin (through Blockonomics)
 
-Bolts packs (not memberships, since Bitcoin can't renew by itself) can be paid with Bitcoin, normal or
-Lightning. The code is `worker/bitcoin.js`. Prices are in US dollars (`BITCOIN_PRICES`, the same as the
-card packs); OpenNode works out how much Bitcoin that is when someone pays.
+Bolts packs (not memberships) can be paid for with Bitcoin. The checkout uses Blockonomics Payment Intents and its hosted checkout widget. Prices are set in US dollars; Blockonomics quotes the exact crypto amount and address.
 
-1. Make an account at https://app.opennode.com (it asks for business details, like Stripe did). To try
-   it first with fake Bitcoin, use https://app.dev.opennode.com instead.
-2. Settings > **Integrations > API keys** > Add key, with the **Invoices** permission. Copy it (you only
-   see it once).
-3. Cloudflare (same place as the Stripe settings): add `OPENNODE_API_KEY` as a **Secret** with that key.
-   While you use a dev.opennode.com key, also add a plain variable `OPENNODE_DEV` = `1`. Remove it
-   when you switch to a real key.
-4. Optional: in OpenNode's settings, pick whether you keep the Bitcoin or have it turned into dollars
-   and sent to your bank (auto-convert / settlement). Turning it into dollars means the price of
-   Bitcoin going up or down can't change what you earn.
+1. Create a Blockonomics account and a Store in the dashboard. Add a BTC wallet and enable Bitcoin for the store.
+2. Set the Store callback URL to `https://gutsandbolts.net/api/bitcoin/webhook?secret=YOUR_RANDOM_SECRET`. Use a long random secret and keep it private. Set the same value in Cloudflare as the encrypted secret `BLOCKONOMICS_CALLBACK_SECRET`.
+3. Create an API key in Blockonomics Stores and add it to Cloudflare as the encrypted secret `BLOCKONOMICS_API_KEY`.
+4. If your account has more than one store, set `BLOCKONOMICS_MATCH_CALLBACK` in Cloudflare to the unique callback URL/domain fragment used for this store, as supported by Blockonomics' API. Leave it unset for a single store.
+5. The Bolts page shows Bitcoin purchase buttons only when `BLOCKONOMICS_API_KEY` is present.
 
-There's no webhook to set up: each charge tells OpenNode to call `https://gutsandbolts.net/api/bitcoin/webhook`.
-The "Pay with Bitcoin" buttons show up on the Bolts page once the key is set.
+Checkout creates a USD payment intent and routes the buyer to our Blockonomics checkout widget page. The callback contains no trusted payment status: Guts & Bolts fetches the intent from Blockonomics and only credits Bolts if the intent is `paid`, in USD, for the exact pack amount. Credits use an idempotency reference, so duplicate callbacks or checks do not credit twice. A customer returning to the Bolts page also checks any recent pending intent IDs in their browser.
 
-How it stays safe: OpenNode's call only proves which payment it's about, so the server always asks
-OpenNode's API for that payment and only gives Bolts when OpenNode says it's **paid**, for at least the
-pack's price. Each payment gives Bolts once. If someone sends too little or too late, no Bolts are
-added; they sort that out with OpenNode (it can refund an underpaid payment).
-
-**No chargebacks.** A confirmed Bitcoin payment can't be reversed by a bank, so there's nothing to take
-back later, unlike cards. The flip side: if a buyer makes a mistake, only you can send money back.
-
+Blockonomics' widget can show supported crypto choices for the store. For this integration, configure the store for BTC only unless we deliberately expand the payment options later. Payment confirmations can take time; Bolts are credited only after Blockonomics confirms the intent. Bitcoin transactions are generally irreversible, so review the pack before sending.
 ## Refunds and chargebacks (cards and wallets)
 
 If you refund a Bolts pack in the Stripe Dashboard, the server takes back the same share of the Bolts
@@ -158,9 +142,9 @@ payment, so refunds of those don't take anything back; do that by hand if needed
 ## Before selling with crypto: check the legal side
 
 This isn't legal advice, just things to look at (or ask someone who knows): the Terms now mention
-Bitcoin through OpenNode and that Bitcoin payments can't be reversed, and the Privacy Policy lists
-OpenNode. Crypto sales can count differently for taxes and bookkeeping (you get Bitcoin, or dollars
-from OpenNode, instead of a card payment), and some places have their own rules about taking crypto.
+Bitcoin through Blockonomics and that Bitcoin payments can't be reversed, and the Privacy Policy lists
+Blockonomics. Crypto sales can count differently for taxes and bookkeeping (you get Bitcoin, or dollars
+from Blockonomics, instead of a card payment), and some places have their own rules about taking crypto.
 
 ## New files
 
@@ -171,7 +155,7 @@ website/checkout.js                 shows Stripe's payment form on that page
 worker/test/stripe-checkout.test.mjs  checks
 worker/club-pay.js                  the game server's side: gives tiers and Bolts, Manage membership
 worker/test/club-payments.test.mjs  checks for tiers and packs
-worker/bitcoin.js                   Bitcoin through OpenNode: charges, webhook, check
+worker/bitcoin.js                   Bitcoin through Blockonomics: charges, webhook, check
 worker/test/bitcoin-payments.test.mjs  checks for Bitcoin, refunds and chargebacks
 STRIPE_INTEGRATION_TODO.md          this file
 ```
