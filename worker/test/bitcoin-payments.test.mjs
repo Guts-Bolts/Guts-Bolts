@@ -90,6 +90,7 @@ test('the Bitcoin widget page and worker route are wired in', () => {
   const page = readFileSync(new URL('../../website/bitcoin-checkout.html', import.meta.url), 'utf8');
   const checkout = readFileSync(new URL('../../website/bitcoin-checkout.js', import.meta.url), 'utf8');
   assert.match(page, /checkout\.js/);
+  assert.doesNotMatch(page, /<script(?![^>]*\\bsrc=)[^>]*>/i);
   assert.match(checkout, /Blockonomics\.checkout/);
   assert.match(checkout, /intent_id: id/);
   const app = readFileSync(new URL('../../website/app/app.js', import.meta.url), 'utf8');
