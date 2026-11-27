@@ -9,6 +9,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include <utility>
 
 namespace {
 using json = nlohmann::json;
@@ -101,17 +102,21 @@ json FyxaKnowledge::search(const std::string& query, std::size_t limit, std::str
         if (!readBounded(m_manifest, manifestText)) m_indexError = "Knowledge source manifest is unavailable or exceeds its size limit.";
         else {
             const json manifest = json::parse(manifestText, nullptr, false);
-            if (manifest.is_discarded() || !manifest.is_object() || manifest.value("schema_version", 0) != 1 ||
-                manifest.value("purpose", std::string()) != "reference_only" ||
-                !manifest.contains("sources") || !manifest["sources"].is_array()) {
+            if (manifest.is_discarded() || !manifest.is_object() || !manifest.contains("schema_version") ||
+                !manifest["schema_version"].is_number_integer() || manifest["schema_version"] != 1 ||
+                !manifest.contains("purpose") || !manifest["purpose"].is_string() || manifest["purpose"] != "reference_only" ||
+                !manifest.contains("sources") || !manifest["sources"].is_array) {
                 m_indexError = "Knowledge manifest is invalid; retrieval is disabled.";
             } else {
                 std::set<std::string> sourceIds, sourcePaths;
                 for (const auto& source : manifest["sources"]) {
-                    if (!source.is_object() || source.value("authority", std::string()) != "first_party_repository" ||
-                        source.value("index_policy", std::string()) != "reference_only") continue;
-                    const std::string id = source.value("source_id", std::string());
-                    const std::string pathText = source.value("path", std::string());
+                    if (!source.is_object() || !source.contains("authority") || !source["authority"].is_string() ||
+                        source["authority"] != "first_party_repository" || !source.contains("index_policy") ||
+                        !source["index_policy"].is_string() || source["index_policy"] != "reference_only") continue;
+                    const std::string id = source.contains("source_id") && source["source_id"].is_string()
+                        ? source["source_id"].get<std::string>() : std::string();
+                    const std::string pathText = source.contains("path") && source["path"].is_string()
+                        ? source["path"].get<std::string>() : std::string();
                     const std::filesystem::path relative(pathText);
                     if (id.empty() || pathText.empty() || !safeRelative(relative) ||
                         !sourceIds.insert(id).second || !sourcePaths.insert(pathText).second) continue;
