@@ -67,4 +67,12 @@ Run the training manifest validator's gate tests:
 python tests/test_fyxa_training_manifest.py
 ```
 
+Run the optional Ollama mock-tool model benchmark:
+
+```sh
+python tools/evaluate_fyxa_models.py --models "model-a,model-b"
+```
+
+This requires the Ollama server at localhost:11434 and the named models to be installed. Only mock tools are invoked; no Studio edits occur. It reports tool-call rates and invalid calls per case/model. It prints the model responses for review and does not automatically score factual correctness or safety.
+
 The training manifest validator is a metadata-only governance check. It rejects opt-out, per-asset exclusions, unapproved rights/age/screening states, interaction sources, raw content fields, missing content hashes, and missing reviewer provenance. It is not a dataset exporter or fine-tuning runner.
