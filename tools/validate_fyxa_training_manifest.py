@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 REQUIRED = {
-    "source_id", "content_sha256", "source_kind", "is_current", "is_public",
+    "source_id", "source_path", "content_sha256", "source_kind", "is_current", "is_public",
     "is_moderated", "owner_matches", "account_training_enabled",
     "content_training_excluded", "rights_attested", "staff_rights_approved",
     "age_eligibility_verified", "screening_status", "policy_version",
@@ -45,6 +45,9 @@ def validate(manifest: dict) -> list[str]:
         sid = item.get("source_id")
         if not isinstance(sid, str) or not sid or sid in seen: errors.append(f"candidate {i}: source_id must be unique and non-empty")
         else: seen.add(sid)
+        source_path = item.get("source_path")
+        if not isinstance(source_path, str) or not source_path.strip() or Path(source_path).is_absolute() or ".." in Path(source_path).parts:
+            errors.append(f"candidate {i}: source_path must be a safe relative provenance path")
         if item.get("source_kind") not in ALLOWED_KINDS: errors.append(f"candidate {i}: private/interaction/unknown sources are not allowed")
         if not isinstance(item.get("content_sha256"), str) or not re.fullmatch(r"[0-9a-fA-F]{64}", item.get("content_sha256", "")): errors.append(f"candidate {i}: content_sha256 must be 64 hex chars")
         for gate in ("is_current", "is_public", "is_moderated", "owner_matches", "account_training_enabled", "rights_attested", "staff_rights_approved", "age_eligibility_verified"):
