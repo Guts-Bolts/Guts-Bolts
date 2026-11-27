@@ -926,6 +926,7 @@ set(EDITOR_SOURCES
     src/editor/FyxaSkills.cpp
     src/editor/FyxaToolSelection.cpp
     src/editor/FyxaKnowledge.cpp
+    src/editor/FyxaMemoryStore.cpp
     src/editor/FyxaProviderCapabilities.cpp
     src/editor/AiToolsRun.cpp
     src/editor/AiMeshTools.cpp
@@ -1345,6 +1346,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_include_directories(FyxaKnowledgeTests PRIVATE src/)
     target_link_libraries(FyxaKnowledgeTests PRIVATE nlohmann_json::nlohmann_json)
     add_test(NAME FyxaKnowledgeTests COMMAND FyxaKnowledgeTests)
+    add_executable(FyxaMemoryStoreTests tests/FyxaMemoryStoreTests.cpp src/editor/FyxaMemoryStore.cpp)
+    target_include_directories(FyxaMemoryStoreTests PRIVATE src/)
+    target_link_libraries(FyxaMemoryStoreTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaMemoryStoreTests COMMAND FyxaMemoryStoreTests)
 endif()
 
 # Fyxa's shared HTTP client must interrupt stalled requests when cancellation is signalled.
