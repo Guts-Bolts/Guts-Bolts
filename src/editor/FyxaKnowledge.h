@@ -10,7 +10,7 @@ class FyxaKnowledge {
 public:
     explicit FyxaKnowledge(std::filesystem::path repositoryRoot,
                           std::filesystem::path manifestPath);
-    nlohmann::json search(const std::string& query, std::size_t limit = 8,
+    nlohmann::json search(const std::string& query, std::size_t limit,
                          std::string& error) const;
 private:
     std::filesystem::path m_root;
