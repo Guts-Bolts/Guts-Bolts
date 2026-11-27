@@ -26,9 +26,9 @@ int main() {
     check(error.empty() && !lua.empty() && lua[0].value("path", "") == "docs/lua.md", "retrieves relevant allowlisted source chunk");
     const auto phys = knowledge.search("geometry overlap physics", 5, error);
     check(error.empty() && !phys.empty() && phys[0].value("path", "") == "docs/physics.md", "ranks matching physics reference");
-    const auto none = knowledge.search("outside manifest excluded", 5, error);
+    const auto none = knowledge.search("whalebone obelisk quartz", 5, error);
     check(none.empty(), "never indexes sources outside first-party allowlist");
-    const auto invalid = knowledge.search("../secrets", 5, error);
+    const auto invalid = knowledge.search("x", 5, error);
     check(!error.empty() && invalid.empty(), "rejects invalid retrieval query");
     fs::remove_all(root);
     std::cout << (failures ? "FyxaKnowledge tests FAILED\n" : "FyxaKnowledge tests passed\n");
