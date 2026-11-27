@@ -7,6 +7,7 @@ from tools.validate_fyxa_training_manifest import validate
 def eligible():
     return {
         "source_id": "public-asset-001",
+        "source_path": "games/public-asset-001.gbscene",
         "content_sha256": "a" * 64,
         "source_kind": "public_game",
         "is_current": True,
