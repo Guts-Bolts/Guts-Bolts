@@ -1228,3 +1228,11 @@ h1 .club-icon{vertical-align:-4px}
 .bolts-pack:hover{border-color:#d4202a}.bolts-pack strong{font-size:22px}.bolts-pack span{color:#888;font-size:12px}.bolts-pack b{margin-top:6px;color:#d4202a}
 @media(max-width:620px){.club-tiers{grid-template-columns:1fr}}
 .timed-tag.club-tag{background:#2478e6}.club-item-note{display:flex;align-items:center;gap:6px}
+
+/* Footer Socials dropdown */
+.foot-socials { display:inline-block; position:relative; vertical-align:middle; }
+.foot-socials summary { display:inline; cursor:pointer; font-weight:bold; color:inherit; }
+.foot-socials summary:hover { text-decoration:underline; }
+.foot-socials-menu { position:absolute; bottom:calc(100% + 5px); left:50%; transform:translateX(-50%); min-width:180px; padding:8px; background:var(--panel); border:1px solid var(--line); box-shadow:0 3px 10px rgba(0,0,0,.2); z-index:5; text-align:left; }
+.foot-socials-menu a { display:block; padding:5px 7px; white-space:nowrap; color:var(--link) !important; }
+.foot-socials-menu a:hover { background:var(--panel2); }
