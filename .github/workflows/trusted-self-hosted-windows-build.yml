@@ -1,6 +1,8 @@
 name: Trusted Self-Hosted Windows Build
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -8,7 +10,7 @@ permissions:
 
 jobs:
   windows-build:
-    # Restrict execution to the trusted main branch. No PR or push triggers.
+    # Only trusted main pushes or manual runs on main can execute on the personal Windows runner.
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 60
@@ -17,7 +19,7 @@ jobs:
         shell: msys2 {0}
     steps:
       - name: Checkout trusted main source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
