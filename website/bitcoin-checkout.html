@@ -5,21 +5,60 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pay with Bitcoin · Guts&amp;Bolts</title>
 <style>
-:root{color-scheme:dark;background:#101114;color:#f2f2f4;font:16px system-ui,sans-serif}
-body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}
-main{width:min(720px,100%);background:#1b1a20;border:1px solid #393740;border-radius:12px;padding:24px;box-sizing:border-box}
-h1{margin:0 0 8px;font-size:1.6rem}p{color:#c6c5cc;line-height:1.5}
-#payment_area{margin:20px 0;min-height:200px}a{color:#ffb34a}
-[role=status]{min-height:1.5em;color:#86d69a}
+:root{color-scheme:dark;background:#0b0d12;color:#f3f5f8;font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;padding:clamp(16px,4vw,48px);display:grid;place-items:center;background:radial-gradient(ellipse at 18% 0%,rgba(247,147,26,.13),transparent 42%),linear-gradient(160deg,#0b0d12,#13151c)}
+main{width:min(1080px,100%);border:1px solid #343742;border-radius:24px;overflow:hidden;background:#171920;box-shadow:0 28px 90px #0007}
+header{padding:clamp(22px,4vw,42px);background:linear-gradient(120deg,#242630,#191b23);border-bottom:1px solid #343742}
+.brand{display:inline-flex;align-items:center;gap:9px;color:#ffb84d;font-weight:750;letter-spacing:.08em;font-size:.8rem;text-transform:uppercase}
+.brand-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:#f7931a;color:#19120a;font-size:1.15rem}
+h1{font-size:clamp(1.65rem,4vw,2.6rem);line-height:1.15;margin:16px 0 8px;letter-spacing:-.03em}
+header p{margin:0;color:#b6bac5;max-width:680px}
+.content{display:grid;grid-template-columns:minmax(240px,.72fr) minmax(0,1.28fr);gap:24px;padding:clamp(16px,3vw,32px)}
+.details{display:flex;flex-direction:column;gap:14px}
+.detail-card{border:1px solid #343742;background:#20232c;border-radius:16px;padding:20px}
+.detail-card h2{font-size:1rem;margin:0 0 12px}
+.steps{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.steps li{display:flex;gap:12px;align-items:flex-start;color:#c4c7d0}
+.step{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#343740;color:#ffb84d;font-size:.82rem;font-weight:700}
+.notice{border:1px solid #72501e;background:#322718;border-radius:14px;padding:15px;color:#f0d4a4;font-size:.9rem}
+.payment-card{min-width:0;border:1px solid #343742;background:#10131a;border-radius:18px;padding:clamp(16px,2.6vw,28px)}
+.payment-card h2{margin:0;font-size:1.25rem}
+.payment-card .sub{color:#9fa5b2;margin:4px 0 18px}
+#payment_area{margin:0;min-height:320px;padding:18px;border-radius:12px;background:#171b23;border:1px solid #353a45;overflow:visible}
+#status{min-height:2em;color:#8fd6a5;margin:14px 0 0}
+footer{border-top:1px solid #343742;padding:18px clamp(16px,3vw,32px);color:#9298a5}
+a{color:#ffbd62;text-decoration:none}a:hover{text-decoration:underline}
+@media(max-width:760px){.content{grid-template-columns:1fr}.details{order:2}.payment-card{order:1}#payment_area{min-height:250px}}
 </style>
 </head>
 <body>
 <main>
-<h1>Buy Bolts with Bitcoin</h1>
-<p>Complete the payment below. Bolts are credited after Blockonomics confirms the payment. Confirmed Bitcoin transactions cannot be reversed.</p>
+<header>
+<div class="brand"><span class="brand-mark">₿</span> Guts &amp; Bolts · Bitcoin Checkout</div>
+<h1>Pay for your Bolts</h1>
+<p>Complete your Bitcoin payment securely through Blockonomics. Your Bolts are credited after the payment is confirmed and verified.</p>
+</header>
+<div class="content">
+<section class="details">
+<div class="detail-card">
+<h2>How it works</h2>
+<ul class="steps">
+<li><span class="step">1</span><span>Use the payment widget to send the exact Bitcoin amount shown.</span></li>
+<li><span class="step">2</span><span>Wait for Blockonomics to detect and confirm your payment.</span></li>
+<li><span class="step">3</span><span>Bolts are automatically credited to your G&amp;B wallet after verification.</span></li>
+</ul>
+</div>
+<div class="notice"><strong>Bitcoin payments are irreversible.</strong> Double-check the amount and payment address before sending. Confirmation can take time.</div>
+</section>
+<section class="payment-card">
+<h2>Bitcoin payment</h2>
+<p class="sub">Follow the instructions below to complete checkout.</p>
 <div id="payment_area" aria-live="polite"></div>
 <p id="status" role="status"></p>
-<p><a href="/app/#/bolts">Return to your Bolts wallet</a></p>
+</section>
+</div>
+<footer><a href="/app/#/bolts">← Back to your Bolts wallet</a></footer>
 </main>
 <script src="https://www.blockonomics.co/js/checkout.js"></script>
 <script src="/bitcoin-checkout.js"></script>
