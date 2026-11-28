@@ -39,7 +39,8 @@ jobs:
 
   remote-agent-syntax:
     name: Windows remote agent PowerShell syntax
-    runs-on: windows-latest
+    # Trusted pushes/main use the local Windows runner; PRs stay on GitHub-hosted for safety.
+    runs-on: ${{ github.event_name == 'pull_request' && 'windows-latest' || fromJSON('["self-hosted", "Windows", "X64"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -201,7 +202,8 @@ jobs:
     # Linux remains the representative native compile/test gate on every PR.
     if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
     name: Linux
-    runs-on: ubuntu-22.04
+    # Trusted pushes/main use the local WSL runner; PRs stay on GitHub-hosted for safety.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-22.04' || fromJSON('["self-hosted", "Linux", "X64", "WSL2"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -212,7 +214,8 @@ jobs:
           path: ~/.cache/gb-fetchcontent
           key: linux-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: linux-fetchcontent-
-      - name: Install libraries
+      - name: Install libraries (GitHub-hosted runner only)
+        if: runner.name != 'STRAT-PC-LINUX'
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libglfw3-dev libglew-dev libglm-dev libx11-dev xvfb
       - name: Build
         run: |
