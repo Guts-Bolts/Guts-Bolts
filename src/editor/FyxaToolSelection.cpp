@@ -66,6 +66,15 @@ std::unordered_set<std::string> domainsFor(const std::string& prompt) {
         domains.insert("PLATFORM");   // manage_game (EditorPlatform.cpp)
     if (hasAny(p, {"obby","tycoon","leaderboard","game system","rounds","collectible","shop","terrain","ui","make a game","build a game","create a game"}))
         domains.insert("GAME");
+    if (hasAny(p, {"city","cityscape","road","street","building","district","skyline","layout","level design"})) {
+        domains.insert("GAME");
+        domains.insert("SCENE");
+        domains.insert("OBJECTS");
+    }
+    if (hasAny(p, {"terrain","landscape","biome","mountain","river","forest"})) {
+        domains.insert("GAME");
+        domains.insert("SCENE");
+    }
     if (!domains.empty() && (domains.count("SCENE") || domains.count("OBJECTS") || domains.count("GAME") ||
                              domains.count("SCRIPTING") || domains.count("RUNTIME") || domains.count("DEBUG"))) {
         domains.insert("SCENE");
@@ -76,6 +85,18 @@ std::unordered_set<std::string> domainsFor(const std::string& prompt) {
 int lexicalScore(const std::string& query, const std::string& haystack) {
     const auto wanted = tokens(query);
     const auto available = tokens(haystack);
+    static const std::unordered_map<std::string, std::vector<std::string>> aliases = {
+        {"city", {"cityscape","urban","district","street","road","building","skyline","terrain","object","objects"}},
+        {"map", {"world","terrain","layout","level","road","region"}},
+        {"road", {"roads","street","lane","path","route","waypoint"}},
+        {"building", {"buildings","structure","house","tower","skyscraper","model","part"}},
+        {"terrain", {"landscape","ground","biome","heightmap","environment"}},
+        {"layout", {"placement","position","design","district","grid"}},
+        {"house", {"building","structure","model","part"}},
+        {"skyline", {"tower","building","cityscape","urban"}},
+        {"verify", {"inspect","check","screenshot","validate","confirm"}},
+        {"screenshot", {"capture","image","visual","viewport"}}
+    };
     int score = 0;
     for (const auto& term : wanted) {
         bool matched = false;
@@ -88,7 +109,17 @@ int lexicalScore(const std::string& query, const std::string& haystack) {
                 break;
             }
         }
-        (void)matched;
+        if (!matched) {
+            const auto alias = aliases.find(term);
+            if (alias != aliases.end()) {
+                for (const auto& synonym : alias->second) {
+                    if (std::find(available.begin(), available.end(), synonym) != available.end()) {
+                        score += 2;
+                        break;
+                    }
+                }
+            }
+        }
     }
     return score;
 }

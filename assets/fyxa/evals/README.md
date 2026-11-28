@@ -48,3 +48,31 @@ The initial set is deliberately small. Expand it from real, anonymized failure m
 ## Validation
 
 Run `python tools/validate_fyxa_eval.py` from the repository root. The validator checks JSONL syntax, required fields, unique IDs, allowed tool-intent labels, the first-party/reference-only source manifest, and that every cited source path exists.
+
+## Added agent regression areas
+
+The fixture set now also covers complex build planning, visual verification, local project memory and project isolation, map/city tool routing, source retrieval, retrieval-benchmark interpretation, training-eligibility gates, pseudo-tool-call recovery, and provider/model compatibility. The fixture set is still evaluation-only and is not training data.
+
+Run the source-path retrieval smoke test:
+
+```sh
+python tools/evaluate_fyxa_retrieval.py
+```
+
+This scores whether each fixed prompt retrieves at least one of its expected first-party source paths in the top-k. It is a lexical retrieval check only; it does not invoke models, evaluate answer safety, or prove tool execution.
+
+Run the training manifest validator's gate tests:
+
+```sh
+python tests/test_fyxa_training_manifest.py
+```
+
+Run the optional Ollama mock-tool model benchmark:
+
+```sh
+python tools/evaluate_fyxa_models.py --models "model-a,model-b"
+```
+
+This requires the Ollama server at localhost:11434 and the named models to be installed. Only mock tools are invoked; no Studio edits occur. It reports tool-call rates and invalid calls per case/model. It prints the model responses for review and does not automatically score factual correctness or safety.
+
+The training manifest validator is a metadata-only governance check. It rejects opt-out, per-asset exclusions, unapproved rights/age/screening states, interaction sources, raw content fields, missing content hashes, and missing reviewer provenance. It is not a dataset exporter or fine-tuning runner.

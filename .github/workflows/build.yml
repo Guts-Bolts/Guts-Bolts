@@ -34,6 +34,12 @@ jobs:
         run: for f in worker/*.js website/*.js website/*.mjs website/app/*.js website/server/*.js tools/generate-remote-push-keys.mjs; do node --check "$f" || exit 1; done
       - name: Gather the update log and the built-in roadmap
         run: node worker/gather-updates.mjs
+      - name: Validate Fyxa knowledge fixtures, retrieval, and training gates
+        run: |
+          python3 -m py_compile tools/validate_fyxa_eval.py tools/evaluate_fyxa_retrieval.py tools/validate_fyxa_training_manifest.py tools/evaluate_fyxa_models.py tests/test_fyxa_training_manifest.py
+          python3 tools/validate_fyxa_eval.py
+          python3 tools/evaluate_fyxa_retrieval.py
+          python3 tests/test_fyxa_training_manifest.py
       - name: Run the tests
         run: node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.test.mjs'
 

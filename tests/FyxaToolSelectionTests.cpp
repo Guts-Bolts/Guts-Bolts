@@ -53,6 +53,12 @@ int main() {
     CHECK(!containsName(scene, "publish_game"));
     CHECK(!containsName(scene, "create_script"));
 
+    const json city = FyxaToolSelection::selectNative(native, "Build a city map with roads and buildings", {}, 24);
+    CHECK(containsName(city, "get_game_tree"));
+    CHECK(containsName(city, "insert_object"));
+    CHECK(containsName(city, "set_property"));
+    CHECK(!containsName(city, "publish_game"));
+
     const json scripting = FyxaToolSelection::selectNative(native, "Write a Lua script for the door", {}, 24);
     CHECK(containsName(scripting, "create_script"));
     CHECK(!containsName(scripting, "publish_game"));
