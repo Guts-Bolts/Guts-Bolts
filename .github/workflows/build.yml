@@ -39,8 +39,8 @@ jobs:
 
   remote-agent-syntax:
     name: Windows remote agent PowerShell syntax
-    # Trusted pushes/main use the local Windows runner; PRs stay on GitHub-hosted for safety.
-    runs-on: ${{ github.event_name == 'pull_request' && 'windows-latest' || fromJSON('["self-hosted", "Windows", "X64"]') }}
+    # This lightweight parser check remains hosted to avoid executing PR scripts on personal hardware.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -240,9 +240,9 @@ jobs:
           path: GutsAndBolts-Linux.tar.gz
 
   windows:
-    # Windows packaging is a required PR gate: catch installer and server-bundle regressions before merge.
+    # Trusted pushes/main use the local Windows runner; PRs stay on GitHub-hosted for safety.
     name: Windows
-    runs-on: windows-latest
+    runs-on: ${{ github.event_name == 'pull_request' && 'windows-latest' || fromJSON('["self-hosted", "Windows", "X64"]') }}
     defaults:
       run:
         shell: msys2 {0}
