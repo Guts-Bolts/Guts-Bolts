@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pay with Bitcoin · Guts&amp;Bolts</title>
+<style>
+:root{color-scheme:dark;background:#101114;color:#f2f2f4;font:16px system-ui,sans-serif}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}
+main{width:min(720px,100%);background:#1b1a20;border:1px solid #393740;border-radius:12px;padding:24px;box-sizing:border-box}
+h1{margin:0 0 8px;font-size:1.6rem}p{color:#c6c5cc;line-height:1.5}
+#payment_area{margin:20px 0;min-height:200px}a{color:#ffb34a}
+[role=status]{min-height:1.5em;color:#86d69a}
+</style>
+</head>
+<body>
+<main>
+<h1>Buy Bolts with Bitcoin</h1>
+<p>Complete the payment below. Bolts are credited after Blockonomics confirms the payment. Confirmed Bitcoin transactions cannot be reversed.</p>
+<div id="payment_area" aria-live="polite"></div>
+<p id="status" role="status"></p>
+<p><a href="/app/#/bolts">Return to your Bolts wallet</a></p>
+</main>
+<script src="https://www.blockonomics.co/js/checkout.js"></script>
+<script src="/bitcoin-checkout.js"></script>
+</body>
+</html>
