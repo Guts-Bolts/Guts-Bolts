@@ -1,0 +1,68 @@
+name: Trusted Self-Hosted Windows Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    # Restrict execution to the trusted main branch. No PR or push triggers.
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout trusted main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b
+        with:
+          persist-credentials: false
+
+      - name: Set up MSYS2 build toolchain
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+        with:
+          msystem: MINGW64
+          install: >-
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-glfw mingw-w64-x86_64-glew mingw-w64-x86_64-glm git zip
+
+      - name: Validate Windows installer entry point
+        shell: pwsh
+        run: |
+          py -3 -m py_compile install.py
+          & .\Install.bat --check
+
+      - name: Configure native Windows build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_BASE_DIR="$HOME/.cache/gb-fetchcontent"
+
+      - name: Compile Studio, Player, and server targets
+        run: cmake --build build
+
+      - name: Package and validate distribution
+        run: |
+          set -euo pipefail
+          mkdir -p GutsAndBolts-Windows
+          for exe in GutsAndBolts.exe GutsAndBoltsPlayer.exe GutsAndBoltsGameServer.exe GutsAndBoltsServer.exe; do
+            test -f "build/$exe" || { echo "::error::Missing required Windows executable: $exe"; exit 1; }
+            cp "build/$exe" GutsAndBolts-Windows/
+          done
+          shopt -s nullglob
+          dlls=(build/*.dll)
+          if (("${#dlls[@]}" > 0)); then cp "${dlls[@]}" GutsAndBolts-Windows/; fi
+          cp -r games catalog GutsAndBolts-Windows/
+          test -d GutsAndBolts-Windows/games
+          test -d GutsAndBolts-Windows/catalog
+          zip -r GutsAndBolts-Windows.zip GutsAndBolts-Windows
+          ls -lh GutsAndBolts-Windows.zip
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: windows-self-hosted-build
+          path: GutsAndBolts-Windows.zip
+          if-no-files-found: error
+          retention-days: 7

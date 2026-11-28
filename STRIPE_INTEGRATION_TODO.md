@@ -45,7 +45,7 @@ Cloudflare dashboard: **Workers & Pages > project-guts-and-bolts > Settings > Va
 | `STRIPE_SECRET_KEY` | **Secret** (click "Encrypt") | Stripe Dashboard > Developers > API keys > Secret key (`sk_test_...` while testing, `sk_live_...` when live). Never put it in the code or show anyone. |
 | `STRIPE_PUBLISHABLE_KEY` | Plain variable | Same page, Publishable key (`pk_test_...` / `pk_live_...`). This one is safe to be public. |
 | `STRIPE_PRICE_...` | Plain variables | One per thing on sale (table below). Stripe Dashboard > Product catalog > click the product > click the price > copy its `price_...` ID. |
-| `STRIPE_WEBHOOK_SECRET` | **Secret** | Stripe Dashboard > Developers > Webhooks > Add endpoint: URL `https://gutsandbolts.net/api/stripe/webhook`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted`. Copy its signing secret (`whsec_...`). |
+| `STRIPE_WEBHOOK_SECRET` | **Secret** | Stripe Dashboard > Developers > Webhooks > Add endpoint: URL `https://gutsandbolts.net/api/stripe/webhook`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `charge.refunded` and `charge.dispute.created` (the last two take refunded or charged-back Bolts back). Copy its signing secret (`whsec_...`). |
 
 ### The price settings
 
@@ -98,6 +98,54 @@ To try it on your own computer with `wrangler dev`, put the same four names in a
 No new packages are needed: the server talks to Stripe's API directly with `fetch`, and the page
 loads Stripe.js from `https://js.stripe.com/dahlia/stripe.js` (it must always come from Stripe).
 
+## More ways to pay (no code needed)
+
+The payment form shows every payment method that's switched on in Stripe, because the code never
+picks a list of methods. To add more:
+
+1. Stripe Dashboard > **Settings > Payment methods**. Turn on the ones you want. Good ones to start:
+   **Apple Pay**, **Google Pay**, **Link** (Stripe's saved-card button), **Cash App Pay**, **Amazon Pay**.
+   Some aren't offered in every country; the page says which ones your account can use.
+2. **Apple Pay only:** Stripe Dashboard > Settings > Payment methods > **Payment method domains** >
+   Add `gutsandbolts.net`. Without that, the Apple Pay button never shows up on iPhones and Macs.
+3. **Crypto through Stripe:** if your account shows **Stablecoins and crypto** on that page, turning it
+   on lets people pay with stablecoins (USDC and similar, which are pegged to the US dollar). Bitcoin checkout is handled separately by Blockonomics (below).
+4. **Bank payments** (like ACH in the US) also work: the Bolts or the tier only arrive once the bank
+   payment clears, which can take a few days. Skip "buy now, pay later" ones (Klarna, Afterpay) for
+   small Bolts packs; they cost more per payment.
+
+Each method has its own fee; Stripe shows it on that page.
+
+## Bitcoin (through Blockonomics)
+
+Bolts packs (not memberships) can be paid for with Bitcoin. The checkout uses Blockonomics Payment Intents and its hosted checkout widget. Prices are set in US dollars; Blockonomics quotes the exact crypto amount and address.
+
+1. Create a Blockonomics account and a Store in the dashboard. Add a BTC wallet and enable Bitcoin for the store.
+2. Set the Store callback URL to `https://gutsandbolts.net/api/bitcoin/webhook?secret=YOUR_RANDOM_SECRET`. Use a long random secret and keep it private. Set the same value in Cloudflare as the encrypted secret `BLOCKONOMICS_CALLBACK_SECRET`.
+3. Create an API key in Blockonomics Stores and add it to Cloudflare as the encrypted secret `BLOCKONOMICS_API_KEY`.
+4. If your account has more than one store, set `BLOCKONOMICS_MATCH_CALLBACK` in Cloudflare to the unique callback URL/domain fragment used for this store, as supported by Blockonomics' API. Leave it unset for a single store.
+5. The Bolts page shows Bitcoin purchase buttons only when `BLOCKONOMICS_API_KEY` is present.
+
+Checkout creates a USD payment intent and routes the buyer to our Blockonomics checkout widget page. The callback contains no trusted payment status: Guts & Bolts fetches the intent from Blockonomics and only credits Bolts if the intent is `paid`, in USD, for the exact pack amount. Credits use an idempotency reference, so duplicate callbacks or checks do not credit twice. A customer returning to the Bolts page also checks any recent pending intent IDs in their browser.
+
+Blockonomics' widget can show supported crypto choices for the store. For this integration, configure the store for BTC only unless we deliberately expand the payment options later. Payment confirmations can take time; Bolts are credited only after Blockonomics confirms the intent. Bitcoin transactions are generally irreversible, so review the pack before sending.
+## Refunds and chargebacks (cards and wallets)
+
+If you refund a Bolts pack in the Stripe Dashboard, the server takes back the same share of the Bolts
+(a full refund takes them all, a half refund takes half). If the buyer's bank charges it back (a
+dispute), the whole pack is taken back. It never takes back more than the pack gave, and the balance
+can go below zero if they already spent them. If you **win** a dispute, give the Bolts back by hand
+(staff tools). Memberships are left to Stripe: refunding one doesn't end it, so cancel it in the
+Dashboard too if you want the badge gone. (Bolts bought before this update aren't linked to their
+payment, so refunds of those don't take anything back; do that by hand if needed.)
+
+## Before selling with crypto: check the legal side
+
+This isn't legal advice, just things to look at (or ask someone who knows): the Terms now mention
+Bitcoin through Blockonomics and that Bitcoin payments can't be reversed, and the Privacy Policy lists
+Blockonomics. Crypto sales can count differently for taxes and bookkeeping (you get Bitcoin, or dollars
+from Blockonomics, instead of a card payment), and some places have their own rules about taking crypto.
+
 ## New files
 
 ```
@@ -107,6 +155,8 @@ website/checkout.js                 shows Stripe's payment form on that page
 worker/test/stripe-checkout.test.mjs  checks
 worker/club-pay.js                  the game server's side: gives tiers and Bolts, Manage membership
 worker/test/club-payments.test.mjs  checks for tiers and packs
+worker/bitcoin.js                   Bitcoin through Blockonomics: charges, webhook, check
+worker/test/bitcoin-payments.test.mjs  checks for Bitcoin, refunds and chargebacks
 STRIPE_INTEGRATION_TODO.md          this file
 ```
 

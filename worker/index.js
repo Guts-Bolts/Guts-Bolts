@@ -27,6 +27,7 @@ import { handleAds, withAdsMeta } from './ads.js';
 import { handleLegal } from './legal.js';
 import { handleSeo, withSeoHead } from './seo.js';
 import { handleStripe } from './stripe.js';
+import { handleBitcoin } from './bitcoin.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
 import { soundResponse } from './audio.js';   // /sound/<id> with Range (the Audio portal)
 import { checkSupabaseHealth, listSupabaseActivity, supabasePublicConfig } from './supabase.js';
@@ -274,7 +275,10 @@ async function route(request, env, ctx) {
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
     // Stripe's own servers call this (signature-checked in stripe.js), so it skips the bot check.
     if (url.pathname === '/api/stripe/webhook') return handleStripe(request, env, url);
-    const stripePath = url.pathname === '/api/stripe/checkout' || url.pathname === '/api/stripe/config' || url.pathname === '/api/stripe/prices';
+    // Blockonomics calls this endpoint (callback secret checked and payment intent re-fetched in bitcoin.js), so it skips the bot check too.
+    if (url.pathname === '/api/bitcoin/webhook') return handleBitcoin(request, env, url);
+    const stripePath = url.pathname === '/api/stripe/checkout' || url.pathname === '/api/stripe/config' || url.pathname === '/api/stripe/prices'
+      || url.pathname === '/api/bitcoin/checkout' || url.pathname === '/api/bitcoin/prices' || url.pathname === '/api/bitcoin/check';
     const picture = /^\/(thumb|icon|shot|wear|decal|artpic|imgpic|sound|pasteraw|avatar)\//.test(url.pathname);
     // Videos (videos.js): /vid/<id> and /vidthumb/<id> count like pictures; /vidup/<id> (sending one) like a request.
     const video = /^\/(vid|vidthumb|vidup)\//.test(url.pathname);
@@ -293,7 +297,8 @@ async function route(request, env, ctx) {
     if (video) return env.GB_SERVER ? videoOnComputer(request, env, url) : env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main')).fetch(tagged(request, info));
     if (stream) return env.GB_SERVER ? streamOnComputer(request, env, url) : env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main')).fetch(tagged(request, info));
     if (url.pathname.startsWith('/api/oauth/')) return handleOauth(request, env, url);
-    if (stripePath) return handleStripe(request, env, url);   // Boltworks Club payments (stripe.js)
+    if (stripePath) return url.pathname.startsWith('/api/bitcoin/') ? handleBitcoin(request, env, url)   // Bitcoin (bitcoin.js)
+      : handleStripe(request, env, url);   // Boltworks Club and Bolts by card (stripe.js)
     if (mcp) return handleMcp(request, env, url, serverAsk);
     if (url.pathname === '/api/info') {
       return reply({ ok: true, server: env.GB_SERVER || 'cloudflare', time: Math.floor(Date.now() / 1000) });

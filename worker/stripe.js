@@ -4,7 +4,12 @@
 //   GET  /api/stripe/prices    what's on sale and for how much (read from Stripe).
 //                              The page website/checkout.html shows Stripe's form with it.
 //   GET  /api/stripe/config    the publishable key the page needs (safe to show anyone).
-//   POST /api/stripe/webhook   Stripe tells us a payment went through (signature checked).
+//   POST /api/stripe/webhook   Stripe tells us a payment went through (signature checked), or that a
+//                              Bolts pack was refunded or charged back (its Bolts are taken back).
+//
+// Other ways to pay (Apple Pay, Google Pay, Link, Cash App Pay, bank payments, stablecoins like USDC...)
+// need no code: the form shows whatever is switched on in the Stripe Dashboard (Settings > Payment
+// methods), because we never pick payment_method_types here. Bitcoin is separate: bitcoin.js.
 //
 // Settings (Cloudflare: Workers & Pages > project-guts-and-bolts > Settings > Variables and Secrets):
 //   STRIPE_SECRET_KEY       a Secret (sk_test_... or sk_live_...). Never put it in the code.
@@ -89,6 +94,8 @@ export function sessionParams(env, origin, userId, item = 'bwc_month', early = f
     params.client_reference_id = 'gb-user-' + userId;
     params.metadata = { gb_user: String(userId), gb_item: item };
     if (mode === 'subscription') params.subscription_data = { metadata: { gb_user: String(userId), gb_item: item } };
+    // Also on the payment itself, so a refund or chargeback later knows whose Bolts to take back.
+    else params.payment_intent_data = { metadata: { gb_user: String(userId), gb_item: item } };
   }
   const coupon = String(env.STRIPE_COUPON_EARLY || '').trim();
   if (early && coupon && mode === 'subscription') {
@@ -193,6 +200,29 @@ export function stripeWork(event, env) {
   return [];
 }
 
+// A Bolts pack's card payment was refunded or charged back: take those Bolts back.
+//   { kind: 'boltsBack', user, bolts, pi, why }   bolts = how many in total should be gone by now
+// charge.refunded: in proportion to how much of the money went back (a half refund takes half).
+// charge.dispute.created: the whole pack (the bank pulled the money back). The server never takes
+// more than the pack gave, however many of these arrive. `pi` is the PaymentIntent (we look it up
+// at Stripe, since only it has our metadata); memberships are left to Stripe's own cancel events.
+export function takeBackWork(event, pi) {
+  const o = event && event.data && event.data.object || {};
+  const meta = pi && pi.metadata || {};
+  const user = /^\d{1,12}$/.test(String(meta.gb_user || '')) ? String(meta.gb_user) : '';
+  const it = ITEMS[meta.gb_item];
+  if (!user || !it || !it.bolts || !pi.id) return [];
+  if (event.type === 'charge.refunded') {
+    const amount = Number(o.amount) || 0, back = Number(o.amount_refunded) || 0;
+    if (amount <= 0 || back <= 0) return [];
+    const bolts = back >= amount ? it.bolts : Math.ceil(it.bolts * back / amount);
+    return [{ kind: 'boltsBack', user, bolts, pi: pi.id, why: 'refund' }];
+  }
+  if (event.type === 'charge.dispute.created') return [{ kind: 'boltsBack', user, bolts: it.bolts, pi: pi.id, why: 'chargeback' }];
+  return [];
+}
+const TAKE_BACK = new Set(['charge.refunded', 'charge.dispute.created']);
+
 // Hands a job to the game server (the Durable Object), on an address only the Worker can reach.
 async function toServer(env, job) {
   if (!env.GB_SERVER_OBJECT) return { ok: false, error: 'Payments only work on the Cloudflare server.' };
@@ -226,7 +256,20 @@ async function webhook(request, env, deliver = toServer) {
   if (!(await verifySignature(body, request.headers.get('stripe-signature'), secret))) return json({ error: 'Bad signature.' }, 400);
   let event;
   try { event = JSON.parse(body); } catch { return json({ error: 'Bad JSON.' }, 400); }
-  for (const job of stripeWork(event, env)) {
+  let jobs = stripeWork(event, env);
+  if (event && TAKE_BACK.has(event.type)) {
+    const o = event.data && event.data.object || {};
+    const piId = typeof o.payment_intent === 'string' ? o.payment_intent : o.payment_intent && o.payment_intent.id || '';
+    if (!/^pi_\w+$/.test(piId)) return json({ received: true });   // not one of our checkouts
+    let pi = null;
+    try {
+      const r = await stripeFetch(env, 'payment_intents/' + encodeURIComponent(piId));
+      pi = r.ok ? await r.json() : null;
+    } catch { pi = null; }
+    if (!pi) return json({ error: 'Try again.' }, 500);   // Stripe sends it again later
+    jobs = takeBackWork(event, pi);
+  }
+  for (const job of jobs) {
     let r;
     try { r = await deliver(env, job); } catch (e) { r = { ok: false, error: String(e && e.message || e), retry: true }; }
     console.log('Stripe', event.type, job.kind, 'user', job.user, r && r.ok ? 'done' : 'failed: ' + (r && r.error));

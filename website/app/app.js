@@ -3944,6 +3944,26 @@ pages.notifications = async () => {
 async function storePrices() {
   try { const r = await fetch('/api/stripe/prices'); return r.ok ? ((await r.json()).items || {}) : {}; } catch { return {}; }
 }
+// Bolts packs you can pay for with Bitcoin (worker/bitcoin.js). Empty until Bitcoin is set up.
+async function bitcoinPrices() {
+  try { const r = await fetch('/api/bitcoin/prices'); return r.ok ? ((await r.json()).items || {}) : {}; } catch { return {}; }
+}
+// Bitcoin payments started from this browser. Blockonomics intents are checked again when returning.
+const BTC_KEY = 'gb.bitcoinPending';
+const btcPending = () => { try { return (JSON.parse(localStorage.getItem(BTC_KEY) || '[]') || []).filter((p) => p && p.id && Date.now() - p.at < 86400000); } catch { return []; } };
+const btcSave = (list) => { try { localStorage.setItem(BTC_KEY, JSON.stringify(list.slice(-10))); } catch {} };
+async function btcCheckPending() {
+  let got = 0;
+  const left = [];
+  for (const p of btcPending()) {
+    const r = await fetch('/api/bitcoin/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: p.id }) })
+      .then((x) => x.json()).catch(() => ({}));
+    if (r.paid) got += r.bolts || 0;
+    else left.push(p);
+  }
+  btcSave(left);
+  return { got, waiting: left.length };
+}
 const money = (p) => p && Number.isInteger(p.amount) ? (p.amount / 100).toLocaleString('en-US', { style: 'currency', currency: (p.currency || 'usd').toUpperCase() }) : '';
 // The checkout page for something (it goes to your account, so you need to be logged in).
 const buyLink = (item) => signedIn() ? '../checkout.html?item=' + encodeURIComponent(item) + '&user=' + encodeURIComponent(me.userId) : '#/login';
@@ -3953,9 +3973,11 @@ const CLUB_PERKS = {
   obc: ['Red club badge next to your name', 'No ads anywhere on the site', '200 Fyxa cloud AI steps a day', 'Our biggest thank-you'],
 };
 // Boltworks Club tiers and Bolts packs you can buy, on the Bolts page.
-function clubShop(items, club) {
+function clubShop(items, club, btc = {}) {
   const tiers = Object.keys(CLUB).filter((t) => items[t + '_month'] || items[t + '_year']);
-  const packs = Object.keys(items).filter((k) => k.startsWith('bolts_')).sort((a, b) => items[a].bolts - items[b].bolts);
+  const packs = [...new Set([...Object.keys(items), ...Object.keys(btc)])].filter((k) => k.startsWith('bolts_'))
+    .sort((a, b) => (items[a] || btc[a]).bolts - (items[b] || btc[b]).bolts);
+  const anyBtc = packs.some((k) => btc[k]), anyCard = packs.some((k) => items[k]);
   const paid = club && club.paid;
   return html`${tiers.length ? html`<section class="club-shop">
       <h2>Boltworks Club</h2>
@@ -3969,23 +3991,29 @@ function clubShop(items, club) {
         <div class="club-tier-buy">${items[t + '_month'] ? html`<a class="btn gold" href="${buyLink(t + '_month')}">${money(items[t + '_month']) ? money(items[t + '_month']) + ' a month' : 'Monthly'}</a>` : ''}
           ${items[t + '_year'] ? html`<a class="btn" href="${buyLink(t + '_year')}">${money(items[t + '_year']) ? money(items[t + '_year']) + ' a year' : 'Yearly'}</a>` : ''}</div>
       </div>`)}</div>
-      <p class="small muted">Paid with a card through Stripe; Guts&amp;Bolts never sees your card number. Cancel any time. See <a href="#/terms">the Terms</a>, section 4.</p>
+      <p class="small muted">Paid with a card or wallet (like Apple Pay or Google Pay) through Stripe; Guts&amp;Bolts never sees your card number. Cancel any time. See <a href="#/terms">the Terms</a>, section 4.</p>
     </section>` : ''}
     ${packs.length ? html`<section class="bolts-packs"><h2>Buy Bolts</h2>
-      <div class="bolts-pack-grid">${packs.map((k) => html`<a class="bolts-pack" href="${buyLink(k)}"><strong>${items[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(items[k]) || 'Buy'}</b></a>`)}</div>
-      <p class="small muted">Paid once, through Stripe. See <a href="#/terms">the Terms</a>, section 4.</p></section>` : ''}`;
+      <div class="bolts-pack-grid">${packs.map((k) => html`<div class="bolts-pack-wrap">${items[k]
+        ? html`<a class="bolts-pack" href="${buyLink(k)}"><strong>${items[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(items[k]) || 'Buy'}</b></a>`
+        : html`<div class="bolts-pack"><strong>${btc[k].bolts.toLocaleString('en-US')}</strong><span>Bolts</span><b>${money(btc[k])}</b></div>`}
+        ${btc[k] ? html`<button class="btn small bolts-btc" data-act="bitcoinBuy" data-item="${k}">₿ Pay with Bitcoin</button>` : ''}</div>`)}</div>
+      <p class="small muted">Paid once.${anyCard ? ' Card, Apple Pay, Google Pay and the other options in the payment form go through Stripe.' : ''}${anyBtc ? ' Bitcoin payments go through Blockonomics; Bitcoin payments can\'t be undone, so check the pack before you pay.' : ''} See <a href="#/terms">the Terms</a>, section 4.</p></section>` : ''}`;
 }
 
 pages.bolts = async () => {
-  const [r, club, items] = await Promise.all([
+  const [r, club, items, btc] = await Promise.all([
     signedIn() ? pageCall('bolts.history', {}) : { ok: true, history: [] },
     signedIn() ? pageCall('boltworks.status', {}) : { ok: true, registered: false },
     storePrices(),
+    bitcoinPrices(),
   ]);
-  const onSale = Object.keys(items).length > 0;
+  const onSale = Object.keys(items).length > 0 || Object.keys(btc).length > 0;
   const justPaid = new URLSearchParams(location.search).has('checkout');
+  const btcBack = new URLSearchParams(location.search).has('bitcoin') || btcPending().length > 0;
   show(html`<h1>Bolts</h1>
     ${justPaid ? html`<p class="ok">Thanks for your payment! It can take a minute to show up here.</p>` : ''}
+    ${btcBack ? html`<p class="muted" id="btcStatus">Checking your Bitcoin payment...</p>` : ''}
     <section class="bolts-hero">
       <div class="bolts-hero-copy"><span class="bolts-eyebrow">YOUR GUTS &amp; BOLTS WALLET</span><h2>Make every Bolt count.</h2><p>Earn Bolts by playing, create things worth buying, and spend them across the platform.</p></div>
       <div class="bolts-balance"><span>YOUR BALANCE</span><strong>${bolts(signedIn() ? me.bolts : 0)}</strong>
@@ -3993,7 +4021,7 @@ pages.bolts = async () => {
         ${signedIn() ? raw(streakLine(me.levels)) : ''}</div>
     </section>
     <div class="bolts-earn-grid"><div class="bolts-earn-card"><span class="bolts-earn-icon">⚡</span><strong>Show up daily</strong><p>Claim 25 Bolts every day, and up to 60 when you come back days in a row.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🎮</span><strong>Play games</strong><p>Earn 5 Bolts every 5 minutes, up to 50 a day.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🛠️</span><strong>Make stuff</strong><p>Earn Bolts when people buy your creations.</p></div></div>
-    ${onSale ? clubShop(items, club) : html`<section class="boltworks-teaser">
+    ${onSale ? clubShop(items, club, btc) : html`<section class="boltworks-teaser">
       <div class="boltworks-topline"><span class="boltworks-stamp">COMING LATER</span><span class="boltworks-mini">G&amp;B MEMBERSHIP</span></div>
       <div class="boltworks-content"><div class="boltworks-emblem" aria-hidden="true"><span>✦</span><b>B</b><i></i></div><div class="boltworks-copy">
         <p class="boltworks-kicker">THE NEXT LEVEL OF GUTS &amp; BOLTS</p><h2>Boltworks Club</h2><p class="boltworks-lede">For the builders, collectors, and absolute agents of chaos.</p>
@@ -4005,6 +4033,12 @@ pages.bolts = async () => {
     </section>`}
     <h2>Redeem a code</h2><form class="row" data-form="redeem"><input type="text" name="code" placeholder="Type your code here" style="max-width:360px"><button class="btn blue">Redeem</button></form><p class="small"><a href="#/redeem">Got a promo code? Redeem it here</a></p>
     <h2>Transaction history</h2><div class="list bolts-history">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div>${h.gift ? html`<span class="note-icon" aria-hidden="true">🎁</span>` : ''}<span class="grow">${h.reason}</span>${h.gift === 'got' && !h.amount ? html`<span class="ok">Gift</span>` : html`<span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span>`}<span class="small muted">${ago(h.time)}</span></div>`) : html`<p class="muted">${signedIn() ? 'Nothing yet.' : 'Log in to see your Bolts. New accounts start with 100!'}</p>`}</div>`);
+  if (btcBack && signedIn()) {
+    const st = await btcCheckPending();
+    const el = document.getElementById('btcStatus');
+    if (st.got) { toast('Your Bitcoin payment went through: ' + st.got.toLocaleString('en-US') + ' Bolts added!'); render(); return; }
+    if (el) { el.textContent = st.waiting ? 'Your Bitcoin payment is on its way. Bitcoin can take 10 to 60 minutes to confirm; your Bolts show up by themselves once it does.' : ''; el.hidden = !st.waiting; }
+  }
 };
 
 // Promo codes: type one (like GUTSTOBER2026) to get Bolts. #/redeem?code=... fills the box in.
@@ -4410,7 +4444,11 @@ pages.terms = async () => {
       <li>You can buy a <b>Boltworks Club</b> membership (Boltworks Club, Turbo or Overclocked, paid monthly or
         yearly) or <b>packs of Bolts</b> (paid once) on the <a href="#/bolts">Bolts</a> page. Prices are shown there
         before you pay.</li>
-      <li>Payments are handled by <b>Stripe</b>. Guts&amp;Bolts never sees or keeps your card number.</li>
+      <li>Payments are handled by <b>Stripe</b> (cards, and wallets like Apple Pay or Google Pay). Guts&amp;Bolts never sees or keeps your card number.</li>
+      <li><b>Bitcoin:</b> Bolts packs (not memberships) can also be paid for with Bitcoin, handled by <b>Blockonomics</b>.
+        The price is set in US dollars and Blockonomics shows how much Bitcoin that is when you pay. Bitcoin payments
+        can't be reversed, so check what you're buying first. If you send too little, or the payment expires before
+        it arrives, no Bolts are added; contact Blockonomics or support about getting it back.</li>
       <li><b>Memberships renew by themselves</b> every month or year, at the price shown when you joined, until you
         cancel. If the price changes, we'll say so on the <a href="#/updates">Updates</a> page before your next
         renewal.</li>
@@ -4679,7 +4717,15 @@ const actions = {
     toast('It\'s yours! Wear it on the Avatar page.');
     render();
   },
-  // Stripe's own page for changing tier, the card, or cancelling (club-pay.js makes the link).
+  // Bolts packs paid with Bitcoin: Blockonomics Payment Intents and its checkout widget.
+  async bitcoinBuy(d) {
+    if (!signedIn()) { location.hash = '#/login'; return; }
+    const r = await fetch('/api/bitcoin/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: me.userId, item: d.item }) })
+      .then((x) => x.json()).catch(() => ({}));
+    if (!r.url || !r.id) { toast(r.error || 'Could not start the Bitcoin payment.'); return; }
+    btcSave([...btcPending(), { id: r.id, at: Date.now() }]);
+    location.href = r.url;
+  },
   async clubManage() {
     const r = await call('club.manage', { origin: location.origin });
     if (!r.ok || !r.url) { toast(r.error || 'Could not open the membership page.'); return; }
