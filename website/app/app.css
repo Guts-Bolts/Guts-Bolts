@@ -1237,3 +1237,12 @@ h1 .club-icon{vertical-align:-4px}
 .foot-socials-menu { position:absolute; bottom:calc(100% + 5px); left:50%; transform:translateX(-50%); min-width:180px; padding:8px; background:var(--panel); border:1px solid var(--line); box-shadow:0 3px 10px rgba(0,0,0,.2); z-index:5; text-align:left; }
 .foot-socials-menu a { display:block; padding:5px 7px; white-space:nowrap; color:var(--link) !important; }
 .foot-socials-menu a:hover { background:var(--panel2); }
+
+/* Bitcoin purchase controls: prominent, accessible tap targets */
+.bolts-btc{min-height:46px;padding:11px 14px!important;font-size:14px!important;font-weight:800!important;letter-spacing:.01em;background:linear-gradient(180deg,#ffbd62,#f7931a)!important;color:#211607!important;border:1px solid #d98312!important;border-radius:9px!important;box-shadow:0 3px 0 #8c4f05,0 5px 14px rgba(247,147,26,.18);transition:transform .15s ease,filter .15s ease,box-shadow .15s ease}
+.bolts-btc:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 4px 0 #8c4f05,0 8px 20px rgba(247,147,26,.28)}
+.bolts-btc:active{transform:translateY(1px);box-shadow:0 1px 0 #8c4f05}
+.bolts-btc:focus-visible{outline:3px solid #ffd58e;outline-offset:3px}
+.bolts-pack-wrap:has(.bolts-btc){gap:9px}
+.bolts-packs h2{margin-bottom:6px}
+@media(max-width:620px){.bolts-btc{min-height:48px;font-size:13px!important;padding:10px 8px!important}}
